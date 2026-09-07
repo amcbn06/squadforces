@@ -257,7 +257,8 @@ async def member_activity(
     if not user:
         return JSONResponse({})
 
-    cutoff_ts = (datetime.now(timezone.utc) - timedelta(days=730)).timestamp()
+    now = datetime.now(timezone.utc)
+    cutoff_ts = datetime(now.year - 2, 1, 1, tzinfo=timezone.utc).timestamp()
     activity: dict[str, dict] = {}
 
     def add(date_str: str, platform: str) -> None:

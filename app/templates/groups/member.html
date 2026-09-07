@@ -113,11 +113,9 @@
   fetch('/groups/{{ group.id }}/members/{{ user.id }}/activity.json')
     .then(r => r.json())
     .then(data => {
-      const years = new Set(Object.keys(data).map(d => d.slice(0,4)));
-      const cur = new Date().getFullYear().toString();
-      years.add(cur);
-      const sorted = [...years].sort((a,b) => b-a);
-      const html = sorted.map(y => buildYear(parseInt(y), data)).join('');
+      const cur = new Date().getFullYear();
+      const sorted = [cur, cur - 1, cur - 2];
+      const html = sorted.map(y => buildYear(y, data)).join('');
       document.getElementById('heatmap-container').innerHTML = html || '<p style="color:#888;font-size:12px;">No activity found.</p>';
     })
     .catch(() => {
