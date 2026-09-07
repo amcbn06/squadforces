@@ -74,6 +74,7 @@ DATABASE_URL=sqlite:///./squadforces.db
 # Optional — enables signed CF API requests (higher rate limits)
 CF_API_KEY=
 CF_API_SECRET=
+SYNC_INTERVAL_HOURS=6          # auto-sync cadence (default 6h)
 ```
 
 ```bash
