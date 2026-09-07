@@ -69,6 +69,8 @@
                   style="display:none; flex-direction:column; gap:4px; padding-top:4px;">
               <input type="text" name="display_name" value="{{ user.display_name }}"
                      placeholder="Display name" style="font-size:12px;" />
+              <input type="text" name="cf_handle" value="{{ user.codeforces_handle }}"
+                     placeholder="Codeforces handle" style="font-size:12px;" />
               <input type="text" name="atcoder_handle" value="{{ user.atcoder_handle or '' }}"
                      placeholder="AtCoder handle (optional)" style="font-size:12px;" />
               <button type="submit" class="btn btn-green" style="font-size:12px; align-self:flex-start;">Save</button>

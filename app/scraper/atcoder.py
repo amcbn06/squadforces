@@ -7,12 +7,22 @@ AC_PROBLEMS_BASE = "https://kenkoooo.com/atcoder"
 
 
 async def get_user_submissions(handle: str, from_epoch: int = 0) -> list[dict]:
-    """Return all submissions for a user since from_epoch (unix timestamp)."""
+    """Return all submissions for a user. Paginates automatically (kenkoooo returns max 500/page)."""
     url = f"{AC_PROBLEMS_BASE}/atcoder-api/v3/user/submissions"
+    all_subs: list[dict] = []
+    epoch = from_epoch
     async with httpx.AsyncClient(timeout=20) as client:
-        resp = await client.get(url, params={"user": handle, "from_second": from_epoch})
-    resp.raise_for_status()
-    return resp.json()
+        while True:
+            resp = await client.get(url, params={"user": handle, "from_second": epoch})
+            resp.raise_for_status()
+            batch = resp.json()
+            if not batch:
+                break
+            all_subs.extend(batch)
+            if len(batch) < 500:
+                break
+            epoch = max(s.get("epoch_second", 0) for s in batch) + 1
+    return all_subs
 
 
 async def get_contest_results(contest_id: str, handle: str) -> dict:

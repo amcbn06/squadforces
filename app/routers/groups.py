@@ -191,19 +191,32 @@ async def add_member(
 
 @router.post("/{group_id}/members/{user_id}/edit")
 async def edit_member(
+    request: Request,
     group_id: int,
     user_id: int,
     display_name: str = Form(""),
+    cf_handle: str = Form(""),
     atcoder_handle: str = Form(""),
     db: Session = Depends(get_db),
     _=Depends(require_auth),
 ):
     user = db.get(User, user_id)
-    if user:
-        if display_name.strip():
-            user.display_name = display_name.strip()
-        user.atcoder_handle = atcoder_handle.strip() or None
-        db.commit()
+    if not user:
+        return RedirectResponse(f"/groups/{group_id}", status_code=303)
+
+    if display_name.strip():
+        user.display_name = display_name.strip()
+    user.atcoder_handle = atcoder_handle.strip() or None
+
+    new_cf = cf_handle.strip()
+    if new_cf and new_cf != user.codeforces_handle:
+        user_info = await cf.validate_handle(new_cf)
+        if user_info:
+            user.codeforces_handle = new_cf
+            user.cf_rating = user_info.get("rating")
+            user.cf_rank = user_info.get("rank")
+
+    db.commit()
     return RedirectResponse(f"/groups/{group_id}", status_code=303)
 
 

@@ -90,7 +90,7 @@
   <div class="box-header" style="cursor:default; display:flex; align-items:center; justify-content:space-between;">
     Problem matrix
     <button id="rating-toggle" class="btn" style="font-size:11px; padding:2px 8px;"
-            onclick="toggleRatings()">Ascunde rating-uri</button>
+            onclick="toggleRatings()">Hide ratings</button>
   </div>
   <div style="overflow-x:auto;">
     <table class="t" style="min-width:600px;">
@@ -356,7 +356,7 @@ function applyRatings(hidden) {
     el.hidden = hidden;
   });
   var btn = document.getElementById('rating-toggle');
-  if (btn) btn.textContent = hidden ? 'Arată rating-uri' : 'Ascunde rating-uri';
+  if (btn) btn.textContent = hidden ? 'Show ratings' : 'Hide ratings';
 }
 
 // Apply on load
