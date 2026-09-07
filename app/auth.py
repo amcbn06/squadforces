@@ -4,7 +4,7 @@ from fastapi import Request
 from fastapi.responses import RedirectResponse
 
 
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "squadforces2024")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 
 
 def _session_token() -> str:
