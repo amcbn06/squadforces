@@ -27,6 +27,22 @@
   {% endif %}
 </div>
 
+<!-- Streaks -->
+<div style="display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap;">
+  <div class="card" style="padding:12px 20px; min-width:120px; text-align:center;">
+    <div id="streak-current" style="font-size:28px; font-weight:700; line-height:1;">—</div>
+    <div class="meta" style="margin-top:4px;">Current streak</div>
+  </div>
+  <div class="card" style="padding:12px 20px; min-width:120px; text-align:center;">
+    <div id="streak-longest" style="font-size:28px; font-weight:700; line-height:1;">—</div>
+    <div class="meta" style="margin-top:4px;">Longest streak</div>
+  </div>
+  <div class="card" style="padding:12px 20px; min-width:120px; text-align:center;">
+    <div id="streak-total" style="font-size:28px; font-weight:700; line-height:1;">—</div>
+    <div class="meta" style="margin-top:4px;">Active days</div>
+  </div>
+</div>
+
 <!-- Heatmap -->
 <div class="box">
   <div class="box-header" style="cursor:default; display:flex; align-items:center; justify-content:space-between;">
@@ -110,9 +126,39 @@
     </div>`;
   }
 
+  function computeStreaks(data) {
+    const active = d => (data[d]?.cf || 0) + (data[d]?.atc || 0) > 0;
+    const toKey = d => d.toISOString().slice(0, 10);
+
+    // Current streak: walk backwards from today
+    let current = 0;
+    const today = new Date(); today.setHours(0,0,0,0);
+    const d = new Date(today);
+    while (active(toKey(d))) { current++; d.setDate(d.getDate() - 1); }
+
+    // Longest streak + total active days from all data
+    const days = Object.keys(data).filter(active).sort();
+    let longest = 0, run = 0;
+    for (let i = 0; i < days.length; i++) {
+      if (i === 0) { run = 1; }
+      else {
+        const prev = new Date(days[i-1]), cur2 = new Date(days[i]);
+        run = (cur2 - prev) / 86400000 === 1 ? run + 1 : 1;
+      }
+      if (run > longest) longest = run;
+    }
+
+    return { current, longest, total: days.length };
+  }
+
   fetch('/groups/{{ group.id }}/members/{{ user.id }}/activity.json')
     .then(r => r.json())
     .then(data => {
+      const { current, longest, total } = computeStreaks(data);
+      document.getElementById('streak-current').textContent = current;
+      document.getElementById('streak-longest').textContent = longest;
+      document.getElementById('streak-total').textContent = total;
+
       const cur = new Date().getFullYear();
       const sorted = [cur, cur - 1, cur - 2];
       const html = sorted.map(y => buildYear(y, data)).join('');
