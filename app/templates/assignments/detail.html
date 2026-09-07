@@ -1,0 +1,355 @@
+{% extends "base.html" %}
+{% block title %}{{ assignment.title }} — Squadforces{% endblock %}
+
+{% block content %}
+<p style="margin-bottom:6px;"><a href="/groups/{{ group.id }}">← {{ group.name }}</a></p>
+
+<div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:10px;">
+  <div>
+    <h1>{{ assignment.title }}</h1>
+    {% if assignment.week_start_date %}
+    <span class="meta">Week of {{ assignment.week_start_date.strftime('%b %d, %Y') }}</span>
+    {% endif %}
+    {% if assignment.description %}
+    <p style="color:#555; margin-top:3px;">{{ assignment.description }}</p>
+    {% endif %}
+  </div>
+  <div style="display:flex; gap:6px; flex-shrink:0; margin-left:16px;">
+    <form method="post" action="/assignments/{{ assignment.id }}/sync" style="display:inline;">
+      <button class="btn" title="Re-sync all items">↻ Refresh all</button>
+    </form>
+    <form method="post" action="/assignments/{{ assignment.id }}/delete" style="display:inline;"
+          onsubmit="return confirm('Delete this assignment and all its data?')">
+      <button class="btn btn-red">Delete</button>
+    </form>
+  </div>
+</div>
+
+<!-- Add item -->
+<div class="box" style="margin-bottom:12px;">
+  <div class="box-header" onclick="toggleBox(this)">
+    + Add contest or problem <span style="font-weight:normal; font-size:11px; color:#666;">(click to expand)</span>
+  </div>
+  <div class="box-body" {% if not add_error %}style="display:none"{% endif %}>
+    {% if add_error %}
+    <div class="error-msg">{{ add_error }}</div>
+    {% endif %}
+    <form method="post" action="/assignments/{{ assignment.id }}/items/add">
+      <div class="form-row" style="margin-bottom:8px;">
+        <div class="form-col">
+          <label>Type</label>
+          <select name="item_type">
+            <option value="contest">Contest</option>
+            <option value="problem">Standalone problem</option>
+          </select>
+        </div>
+        <div class="form-col">
+          <label>Platform</label>
+          <select name="platform">
+            <option value="codeforces">Codeforces</option>
+            <option value="atcoder">AtCoder</option>
+          </select>
+        </div>
+        <div class="form-col" style="flex:1; min-width:200px;">
+          <label>Contest/Problem URL or ID</label>
+          <input type="text" name="external_id" required style="width:100%;"
+                 placeholder="e.g. 2085 or https://codeforces.com/contest/2085" />
+        </div>
+        <div class="form-col">
+          <label>&nbsp;</label>
+          <button type="submit" class="btn btn-green">Add &amp; sync</button>
+        </div>
+      </div>
+      <p class="meta">
+        CF contest: ID (2085) or full URL. CF problem: 2085A or full URL.
+        AtCoder: slug (abc400) or full URL.
+      </p>
+    </form>
+  </div>
+</div>
+
+{% if not members %}
+<p>No members in this group. <a href="/groups/{{ group.id }}">Add members first.</a></p>
+{% elif not items %}
+<p class="meta">No items yet. Use the form above to add a contest or problem.</p>
+{% else %}
+
+<!-- Legend -->
+<div style="margin-bottom:8px; font-size:11px; color:#555;">
+  Legend:
+  <span class="st-live">✓ live</span> &nbsp;
+  <span class="st-virtual">✓ virtual</span> &nbsp;
+  <span class="st-up">▲ upsolving</span> &nbsp;
+  <span class="st-solo">✓ standalone</span> &nbsp;
+  <span class="wv">WA/TLE… wrong verdict</span> &nbsp;
+  <span class="att">+N wrong before AC</span>
+</div>
+
+<!-- Matrix -->
+<div class="box">
+  <div class="box-header" style="cursor:default;">Problem matrix</div>
+  <div style="overflow-x:auto;">
+    <table class="t" style="min-width:600px;">
+      <thead>
+        <tr>
+          <th class="l" style="min-width:220px; max-width:340px;">Problem / Contest</th>
+          {% for user in members %}
+          <th style="min-width:90px;">
+            <a href="https://codeforces.com/profile/{{ user.codeforces_handle }}" target="_blank"
+               style="color:inherit;">{{ user.display_name }}</a>
+            {% if user.cf_rating %}<br><span class="meta">{{ user.cf_rating }}</span>{% endif %}
+          </th>
+          {% endfor %}
+          <th style="width:56px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in matrix %}
+        {% set item = row.item %}
+        {% set has_sub = item.contest_problems | length > 0 %}
+
+        <tr id="item-{{ item.id }}">
+          <td class="l">
+            {% if item.platform == 'codeforces' %}
+            <img src="/static/cf.png" class="picon" alt="CF" title="Codeforces">
+            {% else %}
+            <img src="/static/ac.png" class="picon" alt="AC" title="AtCoder">
+            {% endif %}
+
+            {% if has_sub %}
+            <button class="toggle" id="tog-{{ item.id }}"
+                    onclick="toggleSub({{ item.id }}, this)">▶</button>
+            {% endif %}
+
+            {% if item.type == 'contest' %}
+              {% if item.platform == 'codeforces' %}
+                <a href="https://codeforces.com/contest/{{ item.external_id }}" target="_blank">
+                  {{ item.title or ('Contest ' ~ item.external_id) }}
+                </a>
+              {% else %}
+                <a href="https://atcoder.jp/contests/{{ item.external_id }}" target="_blank">
+                  {{ item.title or item.external_id }}
+                </a>
+              {% endif %}
+              <span class="meta">(contest{% if has_sub %}, {{ item.contest_problems | length }} problems{% endif %})</span>
+            {% else %}
+              {% set parts = item.external_id.split('/') %}
+              {% if item.platform == 'codeforces' %}
+                <a href="https://codeforces.com/problemset/problem/{{ parts[0] }}/{{ parts[1] if parts|length > 1 else '' }}"
+                   target="_blank">{{ item.title or item.external_id }}</a>
+              {% else %}
+                <a href="https://atcoder.jp/contests/{{ parts[0] }}/tasks/{{ item.external_id }}"
+                   target="_blank">{{ item.title or item.external_id }}</a>
+              {% endif %}
+            {% endif %}
+
+            <span class="dot dot-{{ item.sync_status }}"
+                  title="{{ item.sync_status }}{% if item.sync_error %}: {{ item.sync_error }}{% endif %}"></span>
+            {% if item.sync_error %}
+            <br><span class="meta" style="color:#c00;" title="{{ item.sync_error }}">
+              error: {{ item.sync_error[:80] }}{{ '…' if item.sync_error | length > 80 }}
+            </span>
+            {% endif %}
+          </td>
+
+          {# user cells #}
+          {% for cell in row.cells %}
+          {% set r = cell.result %}
+          <td>
+            {% if item.type == 'contest' %}
+              {% if r and r.participated %}
+                <strong>{{ r.problems_solved_count or 0 }}/{{ r.problems_total_count or '?' }}</strong>
+                {# show solve-type breakdown if data is available #}
+                {% set has_types = cell.live_count or cell.virtual_count or cell.upsolve_count or cell.standalone_count %}
+                {% if has_types %}
+                <br><span style="font-size:11px;">
+                  {% if cell.live_count %}<span class="st-live">✓{{ cell.live_count }}</span> {% endif %}
+                  {% if cell.virtual_count %}<span class="st-virtual">✓{{ cell.virtual_count }}</span> {% endif %}
+                  {% if cell.upsolve_count %}<span class="st-up">▲{{ cell.upsolve_count }}</span> {% endif %}
+                  {% if cell.standalone_count %}<span class="st-solo">✓{{ cell.standalone_count }}</span> {% endif %}
+                </span>
+                {% endif %}
+                {% if r.rank %}<br><span class="meta">#{{ r.rank }}</span>{% endif %}
+                {% if r.rating_change is not none %}
+                <br><span class="{{ 'r-up' if r.rating_change > 0 else 'r-dn' if r.rating_change < 0 else 'meta' }}">
+                  {{ '+' if r.rating_change > 0 }}{{ r.rating_change }}
+                  {% if r.new_rating %}(→{{ r.new_rating }}){% endif %}
+                </span>
+                {% endif %}
+              {% else %}
+                <span style="color:#ccc;">—</span>
+              {% endif %}
+            {% else %}
+              {% if r and r.solved %}<span class="solved">✓</span>
+              {% elif r and r.solved == false %}<span style="color:#ccc;">—</span>
+              {% else %}<span style="color:#ddd;">?</span>{% endif %}
+            {% endif %}
+          </td>
+          {% endfor %}
+
+          {# actions #}
+          <td>
+            <form method="post" action="/assignments/{{ assignment.id }}/items/{{ item.id }}/sync"
+                  style="display:inline;">
+              <button class="btn" style="padding:1px 5px;" title="Sync now">↻</button>
+            </form>
+            <form method="post" action="/assignments/{{ assignment.id }}/items/{{ item.id }}/delete"
+                  style="display:inline;" onsubmit="return confirm('Remove?')">
+              <button class="del-btn" title="Remove">×</button>
+            </form>
+          </td>
+        </tr>
+
+        {# contest sub-rows (per problem) #}
+        {% if has_sub %}
+        {% for cp in item.contest_problems | sort(attribute='index') %}
+        <tr class="sub" data-parent="{{ item.id }}" style="display:none;">
+          <td class="l" style="padding-left:30px;">
+            {% if item.platform == 'codeforces' %}
+            <img src="/static/cf.png" class="picon" alt="CF">
+            <a href="https://codeforces.com/problemset/problem/{{ item.external_id }}/{{ cp.index }}"
+               target="_blank">{{ cp.index }}. {{ cp.name }}</a>
+            {% else %}
+            <img src="/static/ac.png" class="picon" alt="AC">
+            <a href="https://atcoder.jp/contests/{{ item.external_id }}/tasks/{{ cp.platform_problem_id }}"
+               target="_blank">{{ cp.index }}. {{ cp.name }}</a>
+            {% endif %}
+            {% if cp.rating %}<span class="meta">[{{ cp.rating }}]</span>{% endif %}
+          </td>
+          {% for cell in row.cells %}
+          {% set pr = cell.problem_results.get(cp.id) %}
+          <td>
+            {% if pr and pr.solved %}
+              {# solve-type badge #}
+              {% if pr.solve_type == 'live' %}
+                <span class="st-live" title="Solved during live contest">✓</span>
+              {% elif pr.solve_type == 'virtual' %}
+                <span class="st-virtual" title="Solved during virtual participation">✓</span>
+              {% elif pr.solve_type == 'upsolving' %}
+                <span class="st-up" title="Upsolved after contest">▲</span>
+              {% elif pr.solve_type == 'standalone' %}
+                <span class="st-solo" title="Standalone practice solve">✓</span>
+              {% else %}
+                <span class="solved">✓</span>
+              {% endif %}
+              {# wrong attempts before AC #}
+              {% if pr.attempts %}<span class="att">+{{ pr.attempts }}</span>{% endif %}
+            {% elif pr and pr.best_wrong_verdict %}
+              <span class="wv">{{ pr.best_wrong_verdict }}</span>
+            {% else %}
+              <span style="color:#ddd;">·</span>
+            {% endif %}
+          </td>
+          {% endfor %}
+          <td></td>
+        </tr>
+        {% endfor %}
+        {% endif %}
+
+        {% endfor %}
+
+        {# totals row #}
+        <tr class="total">
+          <td class="l">Total solved</td>
+          {% for user in members %}
+          <td>
+            {% set ns = namespace(s=0, t=0) %}
+            {% for row in matrix %}
+              {% set cell = row.cells | selectattr('user.id', 'eq', user.id) | first %}
+              {% if row.item.type == 'problem' %}
+                {% set ns.t = ns.t + 1 %}
+                {% if cell and cell.result and cell.result.solved %}{% set ns.s = ns.s + 1 %}{% endif %}
+              {% elif row.item.type == 'contest' and cell and cell.result %}
+                {% set ns.t = ns.t + (cell.result.problems_total_count or 0) %}
+                {% set ns.s = ns.s + (cell.result.problems_solved_count or 0) %}
+              {% endif %}
+            {% endfor %}
+            {{ ns.s }}/{{ ns.t }}
+          </td>
+          {% endfor %}
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# Upsolving stats — merged across all contests in this assignment #}
+{% set has_contest = matrix | selectattr('item.type', 'eq', 'contest') | selectattr('item.last_synced_at') | list | length > 0 %}
+{% if has_contest %}
+<div class="box" style="margin-bottom:10px;">
+  <div class="box-header" onclick="toggleBox(this)">
+    Upsolving stats
+    <span style="font-weight:normal; font-size:11px; color:#666;">(click to expand)</span>
+  </div>
+  <div class="box-body" style="display:none;">
+    <table class="t" style="width:auto;">
+      <thead>
+        <tr>
+          <th class="l" style="min-width:120px;">User</th>
+          <th style="min-width:52px;" title="Solved during live contest"><span class="st-live">✓ Live</span></th>
+          <th style="min-width:52px;" title="Solved during virtual participation"><span class="st-virtual">✓ Virtual</span></th>
+          <th style="min-width:62px;" title="Solved after participating"><span class="st-up">▲ Upsolved</span></th>
+          <th style="min-width:62px;" title="Practice without participating"><span class="st-solo">✓ Standalone</span></th>
+          <th style="min-width:56px;" title="Attempted but not solved"><span class="wv">Attempted</span></th>
+          <th style="min-width:44px;">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for user in members %}
+        {% set ns = namespace(live=0, virt=0, up=0, solo=0, att=0, total=0) %}
+        {% for row in matrix %}
+          {% if row.item.type == 'contest' and row.item.last_synced_at %}
+            {% set cell = row.cells | selectattr('user.id', 'eq', user.id) | first %}
+            {% if cell %}
+              {% set ns.live  = ns.live  + cell.live_count %}
+              {% set ns.virt  = ns.virt  + cell.virtual_count %}
+              {% set ns.up    = ns.up    + cell.upsolve_count %}
+              {% set ns.solo  = ns.solo  + cell.standalone_count %}
+              {% set ns.att   = ns.att   + cell.attempted_count %}
+              {% set ns.total = ns.total + (row.item.contest_problems | length) %}
+            {% endif %}
+          {% endif %}
+        {% endfor %}
+        <tr>
+          <td class="l">{{ user.display_name }}</td>
+          <td><span class="st-live">{{ ns.live }}</span></td>
+          <td><span class="st-virtual">{{ ns.virt }}</span></td>
+          <td><span class="st-up">{{ ns.up }}</span></td>
+          <td><span class="st-solo">{{ ns.solo }}</span></td>
+          <td><span class="wv">{{ ns.att }}</span></td>
+          <td>{{ ns.total }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="meta" style="margin-top:6px;">
+      Totals across all contests in this assignment. "Attempted" = wrong submissions, no AC.
+    </p>
+  </div>
+</div>
+{% endif %}
+
+{% set synced = items | selectattr('last_synced_at') | list %}
+{% if synced %}
+<p class="meta" style="text-align:right; margin-top:4px;">
+  Last synced: {{ (synced | sort(attribute='last_synced_at') | last).last_synced_at.strftime('%Y-%m-%d %H:%M UTC') }}
+</p>
+{% endif %}
+
+{% endif %}
+
+<script>
+function toggleBox(header) {
+  var body = header.nextElementSibling;
+  body.style.display = body.style.display === 'none' ? 'block' : 'none';
+}
+
+function toggleSub(itemId, btn) {
+  var rows = document.querySelectorAll('[data-parent="' + itemId + '"]');
+  var showing = rows.length && rows[0].style.display !== 'none';
+  rows.forEach(function(r) { r.style.display = showing ? 'none' : ''; });
+  btn.textContent = showing ? '▶' : '▼';
+}
+</script>
+{% endblock %}

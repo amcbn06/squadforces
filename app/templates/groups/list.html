@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Groups — Squadforces{% endblock %}
+
+{% block content %}
+<div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:10px;">
+  <h1>Groups</h1>
+  <a href="/groups/new" class="btn btn-green">+ New group</a>
+</div>
+
+{% if groups %}
+<div class="card-grid">
+  {% for group in groups %}
+  <a href="/groups/{{ group.id }}" class="card">
+    <h3>{{ group.name }}</h3>
+    {% if group.description %}
+    <p class="meta" style="margin-bottom:4px;">{{ group.description }}</p>
+    {% endif %}
+    <span class="meta">
+      {{ group.memberships | length }} member{{ 's' if group.memberships | length != 1 }} ·
+      {{ group.assignments | length }} assignment{{ 's' if group.assignments | length != 1 }}
+    </span>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="box">
+  <div class="box-body" style="text-align:center; padding: 32px;">
+    <p style="color:#888;">No groups yet.</p>
+    <a href="/groups/new" class="btn btn-green" style="margin-top:8px;">Create a group</a>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}New Assignment — Squadforces{% endblock %}
+
+{% block content %}
+<p style="margin-bottom:8px;"><a href="/groups/{{ group.id }}">← {{ group.name }}</a></p>
+<h1 style="margin-bottom:12px;">New assignment</h1>
+
+{% if error %}
+<div class="error-msg">{{ error }}</div>
+{% endif %}
+
+<div class="box" style="max-width:520px;">
+  <div class="box-body">
+    <form method="post" action="/assignments/new">
+      <input type="hidden" name="group_id" value="{{ group.id }}" />
+
+      <div class="form-col" style="margin-bottom:10px; width:100%;">
+        <label>Title *</label>
+        <input type="text" name="title" required autofocus style="width:100%;"
+               placeholder="e.g. Week 4 — Dynamic Programming" />
+      </div>
+
+      <div class="form-col" style="margin-bottom:10px;">
+        <label>Week start date</label>
+        <input type="date" name="week_start_date" />
+      </div>
+
+      <div class="form-col" style="margin-bottom:14px; width:100%;">
+        <label>Description</label>
+        <textarea name="description" rows="3" style="width:100%;"
+                  placeholder="Topics, resources, notes…"></textarea>
+      </div>
+
+      <div style="display:flex; gap:8px;">
+        <button type="submit" class="btn btn-green">Create</button>
+        <a href="/groups/{{ group.id }}" class="btn">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

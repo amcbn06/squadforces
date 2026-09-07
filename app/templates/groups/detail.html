@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}{{ group.name }} — Squadforces{% endblock %}
+
+{% block content %}
+<p style="margin-bottom:6px;"><a href="/groups/">← Groups</a></p>
+
+<div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:12px;">
+  <div>
+    <h1>{{ group.name }}</h1>
+    {% if group.description %}<p class="meta">{{ group.description }}</p>{% endif %}
+  </div>
+  <div style="display:flex; gap:6px;">
+    <a href="/groups/{{ group.id }}/edit-page" class="btn">Edit</a>
+    <form method="post" action="/groups/{{ group.id }}/delete" style="display:inline;"
+          onsubmit="return confirm('Delete this group and all its assignments?')">
+      <button class="btn btn-red">Delete</button>
+    </form>
+  </div>
+</div>
+
+<div style="display:grid; grid-template-columns:260px 1fr; gap:12px;">
+
+  <!-- Members -->
+  <div>
+    <div class="box">
+      <div class="box-header" style="cursor:default;">
+        Members <span class="meta" style="font-weight:normal;">({{ members | length }})</span>
+      </div>
+      <div class="box-body" style="padding:10px;">
+        {% if error %}
+        <div class="error-msg">{{ error }}</div>
+        {% endif %}
+        <form method="post" action="/groups/{{ group.id }}/members/add"
+              style="display:flex; flex-direction:column; gap:5px; margin-bottom:10px;">
+          <input type="text" name="cf_handle" required placeholder="Codeforces handle" />
+          <input type="text" name="display_name" placeholder="Display name (optional)" />
+          <button type="submit" class="btn btn-green">Add member</button>
+        </form>
+
+        {% if members %}
+        <ul class="member-list">
+          {% for user in members %}
+          <li>
+            <div>
+              <strong>{{ user.display_name }}</strong>
+              {% if user.cf_rating %}
+              <span class="meta">({{ user.cf_rating }})</span>
+              {% endif %}<br>
+              <a href="https://codeforces.com/profile/{{ user.codeforces_handle }}" target="_blank"
+                 class="meta">CF: {{ user.codeforces_handle }}</a>
+              {% if user.atcoder_handle %}
+              · <span class="meta">AC: {{ user.atcoder_handle }}</span>
+              {% endif %}
+            </div>
+            <form method="post" action="/groups/{{ group.id }}/members/{{ user.id }}/remove"
+                  onsubmit="return confirm('Remove {{ user.display_name }}?')">
+              <button class="del-btn" title="Remove">×</button>
+            </form>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="meta" style="text-align:center; padding:10px 0;">No members yet.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Assignments -->
+  <div>
+    <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:6px;">
+      <h2>Assignments</h2>
+      <a href="/assignments/new?group_id={{ group.id }}" class="btn btn-green">+ New assignment</a>
+    </div>
+
+    {% if group.assignments %}
+    {% for assignment in group.assignments | sort(attribute='week_start_date', reverse=True) %}
+    <a href="/assignments/{{ assignment.id }}" class="card" style="margin-bottom:6px; display:block;">
+      <div style="display:flex; justify-content:space-between; align-items:baseline;">
+        <strong>{{ assignment.title }}</strong>
+        <span class="meta">{{ assignment.items | length }} item{{ 's' if assignment.items | length != 1 }}</span>
+      </div>
+      {% if assignment.week_start_date %}
+      <span class="meta">{{ assignment.week_start_date.strftime('%b %d, %Y') }}</span>
+      {% endif %}
+    </a>
+    {% endfor %}
+    {% else %}
+    <div class="box">
+      <div class="box-body" style="text-align:center; padding:24px; color:#888;">
+        No assignments yet.
+        <a href="/assignments/new?group_id={{ group.id }}">Create one</a>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+
+{% if leaderboard %}
+<div class="box" style="margin-top:12px;">
+  <div class="box-header" style="cursor:default;">
+    Leaderboard — last 30 days
+  </div>
+  <div class="box-body" style="padding:0;">
+    <table class="t">
+      <thead>
+        <tr>
+          <th style="width:32px;">#</th>
+          <th class="l">Member</th>
+          <th>Problems solved</th>
+          <th>Contests (live/virtual)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in leaderboard %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td class="l">
+            <strong>{{ row.user.display_name }}</strong>
+            {% if row.user.cf_rating %}<span class="meta"> ({{ row.user.cf_rating }})</span>{% endif %}
+          </td>
+          <td>{% if row.problems_solved %}<strong>{{ row.problems_solved }}</strong>{% else %}<span style="color:#ccc;">0</span>{% endif %}</td>
+          <td>{% if row.contests_done %}<strong>{{ row.contests_done }}</strong>{% else %}<span style="color:#ccc;">0</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

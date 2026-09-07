@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if group else 'New' }} Group — Squadforces{% endblock %}
+
+{% block content %}
+<p style="margin-bottom:8px;"><a href="/groups/">← Groups</a></p>
+<h1 style="margin-bottom:12px;">{{ 'Edit group' if group else 'New group' }}</h1>
+
+{% if error %}
+<div class="error-msg">{{ error }}</div>
+{% endif %}
+
+<div class="box" style="max-width:480px;">
+  <div class="box-body">
+    <form method="post" action="{{ '/groups/' ~ group.id ~ '/edit' if group else '/groups/new' }}">
+      <div class="form-col" style="margin-bottom:10px; width:100%;">
+        <label>Group name *</label>
+        <input type="text" name="name" required autofocus style="width:100%;"
+               value="{{ group.name if group else '' }}"
+               placeholder="e.g. Advanced Track — Autumn 2024" />
+      </div>
+      <div class="form-col" style="margin-bottom:14px; width:100%;">
+        <label>Description</label>
+        <textarea name="description" rows="3" style="width:100%;">{{ group.description if group else '' }}</textarea>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button type="submit" class="btn btn-green">{{ 'Save' if group else 'Create' }}</button>
+        <a href="{{ '/groups/' ~ group.id if group else '/groups/' }}" class="btn">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

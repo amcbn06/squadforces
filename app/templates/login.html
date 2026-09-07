@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign in — Squadforces</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<div id="login-wrap">
+  <div id="login-box">
+    <h1>Squadforces</h1>
+
+    {% if error %}
+    <div class="error-msg">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/login">
+      <input type="hidden" name="next" value="{{ next or '/' }}" />
+      <div class="form-col" style="margin-bottom: 10px;">
+        <label>Admin password</label>
+        <input type="password" name="password" autofocus required />
+      </div>
+      <button type="submit" class="btn btn-green">Sign in</button>
+    </form>
+  </div>
+</div>
+</body>
+</html>
