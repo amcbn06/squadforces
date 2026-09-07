@@ -427,7 +427,7 @@ async def _sync_ac_contest(
         solved_count = 0
         result.problems_total_count = len(tasks)
         result.last_synced_at = datetime.utcnow()
-        result.participated = True
+        result.participated = False
 
         for idx, cp in existing_problems.items():
             is_solved = cp.platform_problem_id in ac_solved
@@ -450,6 +450,7 @@ async def _sync_ac_contest(
         try:
             contest_result = await ac.get_contest_results(item.external_id, user.atcoder_handle)
             if contest_result:
+                result.participated = True
                 result.old_rating = contest_result.get("OldRating")
                 result.new_rating = contest_result.get("NewRating")
                 result.rating_change = contest_result.get("InnerPerformance")
