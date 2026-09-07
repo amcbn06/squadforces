@@ -406,6 +406,8 @@ async def _sync_ac_contest(
             existing_problems[idx] = cp
         else:
             existing_problems[idx].name = name
+            if task.get("difficulty"):
+                existing_problems[idx].rating = int(round(task["difficulty"]))
 
     for user in members:
         if not user.atcoder_handle:

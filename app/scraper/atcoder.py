@@ -42,14 +42,23 @@ async def get_contest_results(contest_id: str, handle: str) -> dict:
 
 
 async def get_contest_tasks(contest_id: str) -> list[dict]:
-    """Return list of tasks in a contest, using AtCoder Problems info endpoint."""
-    url = f"{AC_PROBLEMS_BASE}/resources/problems.json"
+    """Return list of tasks in a contest with difficulty ratings from kenkoooo."""
     async with httpx.AsyncClient(timeout=20) as client:
-        resp = await client.get(url)
-    resp.raise_for_status()
-    all_problems = resp.json()
+        problems_resp = await client.get(f"{AC_PROBLEMS_BASE}/resources/problems.json")
+        models_resp = await client.get(f"{AC_PROBLEMS_BASE}/resources/problem-models.json")
+    problems_resp.raise_for_status()
+    all_problems = problems_resp.json()
     tasks = [p for p in all_problems if p.get("contest_id") == contest_id]
     tasks.sort(key=lambda p: p.get("id", ""))
+
+    if models_resp.status_code == 200:
+        models = models_resp.json()
+        for t in tasks:
+            model = models.get(t.get("id", ""), {})
+            diff = model.get("difficulty")
+            if diff is not None:
+                t["difficulty"] = int(round(diff))
+
     return tasks
 
 
