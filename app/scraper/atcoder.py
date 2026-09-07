@@ -57,7 +57,7 @@ async def get_contest_tasks(contest_id: str) -> list[dict]:
             model = models.get(t.get("id", ""), {})
             diff = model.get("difficulty")
             if diff is not None:
-                t["difficulty"] = int(round(diff))
+                t["difficulty"] = max(1, int(round(diff)))
 
     return tasks
 
