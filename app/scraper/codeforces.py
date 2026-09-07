@@ -186,6 +186,16 @@ async def get_contest_results_for_handles(contest_id: str, handles: list[str]) -
     return result
 
 
+async def get_all_user_submissions(handle: str, max_count: int = 3000) -> list[dict]:
+    """Return recent submissions for a user (unsigned, capped at max_count)."""
+    try:
+        return await _call("user.status", {
+            "handle": handle, "from": "1", "count": str(max_count),
+        }, signed=False)
+    except Exception:
+        return []
+
+
 async def get_user_rating_history(handle: str) -> list[dict]:
     """Return rating change history for a user."""
     result = await _call("user.rating", {"handle": handle})

@@ -1,7 +1,7 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Request, Form, BackgroundTasks
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
@@ -9,6 +9,7 @@ from app.database import get_db
 from app.models import Group, User, GroupMembership, Assignment, AssignmentItem, Result, ProblemResult
 from app.auth import require_auth
 from app.scraper import codeforces as cf
+from app.scraper import atcoder as ac
 
 router = APIRouter(prefix="/groups", tags=["groups"])
 templates = Jinja2Templates(directory="app/templates")
@@ -229,3 +230,63 @@ async def remove_member(
         db.delete(membership)
         db.commit()
     return RedirectResponse(f"/groups/{group_id}", status_code=303)
+
+
+@router.get("/{group_id}/members/{user_id}", response_class=HTMLResponse)
+async def member_profile(
+    request: Request, group_id: int, user_id: int,
+    db: Session = Depends(get_db), _=Depends(require_auth),
+):
+    group = db.get(Group, group_id)
+    user = db.get(User, user_id)
+    if not group or not user:
+        return HTMLResponse("Not found", status_code=404)
+    return templates.TemplateResponse(
+        "groups/member.html",
+        {"request": request, "group": group, "user": user},
+    )
+
+
+@router.get("/{group_id}/members/{user_id}/activity.json")
+async def member_activity(
+    group_id: int, user_id: int,
+    db: Session = Depends(get_db), _=Depends(require_auth),
+):
+    """Return daily submission counts for CF and AtCoder (last 2 years)."""
+    user = db.get(User, user_id)
+    if not user:
+        return JSONResponse({})
+
+    cutoff_ts = (datetime.now(timezone.utc) - timedelta(days=730)).timestamp()
+    activity: dict[str, dict] = {}
+
+    def add(date_str: str, platform: str) -> None:
+        if date_str not in activity:
+            activity[date_str] = {"cf": 0, "atc": 0}
+        activity[date_str][platform] += 1
+
+    if user.codeforces_handle:
+        try:
+            subs = await cf.get_all_user_submissions(user.codeforces_handle, 3000)
+            for s in subs:
+                ts = s.get("creationTimeSeconds", 0)
+                if ts < cutoff_ts:
+                    continue
+                date = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
+                add(date, "cf")
+        except Exception:
+            pass
+
+    if user.atcoder_handle:
+        try:
+            subs = await ac.get_user_submissions(user.atcoder_handle)
+            for s in subs:
+                ts = s.get("epoch_second", 0)
+                if ts < cutoff_ts:
+                    continue
+                date = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
+                add(date, "atc")
+        except Exception:
+            pass
+
+    return JSONResponse(activity)

@@ -44,7 +44,7 @@
           <li style="flex-direction:column; align-items:stretch; gap:4px;">
             <div style="display:flex; align-items:center; justify-content:space-between;">
               <div>
-                <strong>{{ user.display_name }}</strong>
+                <a href="/groups/{{ group.id }}/members/{{ user.id }}" style="font-weight:bold; color:inherit; text-decoration:none;">{{ user.display_name }}</a>
                 {% if user.cf_rating %}
                 <span class="meta">({{ user.cf_rating }})</span>
                 {% endif %}<br>
@@ -136,7 +136,7 @@
         <tr>
           <td>{{ loop.index }}</td>
           <td class="l">
-            <strong>{{ row.user.display_name }}</strong>
+            <a href="/groups/{{ group.id }}/members/{{ row.user.id }}" style="color:inherit; text-decoration:none;"><strong>{{ row.user.display_name }}</strong></a>
             {% if row.user.cf_rating %}<span class="meta"> ({{ row.user.cf_rating }})</span>{% endif %}
           </td>
           <td>{% if row.problems_solved %}<strong>{{ row.problems_solved }}</strong>{% else %}<span style="color:#ccc;">0</span>{% endif %}</td>
