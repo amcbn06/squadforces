@@ -15,6 +15,7 @@ from app.database import engine, Base, get_db
 from app import models  # noqa: F401 — registers models with Base
 from app.auth import require_auth, login_response, logout_response, ADMIN_PASSWORD, is_authenticated
 from app.routers import groups, assignments
+from app import scheduler
 
 
 @asynccontextmanager
@@ -34,7 +35,9 @@ async def lifespan(app: FastAPI):
                 conn.commit()
             except Exception:
                 pass  # column already exists
+    scheduler.start()
     yield
+    scheduler.stop()
 
 
 app = FastAPI(title="Squadforces", lifespan=lifespan)
