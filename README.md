@@ -8,7 +8,7 @@
     <img src="https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white" alt="FastAPI">
     <img src="https://img.shields.io/badge/SQLite-003B57?logo=sqlite&logoColor=white" alt="SQLite">
     <img src="https://img.shields.io/badge/Railway-deployed-0B0D0E?logo=railway&logoColor=white" alt="Railway">
-    <img src="https://img.shields.io/github/stars/amcbn06/squadforces?style=social" alt="GitHub stars">
+    <img src="https://img.shields.io/github/stars/amcbn06/squadforces?style=social&cacheSeconds=1" alt="GitHub stars">
     <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License">
   </p>
 
