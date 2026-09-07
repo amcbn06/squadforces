@@ -389,17 +389,23 @@ async def _sync_ac_contest(
     for task in tasks:
         task_id = task.get("id", "")
         idx = task_id.split("_")[-1].upper() if "_" in task_id else task_id[-1].upper()
+        raw_title = task.get("title", task_id)
+        # kenkoooo titles include a leading "X. " prefix — strip it
+        import re as _re
+        name = _re.sub(r'^[A-Za-z]\.\s*', '', raw_title) or raw_title
         if idx not in existing_problems:
             cp = models.ContestProblem(
                 assignment_item_id=item.id,
                 platform_problem_id=task_id,
                 index=idx,
-                name=task.get("title", task_id),
+                name=name,
                 rating=task.get("difficulty"),
             )
             db.add(cp)
             db.flush()
             existing_problems[idx] = cp
+        else:
+            existing_problems[idx].name = name
 
     for user in members:
         if not user.atcoder_handle:
