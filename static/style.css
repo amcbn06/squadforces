@@ -32,7 +32,8 @@ a:hover { text-decoration: underline; }
   color: #d0d8e8;
   padding: 9px 12px;
   font-size: 13px;
-  display: block;
+  display: flex;
+  align-items: center;
 }
 #nav a:hover, #nav a.active {
   background: #1a2030;
