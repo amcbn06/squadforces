@@ -138,6 +138,7 @@ async def add_member(
     request: Request,
     group_id: int,
     cf_handle: str = Form(...),
+    atcoder_handle: str = Form(""),
     display_name: str = Form(""),
     db: Session = Depends(get_db),
     _=Depends(require_auth),
@@ -163,9 +164,12 @@ async def add_member(
                 codeforces_handle=cf_handle,
                 cf_rating=user_info.get("rating"),
                 cf_rank=user_info.get("rank"),
+                atcoder_handle=atcoder_handle.strip() or None,
             )
             db.add(user)
             db.flush()
+        elif atcoder_handle.strip():
+            user.atcoder_handle = atcoder_handle.strip()
 
         # Add to group if not already
         existing = db.query(GroupMembership).filter_by(group_id=group_id, user_id=user.id).first()
@@ -183,6 +187,24 @@ async def add_member(
         {"request": request, "group": group, "members": members, "error": error},
         status_code=422,
     )
+
+
+@router.post("/{group_id}/members/{user_id}/edit")
+async def edit_member(
+    group_id: int,
+    user_id: int,
+    display_name: str = Form(""),
+    atcoder_handle: str = Form(""),
+    db: Session = Depends(get_db),
+    _=Depends(require_auth),
+):
+    user = db.get(User, user_id)
+    if user:
+        if display_name.strip():
+            user.display_name = display_name.strip()
+        user.atcoder_handle = atcoder_handle.strip() or None
+        db.commit()
+    return RedirectResponse(f"/groups/{group_id}", status_code=303)
 
 
 @router.post("/{group_id}/members/{user_id}/remove")

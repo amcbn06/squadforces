@@ -33,6 +33,7 @@
         <form method="post" action="/groups/{{ group.id }}/members/add"
               style="display:flex; flex-direction:column; gap:5px; margin-bottom:10px;">
           <input type="text" name="cf_handle" required placeholder="Codeforces handle" />
+          <input type="text" name="atcoder_handle" placeholder="AtCoder handle (optional)" />
           <input type="text" name="display_name" placeholder="Display name (optional)" />
           <button type="submit" class="btn btn-green">Add member</button>
         </form>
@@ -40,21 +41,37 @@
         {% if members %}
         <ul class="member-list">
           {% for user in members %}
-          <li>
-            <div>
-              <strong>{{ user.display_name }}</strong>
-              {% if user.cf_rating %}
-              <span class="meta">({{ user.cf_rating }})</span>
-              {% endif %}<br>
-              <a href="https://codeforces.com/profile/{{ user.codeforces_handle }}" target="_blank"
-                 class="meta">CF: {{ user.codeforces_handle }}</a>
-              {% if user.atcoder_handle %}
-              · <span class="meta">AC: {{ user.atcoder_handle }}</span>
-              {% endif %}
+          <li style="flex-direction:column; align-items:stretch; gap:4px;">
+            <div style="display:flex; align-items:center; justify-content:space-between;">
+              <div>
+                <strong>{{ user.display_name }}</strong>
+                {% if user.cf_rating %}
+                <span class="meta">({{ user.cf_rating }})</span>
+                {% endif %}<br>
+                <a href="https://codeforces.com/profile/{{ user.codeforces_handle }}" target="_blank"
+                   class="meta">CF: {{ user.codeforces_handle }}</a>
+                {% if user.atcoder_handle %}
+                · <a href="https://atcoder.jp/users/{{ user.atcoder_handle }}" target="_blank"
+                     class="meta">AC: {{ user.atcoder_handle }}</a>
+                {% endif %}
+              </div>
+              <div style="display:flex; gap:4px;">
+                <button class="btn" style="padding:1px 7px; font-size:11px;"
+                        onclick="toggleEdit({{ user.id }})">✎</button>
+                <form method="post" action="/groups/{{ group.id }}/members/{{ user.id }}/remove"
+                      onsubmit="return confirm('Remove {{ user.display_name }}?')" style="margin:0;">
+                  <button class="del-btn" title="Remove">×</button>
+                </form>
+              </div>
             </div>
-            <form method="post" action="/groups/{{ group.id }}/members/{{ user.id }}/remove"
-                  onsubmit="return confirm('Remove {{ user.display_name }}?')">
-              <button class="del-btn" title="Remove">×</button>
+            <form id="edit-{{ user.id }}" method="post"
+                  action="/groups/{{ group.id }}/members/{{ user.id }}/edit"
+                  style="display:none; flex-direction:column; gap:4px; padding-top:4px;">
+              <input type="text" name="display_name" value="{{ user.display_name }}"
+                     placeholder="Display name" style="font-size:12px;" />
+              <input type="text" name="atcoder_handle" value="{{ user.atcoder_handle or '' }}"
+                     placeholder="AtCoder handle (optional)" style="font-size:12px;" />
+              <button type="submit" class="btn btn-green" style="font-size:12px; align-self:flex-start;">Save</button>
             </form>
           </li>
           {% endfor %}
@@ -129,4 +146,11 @@
   </div>
 </div>
 {% endif %}
+
+<script>
+function toggleEdit(userId) {
+  var form = document.getElementById('edit-' + userId);
+  form.style.display = form.style.display === 'none' ? 'flex' : 'none';
+}
+</script>
 {% endblock %}

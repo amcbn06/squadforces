@@ -87,7 +87,11 @@
 
 <!-- Matrix -->
 <div class="box">
-  <div class="box-header" style="cursor:default;">Problem matrix</div>
+  <div class="box-header" style="cursor:default; display:flex; align-items:center; justify-content:space-between;">
+    Problem matrix
+    <button id="rating-toggle" class="btn" style="font-size:11px; padding:2px 8px;"
+            onclick="toggleRatings()">Ascunde rating-uri</button>
+  </div>
   <div style="overflow-x:auto;">
     <table class="t" style="min-width:600px;">
       <thead>
@@ -214,7 +218,7 @@
             <a href="https://atcoder.jp/contests/{{ item.external_id }}/tasks/{{ cp.platform_problem_id }}"
                target="_blank">{{ cp.index }}. {{ cp.name }}</a>
             {% endif %}
-            {% if cp.rating %}<span class="meta">[{{ cp.rating }}]</span>{% endif %}
+            {% if cp.rating %}<span class="meta prob-rating">[{{ cp.rating }}]</span>{% endif %}
           </td>
           {% for cell in row.cells %}
           {% set pr = cell.problem_results.get(cp.id) %}
@@ -340,6 +344,24 @@
 {% endif %}
 
 <script>
+function toggleRatings() {
+  var hidden = localStorage.getItem('ratingsHidden') === '1';
+  hidden = !hidden;
+  localStorage.setItem('ratingsHidden', hidden ? '1' : '0');
+  applyRatings(hidden);
+}
+
+function applyRatings(hidden) {
+  document.querySelectorAll('.prob-rating').forEach(function(el) {
+    el.hidden = hidden;
+  });
+  var btn = document.getElementById('rating-toggle');
+  if (btn) btn.textContent = hidden ? 'Arată rating-uri' : 'Ascunde rating-uri';
+}
+
+// Apply on load
+applyRatings(localStorage.getItem('ratingsHidden') === '1');
+
 function toggleBox(header) {
   var body = header.nextElementSibling;
   body.style.display = body.style.display === 'none' ? 'block' : 'none';

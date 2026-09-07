@@ -377,7 +377,13 @@ async def _sync_ac_contest(
 ) -> None:
     tasks = await ac.get_contest_tasks(item.external_id)
     if not item.title:
-        item.title = item.external_id.upper()
+        import re as _re
+        _m = _re.match(r'^(abc|arc|agc)(\d+)$', item.external_id.lower())
+        if _m:
+            _names = {"abc": "AtCoder Beginner Contest", "arc": "AtCoder Regular Contest", "agc": "AtCoder Grand Contest"}
+            item.title = f"{_names[_m.group(1)]} {int(_m.group(2))}"
+        else:
+            item.title = item.external_id.upper()
 
     existing_problems = {cp.index: cp for cp in item.contest_problems}
     for task in tasks:
