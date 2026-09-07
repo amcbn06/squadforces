@@ -359,8 +359,9 @@ function applyRatings(hidden) {
   if (btn) btn.textContent = hidden ? 'Show ratings' : 'Hide ratings';
 }
 
-// Apply on load
-applyRatings(localStorage.getItem('ratingsHidden') === '1');
+// Apply on load — default hidden unless user explicitly showed them
+var _stored = localStorage.getItem('ratingsHidden');
+applyRatings(_stored === null ? true : _stored === '1');
 
 function toggleBox(header) {
   var body = header.nextElementSibling;
