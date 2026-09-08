@@ -1,10 +1,13 @@
 """Sync service — fetches data from CF/AtCoder APIs and writes Results to DB."""
+import asyncio
 from collections import defaultdict
 from datetime import datetime
 from sqlalchemy.orm import Session
 from app import models
 from app.scraper import codeforces as cf
 from app.scraper import atcoder as ac
+
+SYNC_TIMEOUT_SECONDS = 300  # 5 minutes hard cap per item
 
 # ── Verdict shortening ────────────────────────────────────────────────────────
 
@@ -138,12 +141,15 @@ async def sync_item(item_id: int, db: Session) -> None:
 
     try:
         if item.platform == "codeforces":
-            await _sync_cf_item(item, db)
+            await asyncio.wait_for(_sync_cf_item(item, db), timeout=SYNC_TIMEOUT_SECONDS)
         elif item.platform == "atcoder":
-            await _sync_ac_item(item, db)
+            await asyncio.wait_for(_sync_ac_item(item, db), timeout=SYNC_TIMEOUT_SECONDS)
 
         item.last_synced_at = datetime.utcnow()
         item.sync_status = "done"
+    except asyncio.TimeoutError:
+        item.sync_status = "error"
+        item.sync_error = f"Sync timed out after {SYNC_TIMEOUT_SECONDS}s"
     except Exception as exc:
         item.sync_status = "error"
         item.sync_error = str(exc)

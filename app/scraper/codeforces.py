@@ -203,15 +203,16 @@ async def get_user_rating_history(handle: str) -> list[dict]:
 
 
 async def get_user_submissions_for_contest(handle: str, contest_id: str) -> list[dict]:
-    """Return all submissions by handle in a specific contest (via user.status)."""
+    """Return submissions by handle in a specific contest using contest.status (fast path)."""
     try:
-        all_subs = await _call("user.status", {"handle": handle, "from": "1", "count": "10000"})
+        return await _call("contest.status", {
+            "contestId": contest_id,
+            "handle": handle,
+            "from": "1",
+            "count": "500",
+        })
     except Exception:
         return []
-    return [
-        s for s in all_subs
-        if str(s.get("problem", {}).get("contestId")) == str(contest_id)
-    ]
 
 
 async def get_problem_solved(handle: str, contest_id: str, problem_index: str) -> bool:
