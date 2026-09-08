@@ -28,86 +28,12 @@ Squadforces helps coaches track competitive programming progress across their en
 - **Assignment matrix** — per-assignment table with every member × every problem; contest rows expand to show per-problem results
 - **Difficulty ratings** — CF rating shown per problem; AtCoder difficulty from kenkoooo's display formula
 - **30-day leaderboard** — problems solved and contests completed per member per group, updated on every sync
-- **Member profiles** — per-member submission heatmap (CF + AtCoder combined), current streak, longest streak
 - **Member management** — add members with Codeforces and AtCoder handles; CF handle is validated against the API; handles editable at any time
-- **Dark mode** — full dark/light theme toggle, persisted per browser
-
-## Architecture
-
-### System overview
-
-```mermaid
-graph TB
-    subgraph Browser
-        UI["Browser"]
-    end
-
-    subgraph App["FastAPI app (single process)"]
-        Routes["Routes\ngroups · assignments · members"]
-        Auth["Auth\ncookie session"]
-        Sync["sync.py\nsync_item()"]
-        Scheduler["APScheduler\nevery 6 h"]
-    end
-
-    subgraph External["External APIs"]
-        CF["Codeforces API\ncontest.standings · contest.status\nuser.rating · user.status"]
-        AC["kenkoooo.com\nAtCoder Problems API\nproblems · submissions · contest history"]
-    end
-
-    DB[("SQLite\nvia SQLAlchemy")]
-
-    UI -->|HTTP| Routes
-    Routes --> Auth
-    Routes -->|BackgroundTask on item add| Sync
-    Scheduler -->|periodic re-sync| Sync
-    Sync -->|≥2.1 s between calls| CF
-    Sync --> AC
-    Routes --> DB
-    CF --> DB
-    AC --> DB
-```
-
-### Codeforces contest sync
-
-```mermaid
-sequenceDiagram
-    participant S as sync_item()
-    participant CF as Codeforces API
-    participant DB as Database
-
-    S->>CF: contest.standings (stream first 16 KB)
-    CF-->>S: contest title + problem list
-    S->>DB: upsert ContestProblem rows
-
-    loop for each group member  [rate-limited: 2.1 s between calls]
-        S->>CF: contest.status?contestId=X&handle=Y
-        CF-->>S: member's submissions for this contest
-        S->>DB: upsert Result + ProblemResult rows
-        S->>CF: user.rating?handle=Y
-        CF-->>S: full rating history
-        S->>DB: write old rating / new rating / rank
-    end
-
-    Note over S: 5-minute hard timeout (asyncio.wait_for)
-```
-
-### Solve classification
-
-```mermaid
-flowchart TD
-    A([submissions for contest]) --> B{any AC?}
-    B -- no --> C[solved = false\ncollect wrong verdicts]
-    B -- yes --> D{most recent AC\nparticipant type}
-    D -- CONTESTANT --> E["✓ live (green)"]
-    D -- VIRTUAL --> F["✓ virtual (blue)"]
-    D -- PRACTICE --> G{ever entered\ncontest or virtual?}
-    G -- yes --> H["▲ upsolving (orange)"]
-    G -- no --> I["✓ standalone (grey)"]
-```
+- **Persistent preferences** — ratings hidden by default, toggle saved per browser
 
 ## How syncing works
 
-When a contest or problem is added to an assignment, a background task fetches every group member's submission history and classifies each result. Syncs are **idempotent** — re-running is safe and updates existing records. Sync status per item is tracked (`pending → syncing → done / error`). Auto-sync runs every 6 hours via APScheduler.
+When a contest or problem is added to an assignment, a background task fetches every group member's submission history and classifies each result. Syncs are **idempotent** — re-running is safe and updates existing records. Sync status per item is tracked (`pending → syncing → done / error`).
 
 Solve types:
 
@@ -124,7 +50,7 @@ Solve types:
 |---|---|
 | Backend | FastAPI + Python 3.11, async throughout |
 | Templates | Jinja2, server-rendered — no JS build step |
-| Interactivity | Inline JS for expand/collapse, heatmap, rating toggle |
+| Interactivity | Inline JS for expand/collapse and rating toggle |
 | Database | SQLite via SQLAlchemy ORM (drop-in PostgreSQL support) |
 | CF data | Official Codeforces API — anonymous streaming for problem lists, signed requests for user data |
 | AtCoder data | [kenkoooo.com](https://kenkoooo.com/atcoder/) AtCoder Problems API, paginated submission fetch |
