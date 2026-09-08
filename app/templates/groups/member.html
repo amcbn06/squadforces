@@ -156,19 +156,28 @@
     return { current, longest, total: days.length };
   }
 
+  let _activityData = null;
+
+  function renderHeatmap() {
+    if (!_activityData) return;
+    const { bg, empty } = getThemeVars();
+    const cur = new Date().getFullYear();
+    const html = [cur, cur - 1, cur - 2].map(y => buildYear(y, _activityData, bg, empty)).join('');
+    document.getElementById('heatmap-container').innerHTML = html || '<p style="color:#888;font-size:12px;">No activity found.</p>';
+  }
+
+  new MutationObserver(renderHeatmap)
+    .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
   fetch('/groups/{{ group.id }}/members/{{ user.id }}/activity.json')
     .then(r => r.json())
     .then(data => {
+      _activityData = data;
       const { current, longest, total } = computeStreaks(data);
       document.getElementById('streak-current').textContent = current;
       document.getElementById('streak-longest').textContent = longest;
       document.getElementById('streak-total').textContent = total;
-
-      const { bg, empty } = getThemeVars();
-      const cur = new Date().getFullYear();
-      const sorted = [cur, cur - 1, cur - 2];
-      const html = sorted.map(y => buildYear(y, data, bg, empty)).join('');
-      document.getElementById('heatmap-container').innerHTML = html || '<p style="color:#888;font-size:12px;">No activity found.</p>';
+      renderHeatmap();
     })
     .catch(() => {
       document.getElementById('heatmap-container').innerHTML = '<p style="color:#888;font-size:12px;">Could not load activity.</p>';
