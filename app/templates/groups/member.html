@@ -64,14 +64,20 @@
   const CELL = 11, GAP = 2, STEP = CELL + GAP;
   const CF_COLOR  = [21, 101, 192];   // #1565C0
   const ATC_COLOR = [224, 144, 0];    // #E09000
-  const EMPTY     = '#2a2d35';
   const MONTHS    = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
   function lerp(a, b, t) { return Math.round(a + (b - a) * t); }
 
-  function cellColor(cf, atc) {
+  function getThemeVars() {
+    const s = getComputedStyle(document.documentElement);
+    const bgRgb = s.getPropertyValue('--heatmap-bg-rgb').trim().split(',').map(Number);
+    const empty = s.getPropertyValue('--heatmap-empty').trim();
+    return { bg: bgRgb, empty };
+  }
+
+  function cellColor(cf, atc, bg, empty) {
     const total = cf + atc;
-    if (!total) return EMPTY;
+    if (!total) return empty;
     const intensity = Math.min(1, 0.25 + Math.log(total + 1) / 3.5);
     const cfRatio = cf / total;
     const base = [
@@ -79,11 +85,10 @@
       lerp(ATC_COLOR[1], CF_COLOR[1], cfRatio),
       lerp(ATC_COLOR[2], CF_COLOR[2], cfRatio),
     ];
-    const bg = [42, 45, 53];
     return `rgb(${lerp(bg[0],base[0],intensity)},${lerp(bg[1],base[1],intensity)},${lerp(bg[2],base[2],intensity)})`;
   }
 
-  function buildYear(year, data) {
+  function buildYear(year, data, bg, empty) {
     const jan1 = new Date(year, 0, 1);
     const dec31 = new Date(year, 11, 31);
     const totalDays = Math.round((dec31 - jan1) / 86400000) + 1;
@@ -106,7 +111,7 @@
       const ds = `${year}-${String(mm+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
       const cf  = data[ds]?.cf  || 0;
       const atc = data[ds]?.atc || 0;
-      const fill = cellColor(cf, atc);
+      const fill = cellColor(cf, atc, bg, empty);
       const x = col * STEP;
       const y = row * STEP;
       const tip = cf || atc ? `${ds}: CF ${cf}, AtC ${atc}` : ds;
@@ -159,9 +164,10 @@
       document.getElementById('streak-longest').textContent = longest;
       document.getElementById('streak-total').textContent = total;
 
+      const { bg, empty } = getThemeVars();
       const cur = new Date().getFullYear();
       const sorted = [cur, cur - 1, cur - 2];
-      const html = sorted.map(y => buildYear(y, data)).join('');
+      const html = sorted.map(y => buildYear(y, data, bg, empty)).join('');
       document.getElementById('heatmap-container').innerHTML = html || '<p style="color:#888;font-size:12px;">No activity found.</p>';
     })
     .catch(() => {

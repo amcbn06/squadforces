@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{% block title %}Squadforces{% endblock %}</title>
   <link rel="stylesheet" href="/static/style.css" />
+  <script>
+    (function(){
+      var t = localStorage.getItem('theme');
+      if (t === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+    })();
+  </script>
 </head>
 <body>
 
@@ -14,6 +20,7 @@
   </a>
   <a href="/groups/">Groups</a>
   <div class="spacer"></div>
+  <button class="theme-btn" id="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode">☾</button>
   <form method="post" action="/logout">
     <button>Sign out</button>
   </form>
@@ -22,6 +29,20 @@
 <div id="page">
   {% block content %}{% endblock %}
 </div>
+
+<script>
+function toggleTheme() {
+  var html = document.documentElement;
+  var isDark = html.getAttribute('data-theme') === 'dark';
+  html.setAttribute('data-theme', isDark ? 'light' : 'dark');
+  localStorage.setItem('theme', isDark ? 'light' : 'dark');
+  document.getElementById('theme-toggle').textContent = isDark ? '☾' : '☀';
+}
+(function(){
+  var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  document.getElementById('theme-toggle').textContent = isDark ? '☀' : '☾';
+})();
+</script>
 
 </body>
 </html>
