@@ -26,3 +26,6 @@ Thumbs.db
 # Claude
 .claude/
 cp-tracker-plan.md
+
+# Local notes
+docs/
