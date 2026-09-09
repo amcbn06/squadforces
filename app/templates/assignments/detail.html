@@ -161,7 +161,7 @@
           {% set r = cell.result %}
           <td>
             {% if item.type == 'contest' %}
-              {% if r and r.participated %}
+              {% if r and (r.participated or r.problems_solved_count) %}
                 <strong>{{ r.problems_solved_count or 0 }}/{{ r.problems_total_count or '?' }}</strong>
                 {# show solve-type breakdown if data is available #}
                 {% set has_types = cell.live_count or cell.virtual_count or cell.upsolve_count or cell.standalone_count %}
@@ -173,12 +173,14 @@
                   {% if cell.standalone_count %}<span class="st-solo">✓{{ cell.standalone_count }}</span> {% endif %}
                 </span>
                 {% endif %}
-                {% if r.rank %}<br><span class="meta">#{{ r.rank }}</span>{% endif %}
-                {% if r.rating_change is not none %}
-                <br><span class="{{ 'r-up' if r.rating_change > 0 else 'r-dn' if r.rating_change < 0 else 'meta' }}">
-                  {{ '+' if r.rating_change > 0 }}{{ r.rating_change }}
-                  {% if r.new_rating %}(→{{ r.new_rating }}){% endif %}
-                </span>
+                {% if r.participated %}
+                  {% if r.rank %}<br><span class="meta">#{{ r.rank }}</span>{% endif %}
+                  {% if r.rating_change is not none %}
+                  <br><span class="{{ 'r-up' if r.rating_change > 0 else 'r-dn' if r.rating_change < 0 else 'meta' }}">
+                    {{ '+' if r.rating_change > 0 }}{{ r.rating_change }}
+                    {% if r.new_rating %}(→{{ r.new_rating }}){% endif %}
+                  </span>
+                  {% endif %}
                 {% endif %}
               {% else %}
                 <span style="color:#ccc;">—</span>
