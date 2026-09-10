@@ -123,6 +123,32 @@ class Result(Base):
     user = relationship("User", back_populates="results")
 
 
+class CfContest(Base):
+    """Cached metadata for a CF rated contest (used by the recommendation engine)."""
+    __tablename__ = "cf_contests"
+
+    id = Column(Integer, primary_key=True)  # CF contest id (not autoincrement)
+    name = Column(String(300), nullable=False)
+    start_time = Column(Integer, nullable=True)       # unix timestamp
+    duration_seconds = Column(Integer, nullable=True)
+    division = Column(String(20), nullable=True)      # div1/div2/div3/div4/educational/global/combined/other
+    problems_fetched = Column(Boolean, default=False, nullable=False)
+
+    problems = relationship("CfContestProblem", back_populates="contest", cascade="all, delete-orphan")
+
+
+class CfContestProblem(Base):
+    """Cached problem rating for one problem in a CfContest."""
+    __tablename__ = "cf_contest_problems"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    contest_id = Column(Integer, ForeignKey("cf_contests.id", ondelete="CASCADE"), nullable=False)
+    index = Column(String(5), nullable=False)   # "A", "B", "C", …
+    rating = Column(Integer, nullable=True)     # None for unrated problems
+
+    contest = relationship("CfContest", back_populates="problems")
+
+
 class ProblemResult(Base):
     """Solved/unsolved per user per problem within a contest."""
     __tablename__ = "problem_results"

@@ -42,6 +42,11 @@ async def _call(method: str, params: dict, *, signed: bool = True) -> dict:
     return data["result"]
 
 
+async def get_contest_list() -> list[dict]:
+    """Return metadata for all CF contests (single call, no auth needed)."""
+    return await _call("contest.list", {"gym": "false"}, signed=False)
+
+
 async def get_user_info(handles: list[str]) -> list[dict]:
     """Return basic info for one or more handles."""
     result = await _call("user.info", {"handles": ";".join(handles)})
