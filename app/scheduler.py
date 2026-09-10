@@ -8,6 +8,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.database import SessionLocal
 from app.models import AssignmentItem
 from app.sync import sync_item
+from app import recommend as rec
 
 logger = logging.getLogger(__name__)
 
@@ -46,15 +47,53 @@ async def _auto_sync_all() -> None:
             db.close()
 
 
+async def _refresh_contest_metadata() -> None:
+    db = SessionLocal()
+    try:
+        await rec.refresh_contest_metadata(db)
+    finally:
+        db.close()
+
+
+async def _prefetch_contest_problems() -> None:
+    db = SessionLocal()
+    try:
+        await rec.prefetch_contest_problems(db, batch_size=20)
+    finally:
+        db.close()
+
+
 def start() -> None:
     global _scheduler
+    from datetime import datetime as _dt
     _scheduler = AsyncIOScheduler()
+
     _scheduler.add_job(
         _auto_sync_all,
         "interval",
         hours=SYNC_INTERVAL_HOURS,
         next_run_time=None,
     )
+
+    # Refresh the list of recent CF contests once a day (1 API call).
+    # next_run_time=now() means it runs immediately on startup so the DB
+    # is populated even before the first /recommend visit.
+    _scheduler.add_job(
+        _refresh_contest_metadata,
+        "interval",
+        hours=24,
+        next_run_time=_dt.now(),
+    )
+
+    # Fetch problem ratings for uncached contests: 20 per run, every 15 min.
+    # 300 contests / 20 per run = 15 runs ≈ 3.75 h to fully warm the cache.
+    _scheduler.add_job(
+        _prefetch_contest_problems,
+        "interval",
+        minutes=15,
+        next_run_time=None,  # wait for metadata job to populate rows first
+    )
+
     _scheduler.start()
     logger.info("Auto-sync scheduler started (interval: %dh)", SYNC_INTERVAL_HOURS)
 

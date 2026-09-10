@@ -14,7 +14,7 @@ load_dotenv()
 from app.database import engine, Base, get_db
 from app import models  # noqa: F401 — registers models with Base
 from app.auth import require_auth, login_response, logout_response, ADMIN_PASSWORD, is_authenticated
-from app.routers import groups, assignments
+from app.routers import groups, assignments, recommend
 from app import scheduler
 
 
@@ -47,6 +47,7 @@ templates = Jinja2Templates(directory="app/templates")
 
 app.include_router(groups.router)
 app.include_router(assignments.router)
+app.include_router(recommend.router)
 
 
 # --- Auth exception handler ---
