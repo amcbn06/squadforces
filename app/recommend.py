@@ -82,17 +82,25 @@ def _problem_fit(rating: int | None, user_rating: int) -> float:
     How well a single problem at `rating` fits a user at `user_rating`.
     Returns 0.0–1.0.
 
-    Sweet spot  (diff −100 … +300) → 1.0  (challenging but reachable)
-    Acceptable  (diff −400 … +600) → 0.5  (a bit easy or a stretch)
-    Otherwise                       → 0.0  (too easy or unreachable)
+    Based on Um_nik's "interesting interval" model: problems slightly above
+    your rating are where genuine learning happens. Problems below provide
+    warmup/speed practice but diminishing learning value.
+
+    Ideal    (diff   0 … +300) → 1.0  (your learning zone — challenging but reachable)
+    Stretch  (diff +300 … +500) → 0.6  (hard, but upsolving is valuable)
+    Warmup   (diff −200 …   0) → 0.5  (slightly easy — confidence and speed)
+    Easy     (diff −400 … −200) → 0.2  (minimal learning, warmup only)
+    Very hard (diff +500 … +800) → 0.1  (editorial value only)
+    Otherwise                   → 0.0  (trivial or completely unreachable)
     """
     if rating is None:
         return 0.5  # unknown rating: neutral contribution
     diff = rating - user_rating
-    if -100 <= diff <= 300:
-        return 1.0
-    if -400 <= diff <= 600:
-        return 0.5
+    if 0 <= diff <= 300:    return 1.0
+    if 300 < diff <= 500:   return 0.6
+    if -200 <= diff < 0:    return 0.5
+    if -400 <= diff < -200: return 0.2
+    if 500 < diff <= 800:   return 0.1
     return 0.0
 
 
@@ -100,28 +108,37 @@ def grade_contest(ratings: list[int | None], user_rating: int) -> dict:
     """
     Compute a fit grade for a contest given its problem ratings.
 
+    Uses a geometric-weighted average (best-fit problem carries ~50% of the
+    score, 2nd-best ~25%, etc.) instead of a straight mean. This matches the
+    reality that a CF contest typically has only 1-2 problems in a person's
+    "interesting interval" — those problems determine the contest's value, and
+    averaging them with 4 easy/impossible problems would dilute the signal.
+
     Returns:
       score   – float 0–10
       letter  – "A" / "B" / "C" / "D"
       color   – CSS color for the badge
-      in_zone – count of problems in the sweet spot
+      in_zone – count of problems in the ideal learning zone
       total   – total problem count
     """
     if not ratings:
         return {"score": 5.0, "letter": "?", "color": "#888", "in_zone": 0, "total": 0}
 
-    fits = [_problem_fit(r, user_rating) for r in ratings]
-    score = round(sum(fits) / len(fits) * 10, 1)
-    in_zone = sum(
-        1 for r in ratings
-        if r is not None and -100 <= r - user_rating <= 300
-    )
+    fits = sorted([_problem_fit(r, user_rating) for r in ratings], reverse=True)
+    n = len(fits)
 
-    if score >= 7.5:
+    weights = [1.0 / (2 ** i) for i in range(n)]
+    total_w = sum(weights)
+    weighted_avg = sum(f * w for f, w in zip(fits, weights)) / total_w
+    score = round(weighted_avg * 10, 1)
+
+    in_zone = sum(1 for r in ratings if r is not None and 0 <= r - user_rating <= 300)
+
+    if score >= 8.0:
         letter, color = "A", "#2e7d32"
-    elif score >= 5.5:
+    elif score >= 6.0:
         letter, color = "B", "#1565c0"
-    elif score >= 3.0:
+    elif score >= 3.5:
         letter, color = "C", "#e65100"
     else:
         letter, color = "D", "#b71c1c"
