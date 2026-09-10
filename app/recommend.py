@@ -133,6 +133,7 @@ def grade_contest(ratings: list[int | None], user_rating: int) -> dict:
     score = round(weighted_avg * 10, 1)
 
     in_zone = sum(1 for r in ratings if r is not None and 0 <= r - user_rating <= 300)
+    stretch = sum(1 for r in ratings if r is not None and 300 < r - user_rating <= 500)
 
     if score >= 8.0:
         letter, color = "A", "#2e7d32"
@@ -148,6 +149,7 @@ def grade_contest(ratings: list[int | None], user_rating: int) -> dict:
         "letter": letter,
         "color": color,
         "in_zone": in_zone,
+        "stretch": stretch,
         "total": len(ratings),
     }
 

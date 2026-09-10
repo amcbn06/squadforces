@@ -140,7 +140,11 @@
           &nbsp;·&nbsp; {{ all_divisions[c.division] }}
           &nbsp;·&nbsp; score {{ g.score }}/10
           {% if g.exact %}
-          &nbsp;·&nbsp; {{ g.in_zone }}/{{ g.total }} problems in your range
+          &nbsp;·&nbsp;
+          {% if g.in_zone %}<strong>{{ g.in_zone }} ideal</strong>{% endif %}
+          {% if g.in_zone and g.stretch %} · {% endif %}
+          {% if g.stretch %}{{ g.stretch }} stretch{% endif %}
+          {% if not g.in_zone and not g.stretch %}no problems in range{% endif %}
           {% else %}
           &nbsp;·&nbsp; <em>approximate</em>
           {% endif %}
