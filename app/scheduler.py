@@ -47,6 +47,37 @@ async def _auto_sync_all() -> None:
             db.close()
 
 
+async def _retry_not_started() -> None:
+    """Re-sync assignment items that are waiting for their contest to start."""
+    cutoff = datetime.utcnow() - timedelta(minutes=30)
+    db = SessionLocal()
+    try:
+        items = (
+            db.query(AssignmentItem)
+            .filter(
+                AssignmentItem.sync_status == "not_started",
+                AssignmentItem.last_synced_at < cutoff,
+            )
+            .all()
+        )
+        item_ids = [item.id for item in items]
+    finally:
+        db.close()
+
+    if not item_ids:
+        return
+
+    logger.info("Retrying %d not-started contest(s)", len(item_ids))
+    for item_id in item_ids:
+        db = SessionLocal()
+        try:
+            await sync_item(item_id, db)
+        except Exception as exc:
+            logger.warning("Retry not-started item %d: %s", item_id, exc)
+        finally:
+            db.close()
+
+
 async def _refresh_contest_metadata() -> None:
     db = SessionLocal()
     try:
@@ -95,6 +126,13 @@ def start() -> None:
         _prefetch_contest_problems,
         "interval",
         minutes=1,
+    )
+
+    # Re-check not-started contests every 30 minutes.
+    _scheduler.add_job(
+        _retry_not_started,
+        "interval",
+        minutes=30,
     )
 
     _scheduler.start()

@@ -12,6 +12,10 @@ CF_BASE = "https://codeforces.com/api"
 CF_KEY = os.getenv("CF_API_KEY", "")
 CF_SECRET = os.getenv("CF_API_SECRET", "")
 
+
+class ContestNotStartedError(Exception):
+    """Raised when a CF contest exists but has not started yet."""
+
 _last_request_time: float = 0.0
 _MIN_INTERVAL = 2.1  # seconds between requests (CF recommends ≤1 req/2s)
 
@@ -104,18 +108,27 @@ async def get_contest_info(contest_id: str) -> dict:
     problems: list[dict] = []
 
     stream_err: Exception | None = None
+    buf = b""
     try:
         url = f"{CF_BASE}/contest.standings"
         async with httpx.AsyncClient(timeout=15) as client:
             async with client.stream("GET", url, params={"contestId": contest_id}) as resp:
-                buf = b""
                 async for chunk in resp.aiter_bytes(chunk_size=1024):
                     buf += chunk
                     # Stop once we've seen the start of "rows" — problems come before it
                     if b'"rows"' in buf or len(buf) >= 16384:
                         break
         _last_request_time = time.monotonic()
+    except Exception as e:
+        stream_err = e
+        import logging as _log
+        _log.getLogger(__name__).warning("Contest %s stream error: %s", contest_id, e)
 
+    # Detect explicit FAILED response — contest not started yet
+    if buf and b'"FAILED"' in buf and b'not started' in buf.lower():
+        raise ContestNotStartedError(f"Contest {contest_id} has not started yet")
+
+    try:
         # Extract title
         m = _re.search(rb'"name"\s*:\s*"([^"]+)"', buf)
         if m:
@@ -149,15 +162,31 @@ async def get_contest_info(contest_id: str) -> dict:
                 contest_id, len(buf), buf[:200]
             )
     except Exception as e:
-        stream_err = e
         import logging as _log
-        _log.getLogger(__name__).warning("Contest %s stream error: %s", contest_id, e)
+        _log.getLogger(__name__).warning("Contest %s parse error: %s", contest_id, e)
 
     # Fallback: discover problems from submitted contest.status
     if not problems:
         problems = await get_contest_problems_from_status(contest_id)
 
     return {"title": title, "problems": problems}
+
+
+async def get_contest_metadata(contest_id: str) -> dict | None:
+    """
+    Return {id, name, phase, startTimeSeconds, ...} for a single contest
+    by searching contest.list. Used to get the name of not-yet-started contests
+    since contest.standings is unavailable for them.
+    """
+    try:
+        all_contests = await _call("contest.list", {"gym": "false"}, signed=False)
+        cid = int(contest_id)
+        for c in all_contests:
+            if c.get("id") == cid:
+                return c
+    except Exception:
+        pass
+    return None
 
 
 async def get_contest_problems_from_status(contest_id: str) -> list[dict]:

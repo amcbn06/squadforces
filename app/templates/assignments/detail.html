@@ -149,7 +149,9 @@
 
             <span class="dot dot-{{ item.sync_status }}"
                   title="{{ item.sync_status }}{% if item.sync_error %}: {{ item.sync_error }}{% endif %}"></span>
-            {% if item.sync_error %}
+            {% if item.sync_status == 'not_started' %}
+            <br><span class="meta" style="color:#f90;">not started yet</span>
+            {% elif item.sync_error %}
             <br><span class="meta" style="color:#c00;" title="{{ item.sync_error }}">
               error: {{ item.sync_error[:80] }}{{ '…' if item.sync_error | length > 80 }}
             </span>

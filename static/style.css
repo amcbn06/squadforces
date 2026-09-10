@@ -209,10 +209,11 @@ table.t { border-collapse: collapse; width: 100%; }
   display: inline-block; width: 7px; height: 7px;
   border-radius: 50%; vertical-align: middle; margin-left: 3px;
 }
-.dot-pending  { background: #aaa; }
-.dot-syncing  { background: #38f; animation: pulse 1s infinite; }
-.dot-done     { background: #0a0; }
-.dot-error    { background: #c00; }
+.dot-pending     { background: #aaa; }
+.dot-syncing     { background: #38f; animation: pulse 1s infinite; }
+.dot-done        { background: #0a0; }
+.dot-error       { background: #c00; }
+.dot-not_started { background: #f90; animation: pulse 2s infinite; }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
 
 /* ── Platform icon ───────────────────── */

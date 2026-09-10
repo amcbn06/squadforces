@@ -147,9 +147,14 @@ async def sync_item(item_id: int, db: Session) -> None:
 
         item.last_synced_at = datetime.utcnow()
         item.sync_status = "done"
+        item.sync_error = None
     except asyncio.TimeoutError:
         item.sync_status = "error"
         item.sync_error = f"Sync timed out after {SYNC_TIMEOUT_SECONDS}s"
+    except cf.ContestNotStartedError:
+        item.sync_status = "not_started"
+        item.sync_error = "Contest has not started yet"
+        item.last_synced_at = datetime.utcnow()
     except Exception as exc:
         item.sync_status = "error"
         item.sync_error = str(exc)
@@ -190,6 +195,12 @@ async def _sync_cf_contest(
         problems = info["problems"]
         if not item.title:
             item.title = info["title"] or f"Contest {item.external_id}"
+    except cf.ContestNotStartedError:
+        # Try to get the contest name from contest.list so the title is populated
+        meta = await cf.get_contest_metadata(item.external_id)
+        if meta and not item.title:
+            item.title = meta.get("name") or f"Contest {item.external_id}"
+        raise  # propagates to sync_item → sets sync_status = "not_started"
     except ValueError as e:
         if not any(k in str(e).lower() for k in _CF_BLOCKED):
             raise
