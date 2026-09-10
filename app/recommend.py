@@ -174,7 +174,7 @@ async def refresh_contest_metadata(db: Session) -> int:
     return added
 
 
-async def prefetch_contest_problems(db: Session, batch_size: int = 20) -> int:
+async def prefetch_contest_problems(db: Session, batch_size: int = 1) -> int:
     """
     Fetch and cache problem ratings for up to `batch_size` contests that
     have not been fetched yet (most recent first).
@@ -233,7 +233,7 @@ async def bootstrap_cache() -> None:
     db = SessionLocal()
     try:
         await refresh_contest_metadata(db)
-        await prefetch_contest_problems(db, batch_size=20)
+        await prefetch_contest_problems(db, batch_size=5)
     finally:
         db.close()
         _bootstrap_running = False

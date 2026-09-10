@@ -78,7 +78,7 @@
           <span class="meta">{{ progress.pct }}%</span>
         </div>
         <div style="height:4px; background:var(--border-light); border-radius:2px; overflow:hidden;">
-          <div style="height:100%; width:{{ [progress.pct, 2] | max }}%;
+          <div style="height:100%; width:{{ progress.pct if progress.pct > 2 else 2 }}%;
                       background:#1565c0; border-radius:2px;"></div>
         </div>
         {% if progress.pct < 100 %}
@@ -93,6 +93,13 @@
 
   {# ── Main content ─────────────────────────────────────────────────────── #}
   <div>
+    {% if progress.fetched == 0 and not bootstrapping %}
+    <div class="info-msg" style="margin-bottom:8px;">
+      Contest list loaded — problem ratings are being fetched in the background (1 per minute).
+      Grades shown are approximate until ratings are cached.
+    </div>
+    {% endif %}
+
     {% if bootstrapping %}
     <div class="box">
       <div class="box-body" style="text-align:center; padding:48px 24px;">

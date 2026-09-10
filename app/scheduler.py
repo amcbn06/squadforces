@@ -85,12 +85,13 @@ def start() -> None:
         next_run_time=_dt.now(),
     )
 
-    # Fetch problem ratings for uncached contests: 20 per run, every 15 min.
-    # 300 contests / 20 per run = 15 runs ≈ 3.75 h to fully warm the cache.
+    # Fetch problem ratings for 1 uncached contest per minute.
+    # 300 contests → ~5 h to fully warm the cache.
+    # One call per run keeps pressure on the CF rate limiter minimal.
     _scheduler.add_job(
         _prefetch_contest_problems,
         "interval",
-        minutes=15,
+        minutes=1,
         next_run_time=None,  # wait for metadata job to populate rows first
     )
 
