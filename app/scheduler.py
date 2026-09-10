@@ -58,7 +58,7 @@ async def _refresh_contest_metadata() -> None:
 async def _prefetch_contest_problems() -> None:
     db = SessionLocal()
     try:
-        await rec.prefetch_contest_problems(db, batch_size=20)
+        await rec.prefetch_contest_problems(db, batch_size=1)
     finally:
         db.close()
 

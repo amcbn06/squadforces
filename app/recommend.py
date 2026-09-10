@@ -198,6 +198,7 @@ async def prefetch_contest_problems(db: Session, batch_size: int = 1) -> int:
         try:
             info = await cf.get_contest_info(str(cid))
             problems = info.get("problems", [])
+            logger.info("Contest %d: got %d problems from CF API", cid, len(problems))
             for p in problems:
                 db.add(models.CfContestProblem(
                     contest_id=cid,
@@ -209,13 +210,11 @@ async def prefetch_contest_problems(db: Session, batch_size: int = 1) -> int:
                 contest.problems_fetched = True
             db.commit()
             fetched += 1
-            logger.debug("Cached problems for CF contest %d", cid)
         except Exception as exc:
-            logger.warning("Failed to cache CF contest %d: %s", cid, exc)
+            logger.error("Failed to cache CF contest %d: %s", cid, exc, exc_info=True)
             db.rollback()
 
-    if fetched:
-        logger.info("Contest problem prefetch: %d/%d fetched", fetched, len(contest_ids))
+    logger.info("Contest problem prefetch: %d/%d fetched", fetched, len(contest_ids))
     return fetched
 
 

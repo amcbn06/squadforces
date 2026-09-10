@@ -103,6 +103,7 @@ async def get_contest_info(contest_id: str) -> dict:
     title = ""
     problems: list[dict] = []
 
+    stream_err: Exception | None = None
     try:
         url = f"{CF_BASE}/contest.standings"
         async with httpx.AsyncClient(timeout=15) as client:
@@ -138,10 +139,19 @@ async def get_contest_info(contest_id: str) -> dict:
             if end > start:
                 try:
                     problems = _json.loads(buf[start:end].decode("utf-8", errors="replace"))
-                except Exception:
-                    pass
-    except Exception:
-        pass
+                except Exception as e:
+                    import logging as _log
+                    _log.getLogger(__name__).warning("Contest %s: JSON parse error: %s", contest_id, e)
+        else:
+            import logging as _log
+            _log.getLogger(__name__).warning(
+                "Contest %s: 'problems' key not found in first %d bytes (buf snippet: %s)",
+                contest_id, len(buf), buf[:200]
+            )
+    except Exception as e:
+        stream_err = e
+        import logging as _log
+        _log.getLogger(__name__).warning("Contest %s stream error: %s", contest_id, e)
 
     # Fallback: discover problems from submitted contest.status
     if not problems:
