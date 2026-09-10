@@ -128,6 +128,83 @@ def _classify_submissions(subs: list[dict]) -> tuple[dict[str, dict], bool, bool
     return per_problem, did_live, did_virtual
 
 
+def _classify_ac_submissions(
+    subs: list[dict],
+    problem_ids: set[str],
+    contest_start: int,
+    contest_end: int,
+    had_rated: bool,
+) -> tuple[dict[str, dict], bool]:
+    """
+    Classify AtCoder submissions for a single user and contest by comparing
+    submission timestamps to the original contest window.
+
+    Returns:
+        per_problem: {problem_id: {solved, solve_type, attempts, wrong_verdicts}}
+        did_participate: user had submissions during the contest window or was rated
+    """
+    relevant = sorted(
+        [s for s in subs if s.get("problem_id") in problem_ids],
+        key=lambda s: s.get("epoch_second", 0),
+    )
+
+    did_live = any(
+        contest_start <= s.get("epoch_second", 0) < contest_end
+        for s in relevant
+    )
+    did_participate = did_live or had_rated
+
+    by_problem: dict[str, list[dict]] = defaultdict(list)
+    for s in relevant:
+        by_problem[s["problem_id"]].append(s)
+
+    per_problem: dict[str, dict] = {}
+    for pid, psubs in by_problem.items():
+        live_subs = [s for s in psubs if contest_start <= s.get("epoch_second", 0) < contest_end]
+        post_subs = [s for s in psubs if s.get("epoch_second", 0) >= contest_end]
+
+        live_ac = next((s for s in live_subs if s.get("result") == "AC"), None)
+        post_ac = next((s for s in post_subs if s.get("result") == "AC"), None)
+
+        if live_ac:
+            wrong_before = [
+                s.get("result", "") for s in live_subs
+                if s.get("epoch_second", 0) < live_ac["epoch_second"]
+                and s.get("result") not in ("AC", None, "")
+            ]
+            per_problem[pid] = {
+                "solved": True,
+                "solve_type": "live",
+                "attempts": len(wrong_before),
+                "wrong_verdicts": list(dict.fromkeys(wrong_before)),
+            }
+        elif post_ac:
+            all_wrong_before = [
+                s.get("result", "") for s in psubs
+                if s.get("epoch_second", 0) < post_ac["epoch_second"]
+                and s.get("result") not in ("AC", None, "")
+            ]
+            per_problem[pid] = {
+                "solved": True,
+                "solve_type": "upsolving" if did_participate else "standalone",
+                "attempts": len(all_wrong_before),
+                "wrong_verdicts": list(dict.fromkeys(all_wrong_before)),
+            }
+        else:
+            all_wrong = [
+                s.get("result", "") for s in psubs
+                if s.get("result") not in ("AC", None, "")
+            ]
+            per_problem[pid] = {
+                "solved": False,
+                "solve_type": None,
+                "attempts": 0,
+                "wrong_verdicts": list(dict.fromkeys(all_wrong)),
+            }
+
+    return per_problem, did_participate
+
+
 # ── Top-level sync entry point ────────────────────────────────────────────────
 
 async def sync_item(item_id: int, db: Session) -> None:
@@ -426,11 +503,44 @@ async def _sync_ac_contest(
             if task.get("difficulty"):
                 existing_problems[idx].rating = int(round(task["difficulty"]))
 
+    # Fetch contest timing once — used to classify live vs upsolving submissions
+    timing = await ac.get_contest_timing(item.external_id)
+    if timing and timing["start_epoch_second"] > 0:
+        contest_start = timing["start_epoch_second"]
+        contest_end = contest_start + timing["duration_second"]
+    else:
+        contest_start = contest_end = 0
+    has_timing = contest_start > 0
+
+    problem_ids = {cp.platform_problem_id for cp in existing_problems.values()}
+
     for user in members:
         if not user.atcoder_handle:
             continue
         subs = await ac.get_user_submissions(user.atcoder_handle)
-        ac_solved = {s["problem_id"] for s in subs if s.get("result") == "AC"}
+
+        # Check rated participation first — needed to distinguish upsolving from standalone
+        had_rated = False
+        contest_result_data: dict = {}
+        try:
+            contest_result_data = await ac.get_contest_results(item.external_id, user.atcoder_handle)
+            had_rated = bool(contest_result_data)
+        except Exception:
+            pass
+
+        # Classify per-problem solve type using contest timing
+        if has_timing:
+            classification, did_participate = _classify_ac_submissions(
+                subs, problem_ids, contest_start, contest_end, had_rated
+            )
+        else:
+            # No timing available — mark solved/not-solved without type info
+            ac_solved_set = {s["problem_id"] for s in subs if s.get("result") == "AC"}
+            classification = {
+                pid: {"solved": pid in ac_solved_set, "solve_type": None, "attempts": 0, "wrong_verdicts": []}
+                for pid in problem_ids
+            }
+            did_participate = had_rated
 
         result = (
             db.query(models.Result)
@@ -441,15 +551,19 @@ async def _sync_ac_contest(
             result = models.Result(assignment_item_id=item.id, user_id=user.id)
             db.add(result)
 
-        solved_count = 0
+        result.problems_solved_count = sum(1 for info in classification.values() if info.get("solved"))
         result.problems_total_count = len(tasks)
         result.last_synced_at = datetime.utcnow()
-        result.participated = False
+        # participated = True only for rated (live) entries — controls rank/rating display
+        result.participated = had_rated
+        if had_rated and contest_result_data:
+            result.old_rating = contest_result_data.get("OldRating")
+            result.new_rating = contest_result_data.get("NewRating")
+            result.rating_change = contest_result_data.get("InnerPerformance")
+            result.rank = contest_result_data.get("Place")
 
         for idx, cp in existing_problems.items():
-            is_solved = cp.platform_problem_id in ac_solved
-            if is_solved:
-                solved_count += 1
+            info = classification.get(cp.platform_problem_id, {})
             pr_record = (
                 db.query(models.ProblemResult)
                 .filter_by(contest_problem_id=cp.id, user_id=user.id)
@@ -460,20 +574,11 @@ async def _sync_ac_contest(
                     contest_problem_id=cp.id, user_id=user.id
                 )
                 db.add(pr_record)
-            pr_record.solved = is_solved
-
-        result.problems_solved_count = solved_count
-
-        try:
-            contest_result = await ac.get_contest_results(item.external_id, user.atcoder_handle)
-            if contest_result:
-                result.participated = True
-                result.old_rating = contest_result.get("OldRating")
-                result.new_rating = contest_result.get("NewRating")
-                result.rating_change = contest_result.get("InnerPerformance")
-                result.rank = contest_result.get("Place")
-        except Exception:
-            pass
+            pr_record.solved = info.get("solved", False)
+            pr_record.solve_type = info.get("solve_type")
+            pr_record.attempts = info.get("attempts") or None
+            wv = info.get("wrong_verdicts", [])
+            pr_record.best_wrong_verdict = " ".join(wv) if wv else None
 
 
 async def _sync_ac_problem(

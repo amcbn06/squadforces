@@ -65,6 +65,21 @@ async def get_contest_tasks(contest_id: str) -> list[dict]:
     return tasks
 
 
+async def get_contest_timing(contest_id: str) -> dict | None:
+    """Return {start_epoch_second, duration_second} for a contest, or None if not found."""
+    async with httpx.AsyncClient(timeout=20) as client:
+        resp = await client.get(f"{AC_PROBLEMS_BASE}/resources/contests.json")
+    if resp.status_code != 200:
+        return None
+    for c in resp.json():
+        if c.get("id") == contest_id:
+            return {
+                "start_epoch_second": c["start_epoch_second"],
+                "duration_second": c["duration_second"],
+            }
+    return None
+
+
 async def check_problem_solved(handle: str, problem_id: str) -> bool:
     """Return True if the user has an AC submission for problem_id."""
     subs = await get_user_submissions(handle)
