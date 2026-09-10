@@ -2,121 +2,154 @@
 {% block title %}Recommend — Squadforces{% endblock %}
 
 {% block content %}
-<div style="max-width:860px; margin:0 auto; padding:24px 16px;">
 
-  <h1 style="margin:0 0 4px;">Contest Recommendations</h1>
-  <p style="color:var(--text-muted); font-style:italic; font-size:13px; margin:0 0 20px;">
-    Currently only Codeforces rated contests are supported.
-  </p>
-
-  {# ── Progress bar ─────────────────────────────────────────────────────── #}
-  <div style="margin-bottom:20px;">
-    <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
-      <span style="font-size:12px; color:var(--text-muted);">
-        Contest database:
-        <strong>{{ progress.fetched }}/{{ progress.total }}</strong> contests indexed
-      </span>
-      {% if progress.pct < 100 %}
-      <span class="rc-spinner" title="Updating in background…">⟳</span>
-      <span style="font-size:11px; color:var(--text-muted);">updating in background</span>
-      {% endif %}
-    </div>
-    <div class="rc-progress-track">
-      <div class="rc-progress-bar {% if progress.pct < 100 %}rc-progress-bar--active{% endif %}"
-           style="width:{{ [progress.pct, 2] | max }}%"></div>
-    </div>
+<div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:12px;">
+  <div>
+    <h1>Contest Recommendations</h1>
+    <p class="meta" style="font-style:italic; margin-top:2px;">
+      Currently only Codeforces rated contests are supported.
+    </p>
   </div>
+</div>
 
-  {# ── Filter form ──────────────────────────────────────────────────────── #}
-  <form method="get" action="/recommend" id="rc-form">
-    <div class="rc-filters">
+<div style="display:grid; grid-template-columns:220px 1fr; gap:12px; align-items:start;">
 
-      <div class="rc-filter-group">
-        <label class="rc-label">Member</label>
-        <select name="member_id" id="rc-member" class="rc-select">
-          <option value="">— or enter rating manually —</option>
-          {% for m in all_members %}
-          <option value="{{ m.id }}"
-                  data-rating="{{ m.cf_rating or '' }}"
-                  {% if m.id == member_id %}selected{% endif %}>
-            {{ m.display_name }}{% if m.cf_rating %} ({{ m.cf_rating }}){% endif %}
-          </option>
-          {% endfor %}
-        </select>
+  {# ── Sidebar ──────────────────────────────────────────────────────────── #}
+  <div>
+
+    {# Filters #}
+    <div class="box">
+      <div class="box-header" style="cursor:default;">Filters</div>
+      <div class="box-body" style="padding:10px;">
+        <form method="get" action="/recommend" id="rc-form"
+              style="display:flex; flex-direction:column; gap:10px;">
+
+          <div>
+            <div class="meta" style="margin-bottom:4px;">Member</div>
+            <select name="member_id" id="rc-member" style="width:100%;">
+              <option value="">— or enter rating below —</option>
+              {% for m in all_members %}
+              <option value="{{ m.id }}" data-rating="{{ m.cf_rating or '' }}"
+                      {% if m.id == member_id %}selected{% endif %}>
+                {{ m.display_name }}{% if m.cf_rating %} ({{ m.cf_rating }}){% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div>
+            <div class="meta" style="margin-bottom:4px;">CF Rating</div>
+            <input type="number" name="rating" id="rc-rating" value="{{ rating }}"
+                   min="0" max="4000" style="width:100%;">
+          </div>
+
+          <div>
+            <div class="meta" style="margin-bottom:6px;">Division</div>
+            <div style="display:flex; flex-direction:column; gap:5px;">
+              {% for div_key, div_label in all_divisions.items() %}
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:12px;">
+                <input type="checkbox" name="divisions" value="{{ div_key }}"
+                       {% if div_key in selected_divs %}checked{% endif %}>
+                {{ div_label }}
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-green"
+                  style="width:100%; text-align:center; padding:5px;">Apply</button>
+        </form>
       </div>
+    </div>
 
-      <div class="rc-filter-group">
-        <label class="rc-label" for="rc-rating">CF Rating</label>
-        <input type="number" name="rating" id="rc-rating" value="{{ rating }}"
-               min="0" max="4000" class="rc-rating-input">
+    {# Contest database progress #}
+    <div class="box">
+      <div class="box-header" style="cursor:default; font-weight:normal; font-size:12px;">
+        Contest database
+        {% if progress.pct < 100 %}
+        <span class="dot dot-syncing" title="Updating in background"></span>
+        {% else %}
+        <span class="dot dot-done" title="Fully indexed"></span>
+        {% endif %}
       </div>
-
-      <div class="rc-filter-group rc-filter-group--divs">
-        <label class="rc-label">Divisions</label>
-        <div class="rc-checkboxes">
-          {% for div_key, div_label in all_divisions.items() %}
-          <label class="rc-checkbox-label">
-            <input type="checkbox" name="divisions" value="{{ div_key }}"
-                   {% if div_key in selected_divs %}checked{% endif %}>
-            {{ div_label }}
-          </label>
-          {% endfor %}
+      <div class="box-body" style="padding:8px 12px;">
+        <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+          <span class="meta">{{ progress.fetched }} / {{ progress.total }} indexed</span>
+          <span class="meta">{{ progress.pct }}%</span>
         </div>
+        <div style="height:4px; background:var(--border-light); border-radius:2px; overflow:hidden;">
+          <div style="height:100%; width:{{ [progress.pct, 2] | max }}%;
+                      background:#1565c0; border-radius:2px;"></div>
+        </div>
+        {% if progress.pct < 100 %}
+        <p class="meta" style="margin-top:5px; font-size:11px;">
+          Updates every 15 min in background.
+        </p>
+        {% endif %}
       </div>
-
-      <button type="submit" class="rc-apply-btn">Apply</button>
     </div>
-  </form>
 
-  {# ── Results ──────────────────────────────────────────────────────────── #}
-  {% if bootstrapping %}
-  <div class="rc-empty">
-    <span class="rc-spinner rc-spinner--lg">⟳</span>
-    <p>Building the contest database for the first time — this takes about a minute.</p>
-    <p style="font-size:13px; color:var(--text-muted);">Refresh the page in a moment.</p>
   </div>
 
-  {% elif not recommendations %}
-  <div class="rc-empty">
-    <p>No contests match the current filters.</p>
-  </div>
+  {# ── Main content ─────────────────────────────────────────────────────── #}
+  <div>
+    {% if bootstrapping %}
+    <div class="box">
+      <div class="box-body" style="text-align:center; padding:48px 24px;">
+        <span class="dot dot-syncing" style="width:10px; height:10px; margin-bottom:10px; display:inline-block;"></span>
+        <p style="font-size:14px; margin-bottom:4px;">Building the contest database…</p>
+        <p class="meta">This takes about a minute. Refresh the page shortly.</p>
+      </div>
+    </div>
 
-  {% else %}
-  <div class="rc-list">
+    {% elif not recommendations %}
+    <div class="box">
+      <div class="box-body" style="text-align:center; padding:48px 24px; color:var(--text-meta);">
+        No contests match the current filters.
+      </div>
+    </div>
+
+    {% else %}
+    <h2 style="margin-bottom:6px;">Top picks for rating {{ rating }}</h2>
+
     {% for item in recommendations %}
     {% set c = item.contest %}
     {% set g = item.grade %}
-    <div class="rc-card">
-      <div class="rc-grade" style="background:{{ g.color }};" title="Score {{ g.score }}/10">
-        {{ g.letter }}
-      </div>
-      <div class="rc-card-body">
-        <a href="https://codeforces.com/contest/{{ c.id }}"
-           target="_blank" rel="noopener" class="rc-card-title">
+    <div class="card" style="display:flex; align-items:center; gap:12px; margin-bottom:6px;">
+
+      <div style="flex-shrink:0; width:34px; height:34px; border-radius:3px;
+                  background:{{ g.color }}; color:#fff; font-size:16px; font-weight:700;
+                  display:flex; align-items:center; justify-content:center;"
+           title="Score {{ g.score }}/10">{{ g.letter }}</div>
+
+      <div style="flex:1; min-width:0;">
+        <a href="https://codeforces.com/contest/{{ c.id }}" target="_blank" rel="noopener"
+           style="font-size:13px; font-weight:600; color:var(--text); display:block;
+                  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
           {{ c.name }}
         </a>
-        <div class="rc-card-meta">
+        <div class="meta" style="margin-top:2px;">
           {{ c.start_time | ts_to_date }}
           &nbsp;·&nbsp; {{ all_divisions[c.division] }}
           &nbsp;·&nbsp; score {{ g.score }}/10
           {% if g.exact %}
           &nbsp;·&nbsp; {{ g.in_zone }}/{{ g.total }} problems in your range
           {% else %}
-          &nbsp;·&nbsp; <em>approximate (not yet cached)</em>
+          &nbsp;·&nbsp; <em>approximate</em>
           {% endif %}
         </div>
       </div>
-      <a href="https://codeforces.com/contest/{{ c.id }}"
-         target="_blank" rel="noopener" class="rc-open-btn">Open →</a>
+
+      <a href="https://codeforces.com/contest/{{ c.id }}" target="_blank" rel="noopener"
+         class="btn" style="flex-shrink:0;">Open →</a>
     </div>
     {% endfor %}
+    {% endif %}
   </div>
-  {% endif %}
 
 </div>
 
 <script>
-// Auto-fill rating from member picker
 document.getElementById('rc-member').addEventListener('change', function () {
   var r = this.options[this.selectedIndex].dataset.rating;
   if (r) document.getElementById('rc-rating').value = r;
