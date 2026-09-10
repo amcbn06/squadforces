@@ -88,11 +88,13 @@ def start() -> None:
     # Fetch problem ratings for 1 uncached contest per minute.
     # 300 contests → ~5 h to fully warm the cache.
     # One call per run keeps pressure on the CF rate limiter minimal.
+    # NOTE: do NOT pass next_run_time=None — in APScheduler that pauses the job
+    # forever. Omitting it schedules the first run at startup + 1 minute, by
+    # which time the metadata job (which runs immediately) will have populated rows.
     _scheduler.add_job(
         _prefetch_contest_problems,
         "interval",
         minutes=1,
-        next_run_time=None,  # wait for metadata job to populate rows first
     )
 
     _scheduler.start()
