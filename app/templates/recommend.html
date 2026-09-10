@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}Recommend — Squadforces{% endblock %}
+
+{% block content %}
+<div style="max-width:860px; margin:0 auto; padding:24px 16px;">
+
+  <h1 style="margin:0 0 4px;">Contest Recommendations</h1>
+  <p style="color:var(--text-muted); font-style:italic; font-size:13px; margin:0 0 20px;">
+    Currently only Codeforces rated contests are supported.
+  </p>
+
+  {# ── Progress bar ─────────────────────────────────────────────────────── #}
+  <div style="margin-bottom:20px;">
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+      <span style="font-size:12px; color:var(--text-muted);">
+        Contest database:
+        <strong>{{ progress.fetched }}/{{ progress.total }}</strong> contests indexed
+      </span>
+      {% if progress.pct < 100 %}
+      <span class="rc-spinner" title="Updating in background…">⟳</span>
+      <span style="font-size:11px; color:var(--text-muted);">updating in background</span>
+      {% endif %}
+    </div>
+    <div class="rc-progress-track">
+      <div class="rc-progress-bar {% if progress.pct < 100 %}rc-progress-bar--active{% endif %}"
+           style="width:{{ [progress.pct, 2] | max }}%"></div>
+    </div>
+  </div>
+
+  {# ── Filter form ──────────────────────────────────────────────────────── #}
+  <form method="get" action="/recommend" id="rc-form">
+    <div class="rc-filters">
+
+      <div class="rc-filter-group">
+        <label class="rc-label">Member</label>
+        <select name="member_id" id="rc-member" class="rc-select">
+          <option value="">— or enter rating manually —</option>
+          {% for m in all_members %}
+          <option value="{{ m.id }}"
+                  data-rating="{{ m.cf_rating or '' }}"
+                  {% if m.id == member_id %}selected{% endif %}>
+            {{ m.display_name }}{% if m.cf_rating %} ({{ m.cf_rating }}){% endif %}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="rc-filter-group">
+        <label class="rc-label" for="rc-rating">CF Rating</label>
+        <input type="number" name="rating" id="rc-rating" value="{{ rating }}"
+               min="0" max="4000" class="rc-rating-input">
+      </div>
+
+      <div class="rc-filter-group rc-filter-group--divs">
+        <label class="rc-label">Divisions</label>
+        <div class="rc-checkboxes">
+          {% for div_key, div_label in all_divisions.items() %}
+          <label class="rc-checkbox-label">
+            <input type="checkbox" name="divisions" value="{{ div_key }}"
+                   {% if div_key in selected_divs %}checked{% endif %}>
+            {{ div_label }}
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+
+      <button type="submit" class="rc-apply-btn">Apply</button>
+    </div>
+  </form>
+
+  {# ── Results ──────────────────────────────────────────────────────────── #}
+  {% if bootstrapping %}
+  <div class="rc-empty">
+    <span class="rc-spinner rc-spinner--lg">⟳</span>
+    <p>Building the contest database for the first time — this takes about a minute.</p>
+    <p style="font-size:13px; color:var(--text-muted);">Refresh the page in a moment.</p>
+  </div>
+
+  {% elif not recommendations %}
+  <div class="rc-empty">
+    <p>No contests match the current filters.</p>
+  </div>
+
+  {% else %}
+  <div class="rc-list">
+    {% for item in recommendations %}
+    {% set c = item.contest %}
+    {% set g = item.grade %}
+    <div class="rc-card">
+      <div class="rc-grade" style="background:{{ g.color }};" title="Score {{ g.score }}/10">
+        {{ g.letter }}
+      </div>
+      <div class="rc-card-body">
+        <a href="https://codeforces.com/contest/{{ c.id }}"
+           target="_blank" rel="noopener" class="rc-card-title">
+          {{ c.name }}
+        </a>
+        <div class="rc-card-meta">
+          {{ c.start_time | ts_to_date }}
+          &nbsp;·&nbsp; {{ all_divisions[c.division] }}
+          &nbsp;·&nbsp; score {{ g.score }}/10
+          {% if g.exact %}
+          &nbsp;·&nbsp; {{ g.in_zone }}/{{ g.total }} problems in your range
+          {% else %}
+          &nbsp;·&nbsp; <em>approximate (not yet cached)</em>
+          {% endif %}
+        </div>
+      </div>
+      <a href="https://codeforces.com/contest/{{ c.id }}"
+         target="_blank" rel="noopener" class="rc-open-btn">Open →</a>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+</div>
+
+<script>
+// Auto-fill rating from member picker
+document.getElementById('rc-member').addEventListener('change', function () {
+  var r = this.options[this.selectedIndex].dataset.rating;
+  if (r) document.getElementById('rc-rating').value = r;
+});
+</script>
+{% endblock %}
