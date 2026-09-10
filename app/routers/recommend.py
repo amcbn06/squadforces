@@ -28,9 +28,15 @@ async def recommend_page(
     db: Session = Depends(get_db),
     _=Depends(require_auth),
     rating: int = 1200,
-    member_id: Optional[int] = None,
+    member_id: Optional[str] = Query(default=None),
     divisions: Optional[list[str]] = Query(None),
 ):
+    # member_id arrives as "" when the select has no selection
+    try:
+        member_id_int = int(member_id) if member_id else None
+    except (ValueError, TypeError):
+        member_id_int = None
+
     all_members = db.query(models.User).order_by(models.User.display_name).all()
 
     selected_divs = [d for d in (divisions or DEFAULT_DIVISIONS) if d in rec.DIVISION_LABELS]
@@ -49,7 +55,7 @@ async def recommend_page(
         "recommendations": recommendations,
         "progress": progress,
         "rating": rating,
-        "member_id": member_id,
+        "member_id": member_id_int,
         "all_members": all_members,
         "selected_divs": selected_divs,
         "all_divisions": rec.DIVISION_LABELS,
