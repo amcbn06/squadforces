@@ -126,3 +126,46 @@ async def login(
 async def logout(request: Request):
     request.session.clear()
     return RedirectResponse("/login", status_code=303)
+
+
+# --- Register (user role only — students are created by admin) ---
+@app.get("/register", response_class=HTMLResponse)
+async def register_page(request: Request):
+    if request.session.get("account_id"):
+        return RedirectResponse("/", status_code=303)
+    return templates.TemplateResponse("register.html", {"request": request, "error": ""})
+
+
+@app.post("/register")
+async def register(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    password2: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    username = username.strip()
+    error = ""
+    if not username or not password:
+        error = "Username and password are required."
+    elif password != password2:
+        error = "Passwords do not match."
+    elif len(password) < 6:
+        error = "Password must be at least 6 characters."
+    elif db.query(models.Account).filter_by(username=username).first():
+        error = f"Username '{username}' is already taken."
+
+    if error:
+        return templates.TemplateResponse(
+            "register.html", {"request": request, "error": error}, status_code=422
+        )
+
+    account = models.Account(
+        username=username,
+        password_hash=hash_password(password),
+        role="user",
+    )
+    db.add(account)
+    db.commit()
+    request.session["account_id"] = account.id
+    return RedirectResponse("/", status_code=303)

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Create account — Squadforces</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<div id="login-wrap">
+  <div id="login-box">
+    <img src="/static/logo.svg" alt="Squadforces" style="width:72px; display:block; margin:0 auto 10px;">
+    <h1>Create account</h1>
+    <p style="text-align:center; color:#888; font-size:13px; margin-bottom:14px;">
+      An admin will grant you access to groups after you sign up.
+    </p>
+
+    {% if error %}
+    <div class="error-msg">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/register">
+      <div class="form-col" style="margin-bottom:10px;">
+        <label>Username</label>
+        <input type="text" name="username" autofocus required autocomplete="username" />
+      </div>
+      <div class="form-col" style="margin-bottom:10px;">
+        <label>Password</label>
+        <input type="password" name="password" required autocomplete="new-password" />
+      </div>
+      <div class="form-col" style="margin-bottom:14px;">
+        <label>Confirm password</label>
+        <input type="password" name="password2" required autocomplete="new-password" />
+      </div>
+      <button type="submit" class="btn btn-green" style="width:100%;">Create account</button>
+    </form>
+    <p style="text-align:center; margin-top:14px; font-size:13px; color:#888;">
+      Already have an account? <a href="/login">Sign in</a>
+    </p>
+  </div>
+</div>
+</body>
+</html>
