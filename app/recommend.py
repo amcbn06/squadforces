@@ -179,7 +179,8 @@ async def refresh_contest_metadata(db: Session) -> int:
 
     added = 0
     for c in rated[:CACHE_SIZE]:
-        if db.get(models.CfContest, c["id"]) is None:
+        existing = db.get(models.CfContest, c["id"])
+        if existing is None:
             db.add(models.CfContest(
                 id=c["id"],
                 name=c["name"],
@@ -188,6 +189,9 @@ async def refresh_contest_metadata(db: Session) -> int:
                 division=detect_division(c["name"]),
             ))
             added += 1
+        else:
+            # Re-classify in case detect_division logic changed since first insert
+            existing.division = detect_division(c["name"])
     db.commit()
     logger.info("Contest metadata refresh: %d new contest(s) added", added)
     return added

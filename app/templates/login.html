@@ -19,10 +19,14 @@
     <form method="post" action="/login">
       <input type="hidden" name="next" value="{{ next or '/' }}" />
       <div class="form-col" style="margin-bottom: 10px;">
-        <label>Admin password</label>
-        <input type="password" name="password" autofocus required />
+        <label>Username</label>
+        <input type="text" name="username" autofocus required autocomplete="username" />
       </div>
-      <button type="submit" class="btn btn-green">Sign in</button>
+      <div class="form-col" style="margin-bottom: 14px;">
+        <label>Password</label>
+        <input type="password" name="password" required autocomplete="current-password" />
+      </div>
+      <button type="submit" class="btn btn-green" style="width:100%;">Sign in</button>
     </form>
   </div>
 </div>

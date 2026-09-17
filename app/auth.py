@@ -1,35 +1,44 @@
-import os
 import hashlib
-from fastapi import Request
-from fastapi.responses import RedirectResponse
+import secrets
+from fastapi import Request, Depends, HTTPException
+from sqlalchemy.orm import Session
+from app.database import get_db
 
 
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
+def hash_password(password: str) -> str:
+    salt = secrets.token_hex(16)
+    h = hashlib.sha256((salt + password).encode()).hexdigest()
+    return f"{salt}:{h}"
 
 
-def _session_token() -> str:
-    return hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest()
+def verify_password(password: str, stored: str) -> bool:
+    try:
+        salt, h = stored.split(":", 1)
+        return hashlib.sha256((salt + password).encode()).hexdigest() == h
+    except Exception:
+        return False
 
 
-def is_authenticated(request: Request) -> bool:
-    return request.cookies.get("session") == _session_token()
-
-
-def require_auth(request: Request):
-    """Use as a dependency; redirects to /login if not authenticated."""
-    if not is_authenticated(request):
-        # Raise an exception that main.py catches and redirects
-        from fastapi import HTTPException
+def require_auth(request: Request, db: Session = Depends(get_db)):
+    from app.models import Account
+    account_id = request.session.get("account_id")
+    if not account_id:
         raise HTTPException(status_code=401, detail="Not authenticated")
+    account = db.get(Account, account_id)
+    if not account:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return account
 
 
-def login_response(redirect_to: str = "/") -> RedirectResponse:
-    response = RedirectResponse(url=redirect_to, status_code=303)
-    response.set_cookie("session", _session_token(), httponly=True, samesite="lax")
-    return response
+def require_admin(account=Depends(require_auth)):
+    if account.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return account
 
 
-def logout_response() -> RedirectResponse:
-    response = RedirectResponse(url="/login", status_code=303)
-    response.delete_cookie("session")
-    return response
+def can_delete_item(account, item) -> bool:
+    """Returns True if this account is allowed to delete the given AssignmentItem."""
+    if account.role in ("admin", "user"):
+        return True
+    # student: only items they added (NULL created_by_id = admin-owned, cannot delete)
+    return item.created_by_id is not None and item.created_by_id == account.id

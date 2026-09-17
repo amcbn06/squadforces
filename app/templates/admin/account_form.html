@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}{% if edit_account %}Edit {{ edit_account.username }}{% else %}New account{% endif %} — Squadforces{% endblock %}
+
+{% block content %}
+<p style="margin-bottom:6px;"><a href="/admin/accounts">← Accounts</a></p>
+<h1>{% if edit_account %}Edit account: {{ edit_account.username }}{% else %}New account{% endif %}</h1>
+
+{% if error %}
+<div class="error-msg" style="margin-bottom:10px;">{{ error }}</div>
+{% endif %}
+
+<div class="box" style="max-width:520px;">
+  <div class="box-body">
+    <form method="post"
+          action="{% if edit_account %}/admin/accounts/{{ edit_account.id }}/edit{% else %}/admin/accounts/new{% endif %}">
+
+      <div class="form-col" style="margin-bottom:10px;">
+        <label>Username</label>
+        <input type="text" name="username" required
+               value="{{ edit_account.username if edit_account else '' }}"
+               autocomplete="off" />
+      </div>
+
+      <div class="form-col" style="margin-bottom:10px;">
+        <label>Password{% if edit_account %} <span class="meta">(leave blank to keep current)</span>{% endif %}</label>
+        <input type="password" name="password" {% if not edit_account %}required{% endif %}
+               autocomplete="new-password" />
+      </div>
+
+      <div class="form-col" style="margin-bottom:16px;">
+        <label>Role</label>
+        <select name="role">
+          <option value="user" {% if edit_account and edit_account.role == 'user' %}selected{% elif not edit_account %}selected{% endif %}>user — CP groups, full item access</option>
+          <option value="student" {% if edit_account and edit_account.role == 'student' %}selected{% endif %}>student — tutoring groups, cannot delete admin items</option>
+          <option value="admin" {% if edit_account and edit_account.role == 'admin' %}selected{% endif %}>admin — full access</option>
+        </select>
+      </div>
+
+      {% if all_groups %}
+      <div class="form-col" style="margin-bottom:16px;">
+        <label>Group access <span class="meta">(ignored for admin — admin sees all)</span></label>
+        <div style="display:flex; flex-direction:column; gap:5px; margin-top:4px;">
+          {% for g in all_groups %}
+          <label style="display:flex; align-items:center; gap:6px; font-weight:normal; cursor:pointer;">
+            <input type="checkbox" name="group_ids" value="{{ g.id }}"
+                   {% if g.id in selected_group_ids %}checked{% endif %} />
+            {{ g.name }}
+            <span class="meta">({{ g.memberships | length }} member{{ 's' if g.memberships | length != 1 }})</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      {% else %}
+      <p class="meta" style="margin-bottom:16px;">No groups yet. <a href="/groups/new">Create a group first.</a></p>
+      {% endif %}
+
+      <div style="display:flex; gap:8px;">
+        <button type="submit" class="btn btn-green">
+          {% if edit_account %}Save changes{% else %}Create account{% endif %}
+        </button>
+        <a href="/admin/accounts" class="btn">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

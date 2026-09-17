@@ -7,6 +7,19 @@ from sqlalchemy.orm import relationship
 from app.database import Base
 
 
+class Account(Base):
+    """Login account (admin / user / student)."""
+    __tablename__ = "accounts"
+
+    id = Column(Integer, primary_key=True)
+    username = Column(String(50), unique=True, nullable=False, index=True)
+    password_hash = Column(String(200), nullable=False)
+    role = Column(String(20), nullable=False, default="user")  # admin|user|student
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    group_access = relationship("AccountGroupAccess", back_populates="account", cascade="all, delete-orphan")
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -32,6 +45,7 @@ class Group(Base):
 
     memberships = relationship("GroupMembership", back_populates="group", cascade="all, delete-orphan")
     assignments = relationship("Assignment", back_populates="group", cascade="all, delete-orphan")
+    account_access = relationship("AccountGroupAccess", back_populates="group", cascade="all, delete-orphan")
 
 
 class GroupMembership(Base):
@@ -45,6 +59,19 @@ class GroupMembership(Base):
 
     group = relationship("Group", back_populates="memberships")
     user = relationship("User", back_populates="memberships")
+
+
+class AccountGroupAccess(Base):
+    """Which login accounts can access which groups (admin bypasses this)."""
+    __tablename__ = "account_group_access"
+    __table_args__ = (UniqueConstraint("account_id", "group_id"),)
+
+    id = Column(Integer, primary_key=True)
+    account_id = Column(Integer, ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False)
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=False)
+
+    account = relationship("Account", back_populates="group_access")
+    group = relationship("Group", back_populates="account_access")
 
 
 class Assignment(Base):
@@ -74,6 +101,8 @@ class AssignmentItem(Base):
     last_synced_at = Column(DateTime, nullable=True)
     sync_status = Column(String(20), default="pending")  # pending|syncing|done|error
     sync_error = Column(Text, nullable=True)
+    # Account that added this item — used to gate delete for student role
+    created_by_id = Column(Integer, ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True)
 
     assignment = relationship("Assignment", back_populates="items")
     contest_problems = relationship("ContestProblem", back_populates="assignment_item", cascade="all, delete-orphan")

@@ -1,13 +1,16 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Request, Form, BackgroundTasks
+from fastapi import APIRouter, Depends, Request, Form, BackgroundTasks, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Group, User, GroupMembership, Assignment, AssignmentItem, Result, ProblemResult
-from app.auth import require_auth
+from app.models import (
+    Group, User, GroupMembership, Assignment, AssignmentItem,
+    Result, ProblemResult, AccountGroupAccess,
+)
+from app.auth import require_auth, require_admin
 from app.scraper import codeforces as cf
 from app.scraper import atcoder as ac
 
@@ -15,15 +18,40 @@ router = APIRouter(prefix="/groups", tags=["groups"])
 templates = Jinja2Templates(directory="app/templates")
 
 
+def _check_group_access(account, group_id: int, db: Session):
+    """Raise 403 if account cannot access this group."""
+    if account.role == "admin":
+        return
+    ok = db.query(AccountGroupAccess).filter_by(account_id=account.id, group_id=group_id).first()
+    if not ok:
+        raise HTTPException(status_code=403)
+
+
 @router.get("/", response_class=HTMLResponse)
-async def list_groups(request: Request, db: Session = Depends(get_db), _=Depends(require_auth)):
-    groups = db.query(Group).order_by(Group.created_at.desc()).all()
-    return templates.TemplateResponse("groups/list.html", {"request": request, "groups": groups})
+async def list_groups(request: Request, db: Session = Depends(get_db), account=Depends(require_auth)):
+    if account.role == "admin":
+        groups = db.query(Group).order_by(Group.created_at.desc()).all()
+    else:
+        accessible_ids = [
+            a.group_id for a in
+            db.query(AccountGroupAccess).filter_by(account_id=account.id).all()
+        ]
+        groups = (
+            db.query(Group)
+            .filter(Group.id.in_(accessible_ids))
+            .order_by(Group.created_at.desc())
+            .all()
+        ) if accessible_ids else []
+    return templates.TemplateResponse("groups/list.html", {
+        "request": request, "groups": groups, "account": account,
+    })
 
 
 @router.get("/new", response_class=HTMLResponse)
-async def new_group_form(request: Request, _=Depends(require_auth)):
-    return templates.TemplateResponse("groups/form.html", {"request": request, "group": None, "error": None})
+async def new_group_form(request: Request, account=Depends(require_admin)):
+    return templates.TemplateResponse("groups/form.html", {
+        "request": request, "group": None, "error": None, "account": account,
+    })
 
 
 @router.post("/new")
@@ -32,13 +60,13 @@ async def create_group(
     name: str = Form(...),
     description: str = Form(""),
     db: Session = Depends(get_db),
-    _=Depends(require_auth),
+    account=Depends(require_admin),
 ):
     name = name.strip()
     if not name:
         return templates.TemplateResponse(
             "groups/form.html",
-            {"request": request, "group": None, "error": "Group name is required."},
+            {"request": request, "group": None, "error": "Group name is required.", "account": account},
             status_code=422,
         )
     group = Group(name=name, description=description.strip() or None)
@@ -48,13 +76,17 @@ async def create_group(
 
 
 @router.get("/{group_id}", response_class=HTMLResponse)
-async def group_detail(request: Request, group_id: int, db: Session = Depends(get_db), _=Depends(require_auth)):
+async def group_detail(
+    request: Request, group_id: int, db: Session = Depends(get_db), account=Depends(require_auth)
+):
     group = db.get(Group, group_id)
     if not group:
         return HTMLResponse("Group not found", status_code=404)
+    _check_group_access(account, group_id, db)
+
     members = [m.user for m in group.memberships]
 
-    # ── 30-day leaderboard ─────────────────────────────────────────────────────
+    # 30-day leaderboard
     cutoff = datetime.utcnow() - timedelta(days=30)
     recent_items = (
         db.query(AssignmentItem)
@@ -93,16 +125,26 @@ async def group_detail(request: Request, group_id: int, db: Session = Depends(ge
 
     return templates.TemplateResponse(
         "groups/detail.html",
-        {"request": request, "group": group, "members": members, "leaderboard": leaderboard},
+        {
+            "request": request,
+            "group": group,
+            "members": members,
+            "leaderboard": leaderboard,
+            "account": account,
+        },
     )
 
 
 @router.get("/{group_id}/edit-page", response_class=HTMLResponse)
-async def edit_group_page(request: Request, group_id: int, db: Session = Depends(get_db), _=Depends(require_auth)):
+async def edit_group_page(
+    request: Request, group_id: int, db: Session = Depends(get_db), account=Depends(require_admin)
+):
     group = db.get(Group, group_id)
     if not group:
         return HTMLResponse("Group not found", status_code=404)
-    return templates.TemplateResponse("groups/form.html", {"request": request, "group": group, "error": None})
+    return templates.TemplateResponse("groups/form.html", {
+        "request": request, "group": group, "error": None, "account": account,
+    })
 
 
 @router.post("/{group_id}/edit")
@@ -112,7 +154,7 @@ async def edit_group(
     name: str = Form(...),
     description: str = Form(""),
     db: Session = Depends(get_db),
-    _=Depends(require_auth),
+    account=Depends(require_admin),
 ):
     group = db.get(Group, group_id)
     if not group:
@@ -125,7 +167,7 @@ async def edit_group(
 
 @router.post("/{group_id}/delete")
 async def delete_group(
-    group_id: int, db: Session = Depends(get_db), _=Depends(require_auth)
+    group_id: int, db: Session = Depends(get_db), account=Depends(require_admin)
 ):
     group = db.get(Group, group_id)
     if group:
@@ -142,7 +184,7 @@ async def add_member(
     atcoder_handle: str = Form(""),
     display_name: str = Form(""),
     db: Session = Depends(get_db),
-    _=Depends(require_auth),
+    account=Depends(require_admin),
 ):
     group = db.get(Group, group_id)
     if not group:
@@ -151,12 +193,10 @@ async def add_member(
     cf_handle = cf_handle.strip()
     error = None
 
-    # Validate handle against CF API
     user_info = await cf.validate_handle(cf_handle)
     if not user_info:
         error = f"Codeforces handle '{cf_handle}' does not exist."
     else:
-        # Find or create user
         user = db.query(User).filter_by(codeforces_handle=cf_handle).first()
         if not user:
             name = display_name.strip() or user_info.get("handle", cf_handle)
@@ -172,7 +212,6 @@ async def add_member(
         elif atcoder_handle.strip():
             user.atcoder_handle = atcoder_handle.strip()
 
-        # Add to group if not already
         existing = db.query(GroupMembership).filter_by(group_id=group_id, user_id=user.id).first()
         if existing:
             error = f"{cf_handle} is already in this group."
@@ -185,7 +224,10 @@ async def add_member(
     members = [m.user for m in group.memberships]
     return templates.TemplateResponse(
         "groups/detail.html",
-        {"request": request, "group": group, "members": members, "error": error},
+        {
+            "request": request, "group": group, "members": members,
+            "error": error, "account": account, "leaderboard": [],
+        },
         status_code=422,
     )
 
@@ -199,7 +241,7 @@ async def edit_member(
     cf_handle: str = Form(""),
     atcoder_handle: str = Form(""),
     db: Session = Depends(get_db),
-    _=Depends(require_auth),
+    account=Depends(require_admin),
 ):
     user = db.get(User, user_id)
     if not user:
@@ -223,7 +265,7 @@ async def edit_member(
 
 @router.post("/{group_id}/members/{user_id}/remove")
 async def remove_member(
-    group_id: int, user_id: int, db: Session = Depends(get_db), _=Depends(require_auth)
+    group_id: int, user_id: int, db: Session = Depends(get_db), account=Depends(require_admin)
 ):
     membership = db.query(GroupMembership).filter_by(group_id=group_id, user_id=user_id).first()
     if membership:
@@ -235,24 +277,26 @@ async def remove_member(
 @router.get("/{group_id}/members/{user_id}", response_class=HTMLResponse)
 async def member_profile(
     request: Request, group_id: int, user_id: int,
-    db: Session = Depends(get_db), _=Depends(require_auth),
+    db: Session = Depends(get_db), account=Depends(require_auth),
 ):
     group = db.get(Group, group_id)
     user = db.get(User, user_id)
     if not group or not user:
         return HTMLResponse("Not found", status_code=404)
+    _check_group_access(account, group_id, db)
     return templates.TemplateResponse(
         "groups/member.html",
-        {"request": request, "group": group, "user": user},
+        {"request": request, "group": group, "user": user, "account": account},
     )
 
 
 @router.get("/{group_id}/members/{user_id}/activity.json")
 async def member_activity(
     group_id: int, user_id: int,
-    db: Session = Depends(get_db), _=Depends(require_auth),
+    db: Session = Depends(get_db), account=Depends(require_auth),
 ):
     """Return daily submission counts for CF and AtCoder (last 2 years)."""
+    _check_group_access(account, group_id, db)
     user = db.get(User, user_id)
     if not user:
         return JSONResponse({})

@@ -18,10 +18,12 @@
     <form method="post" action="/assignments/{{ assignment.id }}/sync" style="display:inline;">
       <button class="btn" title="Re-sync all items">↻ Refresh all</button>
     </form>
+    {% if account and account.role == "admin" %}
     <form method="post" action="/assignments/{{ assignment.id }}/delete" style="display:inline;"
           onsubmit="return confirm('Delete this assignment and all its data?')">
       <button class="btn btn-red">Delete</button>
     </form>
+    {% endif %}
   </div>
 </div>
 
@@ -201,10 +203,12 @@
                   style="display:inline;">
               <button class="btn" style="padding:1px 5px;" title="Sync now">↻</button>
             </form>
+            {% if account and (account.role in ("admin", "user") or item.created_by_id == account.id) %}
             <form method="post" action="/assignments/{{ assignment.id }}/items/{{ item.id }}/delete"
                   style="display:inline;" onsubmit="return confirm('Remove?')">
               <button class="del-btn" title="Remove">×</button>
             </form>
+            {% endif %}
           </td>
         </tr>
 

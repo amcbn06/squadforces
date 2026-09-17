@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, Request, Form, BackgroundTasks
+from fastapi import APIRouter, Depends, Request, Form, BackgroundTasks, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Group, Assignment, AssignmentItem, Result, ProblemResult
-from app.auth import require_auth
+from app.models import Group, Assignment, AssignmentItem, Result, ProblemResult, AccountGroupAccess
+from app.auth import require_auth, require_admin, can_delete_item
 from app.scraper import codeforces as cf
 from app.scraper import atcoder as ac
 from app import sync as sync_svc
@@ -14,18 +14,26 @@ router = APIRouter(prefix="/assignments", tags=["assignments"])
 templates = Jinja2Templates(directory="app/templates")
 
 
+def _check_group_access(account, group_id: int, db: Session):
+    if account.role == "admin":
+        return
+    ok = db.query(AccountGroupAccess).filter_by(account_id=account.id, group_id=group_id).first()
+    if not ok:
+        raise HTTPException(status_code=403)
+
+
 @router.get("/new", response_class=HTMLResponse)
 async def new_assignment_form(
     request: Request,
     group_id: int,
     db: Session = Depends(get_db),
-    _=Depends(require_auth),
+    account=Depends(require_admin),
 ):
     group = db.get(Group, group_id)
     if not group:
         return HTMLResponse("Group not found", status_code=404)
     return templates.TemplateResponse(
-        "assignments/form.html", {"request": request, "group": group, "error": None}
+        "assignments/form.html", {"request": request, "group": group, "error": None, "account": account}
     )
 
 
@@ -37,7 +45,7 @@ async def create_assignment(
     week_start_date: str = Form(""),
     description: str = Form(""),
     db: Session = Depends(get_db),
-    _=Depends(require_auth),
+    account=Depends(require_admin),
 ):
     from datetime import date
     group = db.get(Group, group_id)
@@ -67,17 +75,18 @@ async def assignment_detail(
     request: Request,
     assignment_id: int,
     db: Session = Depends(get_db),
-    _=Depends(require_auth),
+    account=Depends(require_auth),
 ):
     assignment = db.get(Assignment, assignment_id)
     if not assignment:
         return HTMLResponse("Assignment not found", status_code=404)
 
+    _check_group_access(account, assignment.group_id, db)
+
     group = assignment.group
     members = [m.user for m in group.memberships]
     items = assignment.items
 
-    # Build matrix data
     matrix = _build_matrix(items, members, db)
 
     return templates.TemplateResponse(
@@ -89,13 +98,14 @@ async def assignment_detail(
             "members": members,
             "items": items,
             "matrix": matrix,
+            "account": account,
         },
     )
 
 
 @router.post("/{assignment_id}/delete")
 async def delete_assignment(
-    assignment_id: int, db: Session = Depends(get_db), _=Depends(require_auth)
+    assignment_id: int, db: Session = Depends(get_db), account=Depends(require_admin)
 ):
     assignment = db.get(Assignment, assignment_id)
     if not assignment:
@@ -115,16 +125,17 @@ async def add_item(
     platform: str = Form(...),
     external_id: str = Form(...),
     db: Session = Depends(get_db),
-    _=Depends(require_auth),
+    account=Depends(require_auth),
 ):
     assignment = db.get(Assignment, assignment_id)
     if not assignment:
         return HTMLResponse("Assignment not found", status_code=404)
 
+    _check_group_access(account, assignment.group_id, db)
+
     external_id = external_id.strip()
     error = None
 
-    # Parse and validate the external_id
     if item_type == "contest":
         if platform == "codeforces":
             parsed = cf.parse_contest_id(external_id)
@@ -166,6 +177,7 @@ async def add_item(
                 "items": assignment.items,
                 "matrix": matrix,
                 "add_error": error,
+                "account": account,
             },
             status_code=422,
         )
@@ -176,6 +188,7 @@ async def add_item(
         platform=platform,
         external_id=external_id,
         sync_status="pending",
+        created_by_id=account.id,
     )
     db.add(item)
     db.commit()
@@ -191,10 +204,12 @@ async def delete_item(
     assignment_id: int,
     item_id: int,
     db: Session = Depends(get_db),
-    _=Depends(require_auth),
+    account=Depends(require_auth),
 ):
     item = db.get(AssignmentItem, item_id)
     if item and item.assignment_id == assignment_id:
+        if not can_delete_item(account, item):
+            raise HTTPException(status_code=403, detail="You can only remove items you added.")
         db.delete(item)
         db.commit()
     return RedirectResponse(f"/assignments/{assignment_id}", status_code=303)
@@ -205,11 +220,12 @@ async def sync_assignment(
     assignment_id: int,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    _=Depends(require_auth),
+    account=Depends(require_auth),
 ):
     assignment = db.get(Assignment, assignment_id)
     if not assignment:
         return HTMLResponse("Not found", status_code=404)
+    _check_group_access(account, assignment.group_id, db)
     for item in assignment.items:
         background_tasks.add_task(_run_sync, item.id)
     return RedirectResponse(f"/assignments/{assignment_id}", status_code=303)
@@ -221,10 +237,11 @@ async def sync_item(
     item_id: int,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    _=Depends(require_auth),
+    account=Depends(require_auth),
 ):
     item = db.get(AssignmentItem, item_id)
     if item and item.assignment_id == assignment_id:
+        _check_group_access(account, item.assignment.group_id, db)
         background_tasks.add_task(_run_sync, item.id)
     return RedirectResponse(f"/assignments/{assignment_id}", status_code=303)
 
@@ -232,12 +249,6 @@ async def sync_item(
 # --- Helpers ---
 
 def _build_matrix(items, members, db: Session) -> list[dict]:
-    """
-    Returns a list of row dicts for the matrix view.
-    Each row: {item, cells: [{user, result, problem_results, live_count,
-                               virtual_count, upsolve_count, standalone_count,
-                               attempted_count}]}
-    """
     rows = []
     for item in items:
         cells = []

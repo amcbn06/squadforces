@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Accounts — Squadforces{% endblock %}
+
+{% block content %}
+<div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:12px;">
+  <h1>Accounts</h1>
+  <a href="/admin/accounts/new" class="btn btn-green">+ New account</a>
+</div>
+
+{% if error %}
+<div class="error-msg" style="margin-bottom:10px;">{{ error }}</div>
+{% endif %}
+
+<div class="box">
+  <div class="box-body" style="padding:0;">
+    <table class="t">
+      <thead>
+        <tr>
+          <th class="l">Username</th>
+          <th>Role</th>
+          <th class="l">Groups</th>
+          <th>Created</th>
+          <th style="width:100px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in accounts %}
+        <tr>
+          <td class="l"><strong>{{ a.username }}</strong></td>
+          <td>
+            {% if a.role == "admin" %}
+              <span style="background:#c62828;color:#fff;padding:1px 7px;border-radius:3px;font-size:11px;">admin</span>
+            {% elif a.role == "student" %}
+              <span style="background:#2e7d32;color:#fff;padding:1px 7px;border-radius:3px;font-size:11px;">student</span>
+            {% else %}
+              <span style="background:#1565c0;color:#fff;padding:1px 7px;border-radius:3px;font-size:11px;">user</span>
+            {% endif %}
+          </td>
+          <td class="l">
+            {% set grps = a.group_access | map(attribute='group') | list %}
+            {% if grps %}
+              {{ grps | map(attribute='name') | join(', ') }}
+            {% elif a.role == "admin" %}
+              <span class="meta">all groups</span>
+            {% else %}
+              <span class="meta">none</span>
+            {% endif %}
+          </td>
+          <td class="meta">{{ a.created_at.strftime('%Y-%m-%d') }}</td>
+          <td style="text-align:right;">
+            <a href="/admin/accounts/{{ a.id }}/edit" class="btn" style="font-size:11px; padding:2px 8px;">Edit</a>
+            {% if a.id != account.id %}
+            <form method="post" action="/admin/accounts/{{ a.id }}/delete" style="display:inline;"
+                  onsubmit="return confirm('Delete account {{ a.username }}?')">
+              <button class="del-btn" title="Delete">×</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<p class="meta" style="margin-top:10px;">
+  <strong>admin</strong> — full access to everything &nbsp;·&nbsp;
+  <strong>user</strong> — access to assigned CP groups, can add/delete items &nbsp;·&nbsp;
+  <strong>student</strong> — access to assigned tutoring groups, can add items (cannot delete admin-added items)
+</p>
+{% endblock %}

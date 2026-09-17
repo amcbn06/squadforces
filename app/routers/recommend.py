@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app import models, recommend as rec
 from app.auth import require_auth
 from app.database import get_db
+from app.models import Account
 from app.scraper import codeforces as cf
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,7 @@ DEFAULT_DIVISIONS = ["div2", "div3", "educational"]
 @router.get("/debug", response_class=PlainTextResponse)
 async def recommend_debug(
     db: Session = Depends(get_db),
-    _=Depends(require_auth),
+    account=Depends(require_auth),
 ):
     """Diagnostic endpoint: shows cache state and runs one live prefetch."""
     lines = []
@@ -42,6 +43,19 @@ async def recommend_debug(
     lines.append(f"CF contests in DB: {total}")
     lines.append(f"  problems_fetched=True: {fetched_count}")
     lines.append(f"  remaining: {total - fetched_count}")
+    lines.append("")
+
+    # Division breakdown
+    from sqlalchemy import func
+    div_counts = (
+        db.query(models.CfContest.division, func.count())
+        .group_by(models.CfContest.division)
+        .order_by(func.count().desc())
+        .all()
+    )
+    lines.append("Division breakdown:")
+    for div, cnt in div_counts:
+        lines.append(f"  {div or 'None'}: {cnt}")
     lines.append("")
 
     uncached = (
@@ -80,10 +94,10 @@ async def recommend_page(
     request: Request,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    _=Depends(require_auth),
     rating: int = 1200,
     member_id: Optional[str] = Query(default=None),
     divisions: Optional[list[str]] = Query(None),
+    account=Depends(require_auth),
 ):
     # member_id arrives as "" when the select has no selection
     try:
@@ -114,4 +128,5 @@ async def recommend_page(
         "selected_divs": selected_divs,
         "all_divisions": rec.DIVISION_LABELS,
         "bootstrapping": total == 0,
+        "account": account,
     })

@@ -4,7 +4,9 @@
 {% block content %}
 <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:10px;">
   <h1>Groups</h1>
+  {% if account and account.role == "admin" %}
   <a href="/groups/new" class="btn btn-green">+ New group</a>
+  {% endif %}
 </div>
 
 {% if groups %}
@@ -26,7 +28,9 @@
 <div class="box">
   <div class="box-body" style="text-align:center; padding: 32px;">
     <p style="color:#888;">No groups yet.</p>
+    {% if account and account.role == "admin" %}
     <a href="/groups/new" class="btn btn-green" style="margin-top:8px;">Create a group</a>
+    {% endif %}
   </div>
 </div>
 {% endif %}

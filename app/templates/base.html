@@ -20,7 +20,15 @@
   </a>
   <a href="/groups/">Groups</a>
   <a href="/recommend">Recommend</a>
+  {% if account and account.role == "admin" %}
+  <a href="/admin/accounts">Admin</a>
+  {% endif %}
   <div class="spacer"></div>
+  {% if account %}
+  <span class="meta" style="padding:0 8px; opacity:0.7;">{{ account.username }}
+    {% if account.role != "user" %}<span style="font-size:10px; opacity:0.7;">({{ account.role }})</span>{% endif %}
+  </span>
+  {% endif %}
   <button class="theme-btn" id="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode">☾</button>
   <form method="post" action="/logout">
     <button>Sign out</button>
