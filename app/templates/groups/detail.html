@@ -37,6 +37,7 @@
               style="display:flex; flex-direction:column; gap:5px; margin-bottom:10px;">
           <input type="text" name="cf_handle" required placeholder="Codeforces handle" />
           <input type="text" name="atcoder_handle" placeholder="AtCoder handle (optional)" />
+          <input type="text" name="kilonova_handle" placeholder="Kilonova handle (optional)" />
           <input type="text" name="display_name" placeholder="Display name (optional)" />
           <button type="submit" class="btn btn-green">Add member</button>
         </form>
@@ -57,6 +58,10 @@
                 {% if user.atcoder_handle %}
                 · <a href="https://atcoder.jp/users/{{ user.atcoder_handle }}" target="_blank"
                      class="meta">AC: {{ user.atcoder_handle }}</a>
+                {% endif %}
+                {% if user.kilonova_handle %}
+                · <a href="https://kilonova.ro/user/{{ user.kilonova_handle }}" target="_blank"
+                     class="meta">KN: {{ user.kilonova_handle }}</a>
                 {% endif %}
               </div>
               {% if account and account.role == "admin" %}
@@ -80,6 +85,8 @@
                      placeholder="Codeforces handle" style="font-size:12px;" />
               <input type="text" name="atcoder_handle" value="{{ user.atcoder_handle or '' }}"
                      placeholder="AtCoder handle (optional)" style="font-size:12px;" />
+              <input type="text" name="kilonova_handle" value="{{ user.kilonova_handle or '' }}"
+                     placeholder="Kilonova handle (optional)" style="font-size:12px;" />
               <button type="submit" class="btn btn-green" style="font-size:12px; align-self:flex-start;">Save</button>
             </form>
             {% endif %}

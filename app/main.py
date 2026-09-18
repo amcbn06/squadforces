@@ -31,6 +31,7 @@ async def lifespan(app: FastAPI):
         ("problem_results", "attempts", "INTEGER"),
         ("problem_results", "best_wrong_verdict", "VARCHAR(30)"),
         ("assignment_items", "created_by_id", "INTEGER"),
+        ("users", "kilonova_handle", "VARCHAR(50)"),
     ]
     with engine.connect() as conn:
         for table, col, coldef in _migrations:

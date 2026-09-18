@@ -1,0 +1,95 @@
+"""Kilonova scraper — uses the public Kilonova REST API (kilonova.ro/api/...)."""
+import httpx
+
+BASE = "https://kilonova.ro/api"
+HEADERS = {"Authorization": "guest", "User-Agent": "Squadforces/1.0"}
+
+
+async def _get(path: str, params: dict | None = None) -> dict:
+    async with httpx.AsyncClient(timeout=20, headers=HEADERS) as client:
+        resp = await client.get(f"{BASE}{path}", params=params)
+    resp.raise_for_status()
+    body = resp.json()
+    if body.get("status") != "success":
+        raise ValueError(f"Kilonova API error: {body.get('data')}")
+    return body["data"]
+
+
+# ---------------------------------------------------------------------------
+# Validation / parsing
+# ---------------------------------------------------------------------------
+
+def parse_problem_id(raw: str) -> int | None:
+    """Accept kilonova.ro/problems/2460 or bare '2460'. Returns int id or None."""
+    raw = raw.strip().rstrip("/")
+    if "/problems/" in raw:
+        part = raw.split("/problems/")[-1].split("/")[0]
+    else:
+        part = raw
+    try:
+        return int(part)
+    except ValueError:
+        return None
+
+
+def parse_contest_id(raw: str) -> int | None:
+    """Accept kilonova.ro/problem_lists/1572 or bare '1572'. Returns int id or None."""
+    raw = raw.strip().rstrip("/")
+    if "/problem_lists/" in raw:
+        part = raw.split("/problem_lists/")[-1].split("/")[0]
+    else:
+        part = raw
+    try:
+        return int(part)
+    except ValueError:
+        return None
+
+
+async def validate_handle(username: str) -> dict | None:
+    """Return user info dict if handle exists, None otherwise."""
+    try:
+        return await _get(f"/user/byName/{username}")
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Problem / contest metadata
+# ---------------------------------------------------------------------------
+
+async def get_problem(problem_id: int) -> dict:
+    """Return problem info: {id, name, score_scale, ...}"""
+    return await _get(f"/problem/{problem_id}")
+
+
+async def get_problem_list(list_id: int) -> dict:
+    """Return problem list info: {id, title, list: [problem_id, ...], ...}"""
+    return await _get(f"/problemList/{list_id}")
+
+
+# ---------------------------------------------------------------------------
+# Submissions
+# ---------------------------------------------------------------------------
+
+async def get_best_submission(user_id: int, problem_id: int) -> dict | None:
+    """
+    Return the user's best submission for a problem, or None.
+    Best = highest score; if multiple tied, most recent.
+    A submission is 'solved' when score == score_scale (100/100).
+    """
+    data = await _get("/submissions/get", params={
+        "user_id": user_id,
+        "problem_id": problem_id,
+        "limit": 50,
+    })
+    subs = data.get("submissions", [])
+    if not subs:
+        return None
+    # Pick highest score; tiebreak by most recent (first in list = newest)
+    return max(subs, key=lambda s: s.get("score", 0))
+
+
+async def get_user_id(username: str) -> int | None:
+    """Resolve a Kilonova username to a numeric user_id."""
+    info = await validate_handle(username)
+    return info["id"] if info else None

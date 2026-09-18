@@ -13,6 +13,7 @@ from app.models import (
 from app.auth import require_auth, require_admin
 from app.scraper import codeforces as cf
 from app.scraper import atcoder as ac
+from app.scraper import kilonova as kn
 
 router = APIRouter(prefix="/groups", tags=["groups"])
 templates = Jinja2Templates(directory="app/templates")
@@ -182,6 +183,7 @@ async def add_member(
     group_id: int,
     cf_handle: str = Form(...),
     atcoder_handle: str = Form(""),
+    kilonova_handle: str = Form(""),
     display_name: str = Form(""),
     db: Session = Depends(get_db),
     account=Depends(require_admin),
@@ -206,11 +208,15 @@ async def add_member(
                 cf_rating=user_info.get("rating"),
                 cf_rank=user_info.get("rank"),
                 atcoder_handle=atcoder_handle.strip() or None,
+                kilonova_handle=kilonova_handle.strip() or None,
             )
             db.add(user)
             db.flush()
-        elif atcoder_handle.strip():
-            user.atcoder_handle = atcoder_handle.strip()
+        else:
+            if atcoder_handle.strip():
+                user.atcoder_handle = atcoder_handle.strip()
+            if kilonova_handle.strip():
+                user.kilonova_handle = kilonova_handle.strip()
 
         existing = db.query(GroupMembership).filter_by(group_id=group_id, user_id=user.id).first()
         if existing:
@@ -240,6 +246,7 @@ async def edit_member(
     display_name: str = Form(""),
     cf_handle: str = Form(""),
     atcoder_handle: str = Form(""),
+    kilonova_handle: str = Form(""),
     db: Session = Depends(get_db),
     account=Depends(require_admin),
 ):
@@ -250,6 +257,7 @@ async def edit_member(
     if display_name.strip():
         user.display_name = display_name.strip()
     user.atcoder_handle = atcoder_handle.strip() or None
+    user.kilonova_handle = kilonova_handle.strip() or None
 
     new_cf = cf_handle.strip()
     if new_cf and new_cf != user.codeforces_handle:

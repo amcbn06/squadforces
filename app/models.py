@@ -27,6 +27,7 @@ class User(Base):
     display_name = Column(String(100), nullable=False)
     codeforces_handle = Column(String(50), unique=True, nullable=False, index=True)
     atcoder_handle = Column(String(50), unique=True, nullable=True)
+    kilonova_handle = Column(String(50), unique=True, nullable=True)
     cf_rating = Column(Integer, nullable=True)
     cf_rank = Column(String(30), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

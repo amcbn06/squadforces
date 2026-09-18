@@ -1,4 +1,4 @@
-"""Sync service — fetches data from CF/AtCoder APIs and writes Results to DB."""
+"""Sync service — fetches data from CF/AtCoder/Kilonova APIs and writes Results to DB."""
 import asyncio
 from collections import defaultdict
 from datetime import datetime
@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app import models
 from app.scraper import codeforces as cf
 from app.scraper import atcoder as ac
+from app.scraper import kilonova as kn
 
 SYNC_TIMEOUT_SECONDS = 300  # 5 minutes hard cap per item
 
@@ -221,6 +222,8 @@ async def sync_item(item_id: int, db: Session) -> None:
             await asyncio.wait_for(_sync_cf_item(item, db), timeout=SYNC_TIMEOUT_SECONDS)
         elif item.platform == "atcoder":
             await asyncio.wait_for(_sync_ac_item(item, db), timeout=SYNC_TIMEOUT_SECONDS)
+        elif item.platform == "kilonova":
+            await asyncio.wait_for(_sync_kn_item(item, db), timeout=SYNC_TIMEOUT_SECONDS)
 
         item.last_synced_at = datetime.utcnow()
         item.sync_status = "done"
@@ -595,6 +598,152 @@ async def _sync_ac_problem(
         if not user.atcoder_handle:
             continue
         solved = await ac.check_problem_solved(user.atcoder_handle, problem_id)
+        result = (
+            db.query(models.Result)
+            .filter_by(assignment_item_id=item.id, user_id=user.id)
+            .first()
+        )
+        if not result:
+            result = models.Result(assignment_item_id=item.id, user_id=user.id)
+            db.add(result)
+        result.solved = solved
+        result.last_synced_at = datetime.utcnow()
+
+
+# ── Kilonova sync ─────────────────────────────────────────────────────────────
+
+async def _sync_kn_item(item: models.AssignmentItem, db: Session) -> None:
+    assignment = db.get(models.Assignment, item.assignment_id)
+    group = db.get(models.Group, assignment.group_id)
+    members = [m.user for m in group.memberships if m.user.kilonova_handle]
+
+    if item.type == "contest":
+        await _sync_kn_contest(item, members, db)
+    else:
+        await _sync_kn_problem(item, members, db)
+
+
+async def _sync_kn_contest(
+    item: models.AssignmentItem,
+    members: list,
+    db: Session,
+) -> None:
+    list_id = int(item.external_id)
+    pl = await kn.get_problem_list(list_id)
+
+    if not item.title:
+        item.title = pl.get("title") or f"Kilonova list {list_id}"
+
+    problem_ids: list[int] = pl.get("list", [])
+
+    # Fetch problem metadata once and upsert ContestProblem rows
+    existing_by_pid = {cp.platform_problem_id: cp for cp in item.contest_problems}
+    prob_infos: dict[int, dict] = {}
+
+    for i, pid in enumerate(problem_ids):
+        prob_info = await kn.get_problem(pid)
+        prob_infos[pid] = prob_info
+        platform_pid = str(pid)
+        idx = str(i + 1)
+
+        if platform_pid not in existing_by_pid:
+            cp = models.ContestProblem(
+                assignment_item_id=item.id,
+                platform_problem_id=platform_pid,
+                index=idx,
+                name=prob_info.get("name", f"Problem {pid}"),
+                rating=None,
+            )
+            db.add(cp)
+            db.flush()
+            existing_by_pid[platform_pid] = cp
+        else:
+            existing_by_pid[platform_pid].name = prob_info.get(
+                "name", existing_by_pid[platform_pid].name
+            )
+
+    for user in members:
+        user_id = await kn.get_user_id(user.kilonova_handle)
+        if not user_id:
+            continue
+
+        result = (
+            db.query(models.Result)
+            .filter_by(assignment_item_id=item.id, user_id=user.id)
+            .first()
+        )
+        if not result:
+            result = models.Result(assignment_item_id=item.id, user_id=user.id)
+            db.add(result)
+
+        solved_count = 0
+        for pid in problem_ids:
+            cp = existing_by_pid.get(str(pid))
+            if not cp:
+                continue
+            score_scale = prob_infos[pid].get("score_scale", 100)
+            best = await kn.get_best_submission(user_id, pid)
+            solved = best is not None and best.get("score", 0) >= score_scale
+
+            if solved:
+                solved_count += 1
+
+            pr = (
+                db.query(models.ProblemResult)
+                .filter_by(contest_problem_id=cp.id, user_id=user.id)
+                .first()
+            )
+            if not pr:
+                pr = models.ProblemResult(contest_problem_id=cp.id, user_id=user.id)
+                db.add(pr)
+            pr.solved = solved
+            pr.solve_type = None
+            pr.attempts = None
+            pr.best_wrong_verdict = None
+
+        result.problems_solved_count = solved_count
+        result.problems_total_count = len(problem_ids)
+        result.participated = None
+        result.last_synced_at = datetime.utcnow()
+
+    db.flush()
+
+    # Fill missing ProblemResult rows for users without kilonova_handle
+    all_members = db.get(models.Group, db.get(models.Assignment, item.assignment_id).group_id).memberships
+    for m in all_members:
+        for cp in existing_by_pid.values():
+            exists = (
+                db.query(models.ProblemResult)
+                .filter_by(contest_problem_id=cp.id, user_id=m.user_id)
+                .first()
+            )
+            if not exists:
+                db.add(models.ProblemResult(
+                    contest_problem_id=cp.id, user_id=m.user_id, solved=False,
+                ))
+    db.flush()
+
+
+async def _sync_kn_problem(
+    item: models.AssignmentItem,
+    members: list,
+    db: Session,
+) -> None:
+    problem_id = int(item.external_id)
+    prob_info = await kn.get_problem(problem_id)
+
+    if not item.title:
+        item.title = prob_info.get("name") or f"Kilonova {problem_id}"
+
+    score_scale = prob_info.get("score_scale", 100)
+
+    for user in members:
+        user_id = await kn.get_user_id(user.kilonova_handle)
+        solved = False
+        if user_id:
+            best = await kn.get_best_submission(user_id, problem_id)
+            solved = best is not None and best.get("score", 0) >= score_scale
+
         result = (
             db.query(models.Result)
             .filter_by(assignment_item_id=item.id, user_id=user.id)

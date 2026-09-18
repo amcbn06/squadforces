@@ -8,6 +8,7 @@ from app.models import Group, Assignment, AssignmentItem, Result, ProblemResult,
 from app.auth import require_auth, require_admin, can_delete_item
 from app.scraper import codeforces as cf
 from app.scraper import atcoder as ac
+from app.scraper import kilonova as kn
 from app import sync as sync_svc
 
 router = APIRouter(prefix="/assignments", tags=["assignments"])
@@ -149,6 +150,12 @@ async def add_item(
                 error = "Invalid AtCoder contest URL or slug."
             else:
                 external_id = parsed
+        elif platform == "kilonova":
+            parsed = kn.parse_contest_id(external_id)
+            if not parsed:
+                error = "Invalid Kilonova problem list URL or ID (e.g. 1572 or https://kilonova.ro/problem_lists/1572)."
+            else:
+                external_id = str(parsed)
     elif item_type == "problem":
         if platform == "codeforces":
             parsed = cf.parse_problem_external_id(external_id)
@@ -162,6 +169,12 @@ async def add_item(
                 error = "Invalid AtCoder problem URL (e.g. https://atcoder.jp/contests/abc123/tasks/abc123_a)."
             else:
                 external_id = parsed[1]
+        elif platform == "kilonova":
+            parsed = kn.parse_problem_id(external_id)
+            if not parsed:
+                error = "Invalid Kilonova problem URL or ID (e.g. 2460 or https://kilonova.ro/problems/2460)."
+            else:
+                external_id = str(parsed)
 
     if error:
         group = assignment.group

@@ -50,6 +50,7 @@
           <select name="platform">
             <option value="codeforces">Codeforces</option>
             <option value="atcoder">AtCoder</option>
+            <option value="kilonova">Kilonova</option>
           </select>
         </div>
         <div class="form-col" style="flex:1; min-width:200px;">
@@ -65,6 +66,7 @@
       <p class="meta">
         CF contest: ID (2085) or full URL. CF problem: 2085A or full URL.
         AtCoder: slug (abc400) or full URL.
+        Kilonova: problem ID or URL, problem list ID or URL.
       </p>
     </form>
   </div>
@@ -118,8 +120,10 @@
           <td class="l">
             {% if item.platform == 'codeforces' %}
             <img src="/static/cf.png" class="picon" alt="CF" title="Codeforces">
-            {% else %}
+            {% elif item.platform == 'atcoder' %}
             <img src="/static/ac.png" class="picon" alt="AC" title="AtCoder">
+            {% else %}
+            <img src="/static/kn.svg" class="picon" alt="KN" title="Kilonova" style="border-radius:50%;">
             {% endif %}
 
             {% if has_sub %}
@@ -132,9 +136,13 @@
                 <a href="https://codeforces.com/contest/{{ item.external_id }}" target="_blank">
                   {{ item.title or ('Contest ' ~ item.external_id) }}
                 </a>
-              {% else %}
+              {% elif item.platform == 'atcoder' %}
                 <a href="https://atcoder.jp/contests/{{ item.external_id }}" target="_blank">
                   {{ item.title or item.external_id }}
+                </a>
+              {% else %}
+                <a href="https://kilonova.ro/problem_lists/{{ item.external_id }}" target="_blank">
+                  {{ item.title or ('List ' ~ item.external_id) }}
                 </a>
               {% endif %}
               <span class="meta">(contest{% if has_sub %}, {{ item.contest_problems | length }} problems{% endif %})</span>
@@ -143,9 +151,12 @@
               {% if item.platform == 'codeforces' %}
                 <a href="https://codeforces.com/problemset/problem/{{ parts[0] }}/{{ parts[1] if parts|length > 1 else '' }}"
                    target="_blank">{{ item.title or item.external_id }}</a>
-              {% else %}
+              {% elif item.platform == 'atcoder' %}
                 <a href="https://atcoder.jp/contests/{{ parts[0] }}/tasks/{{ item.external_id }}"
                    target="_blank">{{ item.title or item.external_id }}</a>
+              {% else %}
+                <a href="https://kilonova.ro/problems/{{ item.external_id }}" target="_blank">
+                  {{ item.title or item.external_id }}</a>
               {% endif %}
             {% endif %}
 
@@ -221,9 +232,13 @@
             <img src="/static/cf.png" class="picon" alt="CF">
             <a href="https://codeforces.com/problemset/problem/{{ item.external_id }}/{{ cp.index }}"
                target="_blank">{{ cp.index }}. {{ cp.name }}</a>
-            {% else %}
+            {% elif item.platform == 'atcoder' %}
             <img src="/static/ac.png" class="picon" alt="AC">
             <a href="https://atcoder.jp/contests/{{ item.external_id }}/tasks/{{ cp.platform_problem_id }}"
+               target="_blank">{{ cp.index }}. {{ cp.name }}</a>
+            {% else %}
+            <img src="/static/kn.svg" class="picon" alt="KN" style="border-radius:50%;">
+            <a href="https://kilonova.ro/problems/{{ cp.platform_problem_id }}"
                target="_blank">{{ cp.index }}. {{ cp.name }}</a>
             {% endif %}
             {% if cp.rating %}<span class="meta prob-rating">[{{ cp.rating }}]</span>{% endif %}
