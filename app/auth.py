@@ -36,6 +36,14 @@ def require_admin(account=Depends(require_auth)):
     return account
 
 
+def can_edit_user(account, user) -> bool:
+    """Returns True if this account is allowed to edit the given User's profile."""
+    if account.role == "admin":
+        return True
+    # A user can edit their own profile if their account username matches their CF handle
+    return account.username.lower() == user.codeforces_handle.lower()
+
+
 def can_delete_item(account, item) -> bool:
     """Returns True if this account is allowed to delete the given AssignmentItem."""
     if account.role in ("admin", "user"):

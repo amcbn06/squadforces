@@ -10,7 +10,7 @@ from app.models import (
     Group, User, GroupMembership, Assignment, AssignmentItem,
     Result, ProblemResult, AccountGroupAccess,
 )
-from app.auth import require_auth, require_admin
+from app.auth import require_auth, require_admin, can_edit_user
 from app.scraper import codeforces as cf
 from app.scraper import atcoder as ac
 from app.scraper import kilonova as kn
@@ -182,8 +182,6 @@ async def add_member(
     request: Request,
     group_id: int,
     cf_handle: str = Form(...),
-    atcoder_handle: str = Form(""),
-    kilonova_handle: str = Form(""),
     display_name: str = Form(""),
     db: Session = Depends(get_db),
     account=Depends(require_admin),
@@ -207,16 +205,9 @@ async def add_member(
                 codeforces_handle=cf_handle,
                 cf_rating=user_info.get("rating"),
                 cf_rank=user_info.get("rank"),
-                atcoder_handle=atcoder_handle.strip() or None,
-                kilonova_handle=kilonova_handle.strip() or None,
             )
             db.add(user)
             db.flush()
-        else:
-            if atcoder_handle.strip():
-                user.atcoder_handle = atcoder_handle.strip()
-            if kilonova_handle.strip():
-                user.kilonova_handle = kilonova_handle.strip()
 
         existing = db.query(GroupMembership).filter_by(group_id=group_id, user_id=user.id).first()
         if existing:
@@ -248,11 +239,14 @@ async def edit_member(
     atcoder_handle: str = Form(""),
     kilonova_handle: str = Form(""),
     db: Session = Depends(get_db),
-    account=Depends(require_admin),
+    account=Depends(require_auth),
 ):
     user = db.get(User, user_id)
     if not user:
         return RedirectResponse(f"/groups/{group_id}", status_code=303)
+
+    if not can_edit_user(account, user):
+        raise HTTPException(status_code=403, detail="You cannot edit this profile.")
 
     if display_name.strip():
         user.display_name = display_name.strip()
@@ -261,14 +255,15 @@ async def edit_member(
 
     new_cf = cf_handle.strip()
     if new_cf and new_cf != user.codeforces_handle:
-        user_info = await cf.validate_handle(new_cf)
-        if user_info:
-            user.codeforces_handle = new_cf
-            user.cf_rating = user_info.get("rating")
-            user.cf_rank = user_info.get("rank")
+        if account.role == "admin":
+            user_info = await cf.validate_handle(new_cf)
+            if user_info:
+                user.codeforces_handle = new_cf
+                user.cf_rating = user_info.get("rating")
+                user.cf_rank = user_info.get("rank")
 
     db.commit()
-    return RedirectResponse(f"/groups/{group_id}", status_code=303)
+    return RedirectResponse(f"/groups/{group_id}/members/{user_id}", status_code=303)
 
 
 @router.post("/{group_id}/members/{user_id}/remove")
@@ -294,7 +289,13 @@ async def member_profile(
     _check_group_access(account, group_id, db)
     return templates.TemplateResponse(
         "groups/member.html",
-        {"request": request, "group": group, "user": user, "account": account},
+        {
+            "request": request,
+            "group": group,
+            "user": user,
+            "account": account,
+            "can_edit": can_edit_user(account, user),
+        },
     )
 
 

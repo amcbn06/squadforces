@@ -9,7 +9,47 @@
   {% if user.cf_rating %}
   <span class="meta" style="font-size:15px;">({{ user.cf_rating }})</span>
   {% endif %}
+  {% if can_edit %}
+  <button class="btn" style="padding:2px 9px; font-size:12px; margin-left:auto;"
+          onclick="document.getElementById('edit-handles').style.display = document.getElementById('edit-handles').style.display === 'none' ? 'block' : 'none';">
+    ✎ Edit
+  </button>
+  {% endif %}
 </div>
+
+{% if can_edit %}
+<div id="edit-handles" style="display:none; margin-bottom:16px;">
+  <div class="box">
+    <div class="box-header" style="cursor:default;">Edit profile</div>
+    <div class="box-body" style="padding:12px;">
+      <form method="post" action="/groups/{{ group.id }}/members/{{ user.id }}/edit"
+            style="display:flex; flex-direction:column; gap:8px; max-width:340px;">
+        <div class="form-col">
+          <label style="font-size:12px;">Display name</label>
+          <input type="text" name="display_name" value="{{ user.display_name }}" style="font-size:13px;" />
+        </div>
+        {% if account and account.role == "admin" %}
+        <div class="form-col">
+          <label style="font-size:12px;">Codeforces handle</label>
+          <input type="text" name="cf_handle" value="{{ user.codeforces_handle }}" style="font-size:13px;" />
+        </div>
+        {% else %}
+        <input type="hidden" name="cf_handle" value="{{ user.codeforces_handle }}" />
+        {% endif %}
+        <div class="form-col">
+          <label style="font-size:12px;">AtCoder handle <span class="meta">(optional)</span></label>
+          <input type="text" name="atcoder_handle" value="{{ user.atcoder_handle or '' }}" style="font-size:13px;" />
+        </div>
+        <div class="form-col">
+          <label style="font-size:12px;">Kilonova handle <span class="meta">(optional)</span></label>
+          <input type="text" name="kilonova_handle" value="{{ user.kilonova_handle or '' }}" style="font-size:13px;" />
+        </div>
+        <button type="submit" class="btn btn-green" style="align-self:flex-start; margin-top:2px;">Save</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
 
 <div style="display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap;">
   <a href="https://codeforces.com/profile/{{ user.codeforces_handle }}" target="_blank"
@@ -23,6 +63,13 @@
      class="card" style="padding:8px 14px; display:inline-flex; align-items:center; gap:6px;">
     <span style="color:#E09000; font-weight:bold;">AC</span>
     <span>{{ user.atcoder_handle }}</span>
+  </a>
+  {% endif %}
+  {% if user.kilonova_handle %}
+  <a href="https://kilonova.ro/user/{{ user.kilonova_handle }}" target="_blank"
+     class="card" style="padding:8px 14px; display:inline-flex; align-items:center; gap:6px;">
+    <span style="color:#e8c84a; font-weight:bold;">KN</span>
+    <span>{{ user.kilonova_handle }}</span>
   </a>
   {% endif %}
 </div>
