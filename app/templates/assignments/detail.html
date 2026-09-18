@@ -78,23 +78,15 @@
 <p class="meta">No items yet. Use the form above to add a contest or problem.</p>
 {% else %}
 
-<!-- Legend -->
-<div style="margin-bottom:8px; font-size:11px; color:#555;">
-  Legend:
-  <span class="st-live">✓ live</span> &nbsp;
-  <span class="st-virtual">✓ virtual</span> &nbsp;
-  <span class="st-up">▲ upsolving</span> &nbsp;
-  <span class="st-solo">✓ standalone</span> &nbsp;
-  <span class="wv">WA/TLE… wrong verdict</span> &nbsp;
-  <span class="att">+N wrong before AC</span>
-</div>
-
 <!-- Matrix -->
 <div class="box">
   <div class="box-header" style="cursor:default; display:flex; align-items:center; justify-content:space-between;">
     Problem matrix
-    <button id="rating-toggle" class="btn" style="font-size:11px; padding:2px 8px;"
-            onclick="toggleRatings()">Hide ratings</button>
+    <span style="display:flex; gap:6px; align-items:center;">
+      <a href="/help" class="btn" style="font-size:11px; padding:2px 8px;" title="Submission types explained">?</a>
+      <button id="rating-toggle" class="btn" style="font-size:11px; padding:2px 8px;"
+              onclick="toggleRatings()">Hide ratings</button>
+    </span>
   </div>
   <div style="overflow-x:auto;">
     <table class="t" style="min-width:600px;">
@@ -123,7 +115,7 @@
             {% elif item.platform == 'atcoder' %}
             <img src="/static/ac.png" class="picon" alt="AC" title="AtCoder">
             {% else %}
-            <img src="/static/kn.svg" class="picon" alt="KN" title="Kilonova" style="border-radius:50%;">
+            <img src="/static/kn.png" class="picon" alt="KN" title="Kilonova">
             {% endif %}
 
             {% if has_sub %}
@@ -176,17 +168,30 @@
           {% set r = cell.result %}
           <td>
             {% if item.type == 'contest' %}
-              {% if r and (r.participated or r.problems_solved_count) %}
+              {% if item.platform == 'kilonova' %}
+                {# Kilonova contest: show accumulated score / total with color #}
+                {% set kd = r.raw_scrape_data if r and r.raw_scrape_data else {} %}
+                {% set ks = kd.get('kn_score', 0) %}
+                {% set kt = kd.get('kn_total', 0) %}
+                {% if kt > 0 %}
+                  {% set hue = ((ks / kt) * 120) | int %}
+                  <span style="color:hsl({{ hue }},75%,45%); font-weight:bold;">{{ ks }}/{{ kt }}</span>
+                {% else %}
+                  <span style="color:#ccc;">—</span>
+                {% endif %}
+              {% elif r and (r.participated or r.problems_solved_count) %}
                 <strong>{{ r.problems_solved_count or 0 }}/{{ r.problems_total_count or '?' }}</strong>
-                {# show solve-type breakdown if data is available #}
-                {% set has_types = cell.live_count or cell.virtual_count or cell.upsolve_count or cell.standalone_count %}
-                {% if has_types %}
-                <br><span style="font-size:11px;">
-                  {% if cell.live_count %}<span class="st-live">✓{{ cell.live_count }}</span> {% endif %}
-                  {% if cell.virtual_count %}<span class="st-virtual">✓{{ cell.virtual_count }}</span> {% endif %}
-                  {% if cell.upsolve_count %}<span class="st-up">▲{{ cell.upsolve_count }}</span> {% endif %}
-                  {% if cell.standalone_count %}<span class="st-solo">✓{{ cell.standalone_count }}</span> {% endif %}
-                </span>
+                {# CF only: solve-type breakdown #}
+                {% if item.platform == 'codeforces' %}
+                  {% set has_types = cell.live_count or cell.virtual_count or cell.upsolve_count or cell.standalone_count %}
+                  {% if has_types %}
+                  <br><span style="font-size:11px;">
+                    {% if cell.live_count %}<span class="st-live">✓{{ cell.live_count }}</span> {% endif %}
+                    {% if cell.virtual_count %}<span class="st-virtual">✓{{ cell.virtual_count }}</span> {% endif %}
+                    {% if cell.upsolve_count %}<span class="st-up">▲{{ cell.upsolve_count }}</span> {% endif %}
+                    {% if cell.standalone_count %}<span class="st-solo">✓{{ cell.standalone_count }}</span> {% endif %}
+                  </span>
+                  {% endif %}
                 {% endif %}
                 {% if r.participated %}
                   {% if r.rank %}<br><span class="meta">#{{ r.rank }}</span>{% endif %}
@@ -201,9 +206,23 @@
                 <span style="color:#ccc;">—</span>
               {% endif %}
             {% else %}
-              {% if r and r.solved %}<span class="solved">✓</span>
-              {% elif r and r.solved == false %}<span style="color:#ccc;">—</span>
-              {% else %}<span style="color:#ddd;">?</span>{% endif %}
+              {# Standalone problem #}
+              {% if item.platform == 'kilonova' %}
+                {% set kd = r.raw_scrape_data if r and r.raw_scrape_data else {} %}
+                {% set ks = kd.get('kn_score') %}
+                {% set kt = kd.get('kn_total', 100) %}
+                {% if ks is not none %}
+                  {% set hue = ((ks / kt) * 120) | int if kt > 0 else 0 %}
+                  <span style="color:hsl({{ hue }},75%,45%); font-weight:bold;">{{ ks }}</span>
+                  {% if kt != 100 %}<span class="meta">/{{ kt }}</span>{% endif %}
+                {% else %}
+                  <span style="color:#ddd;">?</span>
+                {% endif %}
+              {% else %}
+                {% if r and r.solved %}<span class="solved">✓</span>
+                {% elif r and r.solved == false %}<span style="color:#ccc;">—</span>
+                {% else %}<span style="color:#ddd;">?</span>{% endif %}
+              {% endif %}
             {% endif %}
           </td>
           {% endfor %}
@@ -237,7 +256,7 @@
             <a href="https://atcoder.jp/contests/{{ item.external_id }}/tasks/{{ cp.platform_problem_id }}"
                target="_blank">{{ cp.index }}. {{ cp.name }}</a>
             {% else %}
-            <img src="/static/kn.svg" class="picon" alt="KN" style="border-radius:50%;">
+            <img src="/static/kn.png" class="picon" alt="KN">
             <a href="https://kilonova.ro/problems/{{ cp.platform_problem_id }}"
                target="_blank">{{ cp.index }}. {{ cp.name }}</a>
             {% endif %}
@@ -246,25 +265,42 @@
           {% for cell in row.cells %}
           {% set pr = cell.problem_results.get(cp.id) %}
           <td>
-            {% if pr and pr.solved %}
-              {# solve-type badge #}
-              {% if pr.solve_type == 'live' %}
-                <span class="st-live" title="Solved during live contest">✓</span>
-              {% elif pr.solve_type == 'virtual' %}
-                <span class="st-virtual" title="Solved during virtual participation">✓</span>
-              {% elif pr.solve_type == 'upsolving' %}
-                <span class="st-up" title="Upsolved after contest">▲</span>
-              {% elif pr.solve_type == 'standalone' %}
-                <span class="st-solo" title="Standalone practice solve">✓</span>
+            {% if item.platform == 'kilonova' %}
+              {% set ks = pr.score if pr and pr.score is not none else none %}
+              {% if ks is not none %}
+                {% set hue = (ks * 120 // 100) %}
+                <span style="color:hsl({{ hue }},75%,45%); font-weight:bold;">{{ ks }}</span>
               {% else %}
-                <span class="solved">✓</span>
+                <span style="color:#ddd;">·</span>
               {% endif %}
-              {# wrong attempts before AC #}
-              {% if pr.attempts %}<span class="att">+{{ pr.attempts }}</span>{% endif %}
-            {% elif pr and pr.best_wrong_verdict %}
-              <span class="wv">{{ pr.best_wrong_verdict }}</span>
+            {% elif item.platform == 'atcoder' %}
+              {% if pr and pr.solved %}
+                <span style="color:#2e7d32; font-weight:bold;">✓</span>
+              {% elif pr %}
+                <span style="color:#c62828;">✗</span>
+              {% else %}
+                <span style="color:#ddd;">·</span>
+              {% endif %}
             {% else %}
-              <span style="color:#ddd;">·</span>
+              {# Codeforces: solve-type badge + wrong verdicts #}
+              {% if pr and pr.solved %}
+                {% if pr.solve_type == 'live' %}
+                  <span class="st-live" title="Solved during live contest">✓</span>
+                {% elif pr.solve_type == 'virtual' %}
+                  <span class="st-virtual" title="Solved during virtual participation">✓</span>
+                {% elif pr.solve_type == 'upsolving' %}
+                  <span class="st-up" title="Upsolved after contest">▲</span>
+                {% elif pr.solve_type == 'standalone' %}
+                  <span class="st-solo" title="Standalone practice solve">✓</span>
+                {% else %}
+                  <span class="solved">✓</span>
+                {% endif %}
+                {% if pr.attempts %}<span class="att">+{{ pr.attempts }}</span>{% endif %}
+              {% elif pr and pr.best_wrong_verdict %}
+                <span class="wv">{{ pr.best_wrong_verdict }}</span>
+              {% else %}
+                <span style="color:#ddd;">·</span>
+              {% endif %}
             {% endif %}
           </td>
           {% endfor %}
@@ -301,8 +337,8 @@
   </div>
 </div>
 
-{# Upsolving stats — merged across all contests in this assignment #}
-{% set has_contest = matrix | selectattr('item.type', 'eq', 'contest') | selectattr('item.last_synced_at') | list | length > 0 %}
+{# Upsolving stats — CF contests only (solve-type data is CF-specific) #}
+{% set has_contest = matrix | selectattr('item.type', 'eq', 'contest') | selectattr('item.platform', 'eq', 'codeforces') | selectattr('item.last_synced_at') | list | length > 0 %}
 {% if has_contest %}
 <div class="box" style="margin-bottom:10px;">
   <div class="box-header" onclick="toggleBox(this)">
@@ -326,7 +362,7 @@
         {% for user in members %}
         {% set ns = namespace(live=0, virt=0, up=0, solo=0, att=0, total=0) %}
         {% for row in matrix %}
-          {% if row.item.type == 'contest' and row.item.last_synced_at %}
+          {% if row.item.type == 'contest' and row.item.platform == 'codeforces' and row.item.last_synced_at %}
             {% set cell = row.cells | selectattr('user.id', 'eq', user.id) | first %}
             {% if cell %}
               {% set ns.live  = ns.live  + cell.live_count %}

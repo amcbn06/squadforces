@@ -32,6 +32,7 @@ async def lifespan(app: FastAPI):
         ("problem_results", "best_wrong_verdict", "VARCHAR(30)"),
         ("assignment_items", "created_by_id", "INTEGER"),
         ("users", "kilonova_handle", "VARCHAR(50)"),
+        ("problem_results", "score", "INTEGER"),
     ]
     with engine.connect() as conn:
         for table, col, coldef in _migrations:
@@ -135,6 +136,11 @@ async def register_page(request: Request):
     if request.session.get("account_id"):
         return RedirectResponse("/", status_code=303)
     return templates.TemplateResponse("register.html", {"request": request, "error": ""})
+
+
+@app.get("/help", response_class=HTMLResponse)
+async def help_page(request: Request, account=Depends(require_auth)):
+    return templates.TemplateResponse("help.html", {"request": request, "account": account})
 
 
 @app.post("/register")

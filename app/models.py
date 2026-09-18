@@ -195,6 +195,8 @@ class ProblemResult(Base):
     attempts = Column(Integer, nullable=True)
     # space-separated short verdicts for unsolved problems, e.g. "WA TLE"
     best_wrong_verdict = Column(String(30), nullable=True)
+    # Kilonova partial score (raw, 0–score_scale)
+    score = Column(Integer, nullable=True)
 
     contest_problem = relationship("ContestProblem", back_populates="problem_results")
     user = relationship("User")

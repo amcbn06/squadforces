@@ -677,13 +677,18 @@ async def _sync_kn_contest(
             db.add(result)
 
         solved_count = 0
+        kn_score_total = 0
+        kn_scale_total = sum(prob_infos[pid].get("score_scale", 100) for pid in problem_ids)
+
         for pid in problem_ids:
             cp = existing_by_pid.get(str(pid))
             if not cp:
                 continue
             score_scale = prob_infos[pid].get("score_scale", 100)
             best = await kn.get_best_submission(user_id, pid)
-            solved = best is not None and best.get("score", 0) >= score_scale
+            raw_score = best.get("score", 0) if best else 0
+            solved = raw_score >= score_scale
+            kn_score_total += raw_score
 
             if solved:
                 solved_count += 1
@@ -697,6 +702,7 @@ async def _sync_kn_contest(
                 pr = models.ProblemResult(contest_problem_id=cp.id, user_id=user.id)
                 db.add(pr)
             pr.solved = solved
+            pr.score = raw_score
             pr.solve_type = None
             pr.attempts = None
             pr.best_wrong_verdict = None
@@ -704,6 +710,7 @@ async def _sync_kn_contest(
         result.problems_solved_count = solved_count
         result.problems_total_count = len(problem_ids)
         result.participated = None
+        result.raw_scrape_data = {"kn_score": kn_score_total, "kn_total": kn_scale_total}
         result.last_synced_at = datetime.utcnow()
 
     db.flush()
@@ -739,10 +746,11 @@ async def _sync_kn_problem(
 
     for user in members:
         user_id = await kn.get_user_id(user.kilonova_handle)
-        solved = False
+        raw_score = 0
         if user_id:
             best = await kn.get_best_submission(user_id, problem_id)
-            solved = best is not None and best.get("score", 0) >= score_scale
+            raw_score = best.get("score", 0) if best else 0
+        solved = raw_score >= score_scale
 
         result = (
             db.query(models.Result)
@@ -753,4 +761,5 @@ async def _sync_kn_problem(
             result = models.Result(assignment_item_id=item.id, user_id=user.id)
             db.add(result)
         result.solved = solved
+        result.raw_scrape_data = {"kn_score": raw_score, "kn_total": score_scale}
         result.last_synced_at = datetime.utcnow()

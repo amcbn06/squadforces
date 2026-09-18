@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Help — Squadforces{% endblock %}
+
+{% block content %}
+<h1 style="margin-bottom:20px;">Submission types by platform</h1>
+
+<div class="box" style="margin-bottom:14px;">
+  <div class="box-header" style="cursor:default; display:flex; align-items:center; gap:8px;">
+    <img src="/static/cf.svg" alt="" height="16" style="vertical-align:middle;">
+    Codeforces
+  </div>
+  <div class="box-body" style="padding:14px 18px;">
+    <p style="margin-bottom:10px;">Contest and standalone problem submissions are tracked with full solve-type detail.</p>
+    <table class="t" style="width:auto; max-width:540px;">
+      <thead>
+        <tr>
+          <th class="l" style="min-width:100px;">Badge</th>
+          <th class="l">Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="st-live">✓ Live</span></td>
+          <td>Solved during active (live) contest participation.</td>
+        </tr>
+        <tr>
+          <td><span class="st-virtual">✓ Virtual</span></td>
+          <td>Solved during a virtual contest replay.</td>
+        </tr>
+        <tr>
+          <td><span class="st-up">▲ Upsolving</span></td>
+          <td>Solved after the contest ended (upsolved from the contest page).</td>
+        </tr>
+        <tr>
+          <td><span class="st-solo">✓ Standalone</span></td>
+          <td>Solved as a standalone problem (practice, not tied to a contest run).</td>
+        </tr>
+        <tr>
+          <td><span class="wv">WA / TLE …</span></td>
+          <td>Wrong verdict — best wrong submission (WA, TLE, RE, etc.), problem not solved.</td>
+        </tr>
+        <tr>
+          <td><span class="att">+N</span></td>
+          <td>Number of wrong submissions before first accepted.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="meta" style="margin-top:10px;">
+      The <strong>Upsolving stats</strong> section below the matrix aggregates these counts per user across all CF contests in an assignment.
+    </p>
+  </div>
+</div>
+
+<div class="box" style="margin-bottom:14px;">
+  <div class="box-header" style="cursor:default; display:flex; align-items:center; gap:8px;">
+    <img src="/static/ac.svg" alt="" height="16" style="vertical-align:middle;">
+    AtCoder
+  </div>
+  <div class="box-body" style="padding:14px 18px;">
+    <p style="margin-bottom:10px;">AtCoder results are shown as a simple accepted / not-accepted indicator.</p>
+    <table class="t" style="width:auto; max-width:540px;">
+      <thead>
+        <tr>
+          <th class="l" style="min-width:100px;">Badge</th>
+          <th class="l">Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span style="color:#2e7d32; font-weight:bold;">✓</span></td>
+          <td>Accepted — the problem has been solved.</td>
+        </tr>
+        <tr>
+          <td><span style="color:#c62828;">✗</span></td>
+          <td>Not accepted — attempted but not solved, or no submission found.</td>
+        </tr>
+        <tr>
+          <td><span style="color:#ddd;">·</span></td>
+          <td>No data — not synced yet or user has no AtCoder handle set.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="meta" style="margin-top:10px;">
+      Solve-type breakdown (live / upsolving) is not tracked for AtCoder due to API limitations.
+    </p>
+  </div>
+</div>
+
+<div class="box" style="margin-bottom:14px;">
+  <div class="box-header" style="cursor:default; display:flex; align-items:center; gap:8px;">
+    <img src="/static/kn.png" alt="" height="16" style="vertical-align:middle;">
+    Kilonova
+  </div>
+  <div class="box-body" style="padding:14px 18px;">
+    <p style="margin-bottom:10px;">Kilonova problems use a 0–100 scoring system (or a custom max for some problems). Scores are displayed with a <strong style="color:hsl(0,75%,45%);">red</strong> → <strong style="color:hsl(60,75%,45%);">yellow</strong> → <strong style="color:hsl(120,75%,45%);">green</strong> color gradient.</p>
+    <table class="t" style="width:auto; max-width:540px;">
+      <thead>
+        <tr>
+          <th class="l" style="min-width:130px;">Display</th>
+          <th class="l">Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span style="color:hsl(120,75%,45%); font-weight:bold;">100</span></td>
+          <td>Standalone problem — raw score (full score = green).</td>
+        </tr>
+        <tr>
+          <td><span style="color:hsl(60,75%,45%); font-weight:bold;">250/500</span></td>
+          <td>Contest — accumulated score / total possible score across all contest problems.</td>
+        </tr>
+        <tr>
+          <td><span style="color:hsl(0,75%,45%); font-weight:bold;">0</span></td>
+          <td>Zero score (no accepted submission or all wrong).</td>
+        </tr>
+        <tr>
+          <td><span style="color:#ddd;">—</span></td>
+          <td>No data — not synced yet or user has no Kilonova handle set.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="meta" style="margin-top:10px;">
+      In contest sub-rows, each cell shows the raw score for that individual problem.
+      A score equal to the problem's maximum counts as solved.
+    </p>
+  </div>
+</div>
+{% endblock %}
