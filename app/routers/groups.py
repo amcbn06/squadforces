@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import (
     Group, User, GroupMembership, Assignment, AssignmentItem,
-    Result, ProblemResult, AccountGroupAccess,
+    Result, ProblemResult, AccountGroupAccess, Account,
 )
 from app.auth import require_auth, require_admin, can_edit_user
 from app.scraper import codeforces as cf
@@ -85,7 +85,18 @@ async def group_detail(
         return HTMLResponse("Group not found", status_code=404)
     _check_group_access(account, group_id, db)
 
-    members = [m.user for m in group.memberships]
+    # Only show users who have a matching Account with access to this group
+    access_accounts = (
+        db.query(Account)
+        .join(AccountGroupAccess, Account.id == AccountGroupAccess.account_id)
+        .filter(AccountGroupAccess.group_id == group_id)
+        .all()
+    )
+    access_usernames = {a.username.lower() for a in access_accounts}
+    members = [
+        m.user for m in group.memberships
+        if m.user.codeforces_handle.lower() in access_usernames
+    ]
 
     # 30-day leaderboard
     cutoff = datetime.utcnow() - timedelta(days=30)
@@ -218,7 +229,17 @@ async def add_member(
             return RedirectResponse(f"/groups/{group_id}", status_code=303)
 
     db.rollback()
-    members = [m.user for m in group.memberships]
+    access_accounts = (
+        db.query(Account)
+        .join(AccountGroupAccess, Account.id == AccountGroupAccess.account_id)
+        .filter(AccountGroupAccess.group_id == group_id)
+        .all()
+    )
+    access_usernames = {a.username.lower() for a in access_accounts}
+    members = [
+        m.user for m in group.memberships
+        if m.user.codeforces_handle.lower() in access_usernames
+    ]
     return templates.TemplateResponse(
         "groups/detail.html",
         {
