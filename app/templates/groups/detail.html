@@ -35,8 +35,7 @@
         {% if account and account.role == "admin" %}
         <form method="post" action="/groups/{{ group.id }}/members/add"
               style="display:flex; flex-direction:column; gap:5px; margin-bottom:10px;">
-          <input type="text" name="cf_handle" required placeholder="Codeforces handle" />
-          <input type="text" name="display_name" placeholder="Display name (optional)" />
+          <input type="text" name="cf_handle" required placeholder="Codeforces handle (must be registered)" />
           <button type="submit" class="btn btn-green">Add member</button>
         </form>
         {% endif %}
@@ -47,7 +46,7 @@
           <li style="flex-direction:column; align-items:stretch; gap:4px;">
             <div style="display:flex; align-items:center; justify-content:space-between;">
               <div>
-                <a href="/groups/{{ group.id }}/members/{{ user.id }}" style="font-weight:bold; color:inherit; text-decoration:none;">{{ user.display_name }}</a>
+                <a href="/users/{{ user.id }}" style="font-weight:bold; color:inherit; text-decoration:none;">{{ user.display_name }}</a>
                 {% if user.cf_rating %}
                 <span class="meta">({{ user.cf_rating }})</span>
                 {% endif %}<br>
@@ -64,7 +63,7 @@
               </div>
               {% if account and account.role == "admin" %}
               <div style="display:flex; gap:4px;">
-                <a href="/groups/{{ group.id }}/members/{{ user.id }}"
+                <a href="/users/{{ user.id }}"
                    class="btn" style="padding:1px 7px; font-size:11px;" title="View profile">✎</a>
                 <form method="post" action="/groups/{{ group.id }}/members/{{ user.id }}/remove"
                       onsubmit="return confirm('Remove {{ user.display_name }}?')" style="margin:0;">

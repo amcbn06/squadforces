@@ -21,6 +21,9 @@
   <a href="/groups/">Groups</a>
   <a href="/recommend">Recommend</a>
   <a href="/help">Help</a>
+  {% if account and account.user_id %}
+  <a href="/profile">Profile</a>
+  {% endif %}
   {% if account and account.role == "admin" %}
   <a href="/admin/accounts">Admin</a>
   {% endif %}

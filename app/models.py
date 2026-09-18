@@ -16,8 +16,11 @@ class Account(Base):
     password_hash = Column(String(200), nullable=False)
     role = Column(String(20), nullable=False, default="user")  # admin|user|student
     created_at = Column(DateTime, default=datetime.utcnow)
+    # Explicit link to the competitive-programmer profile
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, unique=True)
 
     group_access = relationship("AccountGroupAccess", back_populates="account", cascade="all, delete-orphan")
+    user = relationship("User", foreign_keys=[user_id])
 
 
 class User(Base):

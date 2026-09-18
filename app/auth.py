@@ -40,7 +40,10 @@ def can_edit_user(account, user) -> bool:
     """Returns True if this account is allowed to edit the given User's profile."""
     if account.role == "admin":
         return True
-    # A user can edit their own profile if their account username matches their CF handle
+    # Explicit link (new system)
+    if account.user_id and account.user_id == user.id:
+        return True
+    # Legacy: username matching CF handle
     return account.username.lower() == user.codeforces_handle.lower()
 
 

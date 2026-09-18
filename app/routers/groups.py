@@ -23,9 +23,14 @@ def _check_group_access(account, group_id: int, db: Session):
     """Raise 403 if account cannot access this group."""
     if account.role == "admin":
         return
-    ok = db.query(AccountGroupAccess).filter_by(account_id=account.id, group_id=group_id).first()
-    if not ok:
-        raise HTTPException(status_code=403)
+    # Primary: account is a group member (via user_id → GroupMembership)
+    if account.user_id:
+        if db.query(GroupMembership).filter_by(group_id=group_id, user_id=account.user_id).first():
+            return
+    # Fallback: explicit AccountGroupAccess (for mentor/user-role accounts)
+    if db.query(AccountGroupAccess).filter_by(account_id=account.id, group_id=group_id).first():
+        return
+    raise HTTPException(status_code=403)
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -85,18 +90,7 @@ async def group_detail(
         return HTMLResponse("Group not found", status_code=404)
     _check_group_access(account, group_id, db)
 
-    # Only show users who have a matching Account with access to this group
-    access_accounts = (
-        db.query(Account)
-        .join(AccountGroupAccess, Account.id == AccountGroupAccess.account_id)
-        .filter(AccountGroupAccess.group_id == group_id)
-        .all()
-    )
-    access_usernames = {a.username.lower() for a in access_accounts}
-    members = [
-        m.user for m in group.memberships
-        if m.user.codeforces_handle.lower() in access_usernames
-    ]
+    members = [m.user for m in group.memberships]
 
     # 30-day leaderboard
     cutoff = datetime.utcnow() - timedelta(days=30)
@@ -193,7 +187,6 @@ async def add_member(
     request: Request,
     group_id: int,
     cf_handle: str = Form(...),
-    display_name: str = Form(""),
     db: Session = Depends(get_db),
     account=Depends(require_admin),
 ):
@@ -204,42 +197,23 @@ async def add_member(
     cf_handle = cf_handle.strip()
     error = None
 
-    user_info = await cf.validate_handle(cf_handle)
-    if not user_info:
-        error = f"Codeforces handle '{cf_handle}' does not exist."
+    user = db.query(User).filter_by(codeforces_handle=cf_handle).first()
+    if not user:
+        error = f"No registered user found with CF handle '{cf_handle}'. They must sign up first."
     else:
-        user = db.query(User).filter_by(codeforces_handle=cf_handle).first()
-        if not user:
-            name = display_name.strip() or user_info.get("handle", cf_handle)
-            user = User(
-                display_name=name,
-                codeforces_handle=cf_handle,
-                cf_rating=user_info.get("rating"),
-                cf_rank=user_info.get("rank"),
-            )
-            db.add(user)
-            db.flush()
-
-        existing = db.query(GroupMembership).filter_by(group_id=group_id, user_id=user.id).first()
-        if existing:
-            error = f"{cf_handle} is already in this group."
+        linked_account = db.query(Account).filter_by(user_id=user.id).first()
+        if not linked_account:
+            error = f"User '{cf_handle}' exists but has not registered an account yet."
         else:
-            db.add(GroupMembership(group_id=group_id, user_id=user.id))
-            db.commit()
-            return RedirectResponse(f"/groups/{group_id}", status_code=303)
+            existing = db.query(GroupMembership).filter_by(group_id=group_id, user_id=user.id).first()
+            if existing:
+                error = f"{cf_handle} is already in this group."
+            else:
+                db.add(GroupMembership(group_id=group_id, user_id=user.id))
+                db.commit()
+                return RedirectResponse(f"/groups/{group_id}", status_code=303)
 
-    db.rollback()
-    access_accounts = (
-        db.query(Account)
-        .join(AccountGroupAccess, Account.id == AccountGroupAccess.account_id)
-        .filter(AccountGroupAccess.group_id == group_id)
-        .all()
-    )
-    access_usernames = {a.username.lower() for a in access_accounts}
-    members = [
-        m.user for m in group.memberships
-        if m.user.codeforces_handle.lower() in access_usernames
-    ]
+    members = [m.user for m in group.memberships]
     return templates.TemplateResponse(
         "groups/detail.html",
         {

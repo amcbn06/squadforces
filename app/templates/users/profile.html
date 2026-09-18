@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+{% block title %}{{ user.display_name }} — Squadforces{% endblock %}
+
+{% block content %}
+<div style="display:flex; align-items:baseline; gap:12px; margin-bottom:16px;">
+  <h1>{{ user.display_name }}</h1>
+  {% if user.cf_rating %}
+  <span class="meta" style="font-size:15px;">({{ user.cf_rating }})</span>
+  {% endif %}
+  {% if can_edit %}
+  <button class="btn" style="padding:2px 9px; font-size:12px; margin-left:auto;"
+          onclick="document.getElementById('edit-handles').style.display = document.getElementById('edit-handles').style.display === 'none' ? 'block' : 'none';">
+    ✎ Edit
+  </button>
+  {% endif %}
+</div>
+
+{% if can_edit %}
+<div id="edit-handles" style="display:none; margin-bottom:16px;">
+  <div class="box">
+    <div class="box-header" style="cursor:default;">Edit profile</div>
+    <div class="box-body" style="padding:12px;">
+      <form method="post" action="/users/{{ user.id }}/edit"
+            style="display:flex; flex-direction:column; gap:8px; max-width:340px;">
+        <div class="form-col">
+          <label style="font-size:12px;">Display name</label>
+          <input type="text" name="display_name" value="{{ user.display_name }}" style="font-size:13px;" />
+        </div>
+        {% if account and account.role == "admin" %}
+        <div class="form-col">
+          <label style="font-size:12px;">Codeforces handle</label>
+          <input type="text" name="cf_handle" value="{{ user.codeforces_handle }}" style="font-size:13px;" />
+        </div>
+        {% else %}
+        <input type="hidden" name="cf_handle" value="{{ user.codeforces_handle }}" />
+        {% endif %}
+        <div class="form-col">
+          <label style="font-size:12px;">AtCoder handle <span class="meta">(optional)</span></label>
+          <input type="text" name="atcoder_handle" value="{{ user.atcoder_handle or '' }}" style="font-size:13px;" />
+        </div>
+        <div class="form-col">
+          <label style="font-size:12px;">Kilonova handle <span class="meta">(optional)</span></label>
+          <input type="text" name="kilonova_handle" value="{{ user.kilonova_handle or '' }}" style="font-size:13px;" />
+        </div>
+        <button type="submit" class="btn btn-green" style="align-self:flex-start; margin-top:2px;">Save</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div style="display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap;">
+  <a href="https://codeforces.com/profile/{{ user.codeforces_handle }}" target="_blank"
+     class="card" style="padding:8px 14px; display:inline-flex; align-items:center; gap:6px;">
+    <span style="color:#1565C0; font-weight:bold;">CF</span>
+    <span>{{ user.codeforces_handle }}</span>
+    {% if user.cf_rank %}<span class="meta">{{ user.cf_rank }}</span>{% endif %}
+  </a>
+  {% if user.atcoder_handle %}
+  <a href="https://atcoder.jp/users/{{ user.atcoder_handle }}" target="_blank"
+     class="card" style="padding:8px 14px; display:inline-flex; align-items:center; gap:6px;">
+    <span style="color:#E09000; font-weight:bold;">AC</span>
+    <span>{{ user.atcoder_handle }}</span>
+  </a>
+  {% endif %}
+  {% if user.kilonova_handle %}
+  <a href="https://kilonova.ro/user/{{ user.kilonova_handle }}" target="_blank"
+     class="card" style="padding:8px 14px; display:inline-flex; align-items:center; gap:6px;">
+    <span style="color:#e8c84a; font-weight:bold;">KN</span>
+    <span>{{ user.kilonova_handle }}</span>
+  </a>
+  {% endif %}
+</div>
+
+<!-- Streaks -->
+<div style="display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap;">
+  <div class="card" style="padding:12px 20px; min-width:120px; text-align:center;">
+    <div id="streak-current" style="font-size:28px; font-weight:700; line-height:1;">—</div>
+    <div class="meta" style="margin-top:4px;">Current streak</div>
+  </div>
+  <div class="card" style="padding:12px 20px; min-width:120px; text-align:center;">
+    <div id="streak-longest" style="font-size:28px; font-weight:700; line-height:1;">—</div>
+    <div class="meta" style="margin-top:4px;">Longest streak</div>
+  </div>
+  <div class="card" style="padding:12px 20px; min-width:120px; text-align:center;">
+    <div id="streak-total" style="font-size:28px; font-weight:700; line-height:1;">—</div>
+    <div class="meta" style="margin-top:4px;">Active days</div>
+  </div>
+</div>
+
+<!-- Heatmap -->
+<div class="box">
+  <div class="box-header" style="cursor:default; display:flex; align-items:center; justify-content:space-between;">
+    Submission activity
+    <span style="display:flex; align-items:center; gap:12px; font-size:11px; font-weight:normal;">
+      <span><span style="display:inline-block;width:10px;height:10px;background:#1565C0;border-radius:2px;vertical-align:middle;margin-right:3px;"></span>Codeforces</span>
+      <span><span style="display:inline-block;width:10px;height:10px;background:#E09000;border-radius:2px;vertical-align:middle;margin-right:3px;"></span>AtCoder</span>
+    </span>
+  </div>
+  <div class="box-body" style="padding:14px; overflow-x:auto;">
+    <div id="heatmap-container">
+      <div style="color:#888; font-size:12px; padding:20px 0;">Loading activity…</div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const CELL = 11, GAP = 2, STEP = CELL + GAP;
+  const CF_COLOR  = [21, 101, 192];
+  const ATC_COLOR = [224, 144, 0];
+  const MONTHS    = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  function lerp(a, b, t) { return Math.round(a + (b - a) * t); }
+
+  function getThemeVars() {
+    const s = getComputedStyle(document.documentElement);
+    const bgRgb = s.getPropertyValue('--heatmap-bg-rgb').trim().split(',').map(Number);
+    const empty = s.getPropertyValue('--heatmap-empty').trim();
+    return { bg: bgRgb, empty };
+  }
+
+  function cellColor(cf, atc, bg, empty) {
+    const total = cf + atc;
+    if (!total) return empty;
+    const intensity = Math.min(1, 0.25 + Math.log(total + 1) / 3.5);
+    const cfRatio = cf / total;
+    const base = [
+      lerp(ATC_COLOR[0], CF_COLOR[0], cfRatio),
+      lerp(ATC_COLOR[1], CF_COLOR[1], cfRatio),
+      lerp(ATC_COLOR[2], CF_COLOR[2], cfRatio),
+    ];
+    return `rgb(${lerp(bg[0],base[0],intensity)},${lerp(bg[1],base[1],intensity)},${lerp(bg[2],base[2],intensity)})`;
+  }
+
+  function buildYear(year, data, bg, empty) {
+    const jan1 = new Date(year, 0, 1);
+    const dec31 = new Date(year, 11, 31);
+    const totalDays = Math.round((dec31 - jan1) / 86400000) + 1;
+    const startDow = (jan1.getDay() + 6) % 7;
+    const cols = Math.ceil((startDow + totalDays) / 7);
+    const W = cols * STEP + 4;
+    const H = 7 * STEP + 22;
+    let rects = '', monthLabels = '', lastMonth = -1;
+    for (let d = 0; d < totalDays; d++) {
+      const col = Math.floor((startDow + d) / 7);
+      const row = (startDow + d) % 7;
+      const date = new Date(year, 0, d + 1);
+      const mm = date.getMonth();
+      const ds = `${year}-${String(mm+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+      const cf  = data[ds]?.cf  || 0;
+      const atc = data[ds]?.atc || 0;
+      const fill = cellColor(cf, atc, bg, empty);
+      const x = col * STEP, y = row * STEP;
+      const tip = cf || atc ? `${ds}: CF ${cf}, AtC ${atc}` : ds;
+      rects += `<rect x="${x}" y="${y}" width="${CELL}" height="${CELL}" fill="${fill}" rx="2"><title>${tip}</title></rect>`;
+      if (mm !== lastMonth) {
+        monthLabels += `<text x="${x}" y="${H - 4}" fill="#888" font-size="10" font-family="Arial,sans-serif">${MONTHS[mm]}</text>`;
+        lastMonth = mm;
+      }
+    }
+    return `<div style="margin-bottom:18px;">
+      <div style="font-size:12px;font-weight:600;color:#aaa;margin-bottom:6px;">${year}</div>
+      <svg width="${W}" height="${H}" style="display:block;">${rects}${monthLabels}</svg>
+    </div>`;
+  }
+
+  function computeStreaks(data) {
+    const active = d => (data[d]?.cf || 0) + (data[d]?.atc || 0) > 0;
+    const toKey = d => d.toISOString().slice(0, 10);
+    let current = 0;
+    const today = new Date(); today.setHours(0,0,0,0);
+    const d = new Date(today);
+    while (active(toKey(d))) { current++; d.setDate(d.getDate() - 1); }
+    const days = Object.keys(data).filter(active).sort();
+    let longest = 0, run = 0;
+    for (let i = 0; i < days.length; i++) {
+      if (i === 0) { run = 1; }
+      else {
+        const prev = new Date(days[i-1]), cur2 = new Date(days[i]);
+        run = (cur2 - prev) / 86400000 === 1 ? run + 1 : 1;
+      }
+      if (run > longest) longest = run;
+    }
+    return { current, longest, total: days.length };
+  }
+
+  let _activityData = null;
+
+  function renderHeatmap() {
+    if (!_activityData) return;
+    const { bg, empty } = getThemeVars();
+    const cur = new Date().getFullYear();
+    const html = [cur, cur - 1, cur - 2].map(y => buildYear(y, _activityData, bg, empty)).join('');
+    document.getElementById('heatmap-container').innerHTML = html || '<p style="color:#888;font-size:12px;">No activity found.</p>';
+  }
+
+  new MutationObserver(renderHeatmap)
+    .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  fetch('/users/{{ user.id }}/activity.json')
+    .then(r => r.json())
+    .then(data => {
+      _activityData = data;
+      const { current, longest, total } = computeStreaks(data);
+      document.getElementById('streak-current').textContent = current;
+      document.getElementById('streak-longest').textContent = longest;
+      document.getElementById('streak-total').textContent = total;
+      renderHeatmap();
+    })
+    .catch(() => {
+      document.getElementById('heatmap-container').innerHTML = '<p style="color:#888;font-size:12px;">Could not load activity.</p>';
+    });
+})();
+</script>
+{% endblock %}
