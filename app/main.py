@@ -25,14 +25,6 @@ from app.scraper import atcoder as ac
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Detect stale schema (e.g. old users table missing username column) and recreate
-    try:
-        from sqlalchemy import text
-        with engine.connect() as conn:
-            conn.execute(text("SELECT username FROM users LIMIT 1"))
-    except Exception:
-        Base.metadata.drop_all(bind=engine)
-
     Base.metadata.create_all(bind=engine)
 
     db = SessionLocal()

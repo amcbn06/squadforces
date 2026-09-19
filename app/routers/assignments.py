@@ -9,6 +9,7 @@ from app.auth import require_auth, require_admin, can_delete_item
 from app.scraper import codeforces as cf
 from app.scraper import atcoder as ac
 from app.scraper import kilonova as kn
+from app import link_parser
 from app import sync as sync_svc
 
 router = APIRouter(prefix="/assignments", tags=["assignments"])
@@ -28,11 +29,12 @@ async def new_assignment_form(
     request: Request,
     group_id: int,
     db: Session = Depends(get_db),
-    account=Depends(require_admin),
+    account=Depends(require_auth),
 ):
     group = db.get(Group, group_id)
     if not group:
         return HTMLResponse("Group not found", status_code=404)
+    _check_group_access(account, group_id, db)
     return templates.TemplateResponse(
         "assignments/form.html", {"request": request, "group": group, "error": None, "account": account}
     )
@@ -46,12 +48,13 @@ async def create_assignment(
     week_start_date: str = Form(""),
     description: str = Form(""),
     db: Session = Depends(get_db),
-    account=Depends(require_admin),
+    account=Depends(require_auth),
 ):
     from datetime import date
     group = db.get(Group, group_id)
     if not group:
         return HTMLResponse("Group not found", status_code=404)
+    _check_group_access(account, group_id, db)
 
     parsed_date = None
     if week_start_date.strip():
@@ -83,25 +86,7 @@ async def assignment_detail(
         return HTMLResponse("Assignment not found", status_code=404)
 
     _check_group_access(account, assignment.group_id, db)
-
-    group = assignment.group
-    members = [m.user for m in group.memberships]
-    items = assignment.items
-
-    matrix = _build_matrix(items, members, db)
-
-    return templates.TemplateResponse(
-        "assignments/detail.html",
-        {
-            "request": request,
-            "assignment": assignment,
-            "group": group,
-            "members": members,
-            "items": items,
-            "matrix": matrix,
-            "account": account,
-        },
-    )
+    return _render_detail(request, assignment, account, db)
 
 
 @router.post("/{assignment_id}/delete")
@@ -177,23 +162,7 @@ async def add_item(
                 external_id = str(parsed)
 
     if error:
-        group = assignment.group
-        members = [m.user for m in group.memberships]
-        matrix = _build_matrix(assignment.items, members, db)
-        return templates.TemplateResponse(
-            "assignments/detail.html",
-            {
-                "request": request,
-                "assignment": assignment,
-                "group": group,
-                "members": members,
-                "items": assignment.items,
-                "matrix": matrix,
-                "add_error": error,
-                "account": account,
-            },
-            status_code=422,
-        )
+        return _render_detail(request, assignment, account, db, status_code=422, add_error=error)
 
     item = AssignmentItem(
         assignment_id=assignment_id,
@@ -210,6 +179,63 @@ async def add_item(
     background_tasks.add_task(_run_sync, item.id)
 
     return RedirectResponse(f"/assignments/{assignment_id}", status_code=303)
+
+
+@router.post("/{assignment_id}/items/bulk")
+async def bulk_add_items(
+    request: Request,
+    assignment_id: int,
+    background_tasks: BackgroundTasks,
+    links: str = Form(...),
+    db: Session = Depends(get_db),
+    account=Depends(require_auth),
+):
+    assignment = db.get(Assignment, assignment_id)
+    if not assignment:
+        return HTMLResponse("Assignment not found", status_code=404)
+    _check_group_access(account, assignment.group_id, db)
+
+    parsed, errors = link_parser.parse_links(links)
+    if len(parsed) > link_parser.MAX_LINKS:
+        return _render_detail(
+            request, assignment, account, db, status_code=422,
+            bulk_text=links,
+            bulk_errors=[("", f"Too many links: {len(parsed)} found, the limit is {link_parser.MAX_LINKS} per submission.")],
+        )
+
+    existing = {(i.platform, i.type, i.external_id) for i in assignment.items}
+    added, duplicates, new_items = [], [], []
+    for p in parsed:
+        if (p["platform"], p["type"], p["external_id"]) in existing:
+            duplicates.append(p["label"])
+            continue
+        item = AssignmentItem(
+            assignment_id=assignment_id,
+            type=p["type"],
+            platform=p["platform"],
+            external_id=p["external_id"],
+            sync_status="pending",
+            created_by_id=account.id,
+        )
+        db.add(item)
+        new_items.append(item)
+        added.append(p["label"])
+    db.commit()
+
+    for item in new_items:
+        background_tasks.add_task(_run_sync, item.id)
+
+    if not errors and not duplicates:
+        return RedirectResponse(f"/assignments/{assignment_id}", status_code=303)
+
+    db.refresh(assignment)
+    return _render_detail(
+        request, assignment, account, db,
+        bulk_added=added,
+        bulk_duplicates=duplicates,
+        bulk_errors=errors,
+        bulk_text="\n".join(token for token, _ in errors),
+    )
 
 
 @router.post("/{assignment_id}/items/{item_id}/delete")
@@ -260,6 +286,25 @@ async def sync_item(
 
 
 # --- Helpers ---
+
+def _render_detail(request: Request, assignment, account, db: Session, status_code: int = 200, **extra):
+    group = assignment.group
+    members = [m.user for m in group.memberships]
+    return templates.TemplateResponse(
+        "assignments/detail.html",
+        {
+            "request": request,
+            "assignment": assignment,
+            "group": group,
+            "members": members,
+            "items": assignment.items,
+            "matrix": _build_matrix(assignment.items, members, db),
+            "account": account,
+            **extra,
+        },
+        status_code=status_code,
+    )
+
 
 def _build_matrix(items, members, db: Session) -> list[dict]:
     rows = []

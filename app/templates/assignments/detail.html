@@ -72,6 +72,48 @@
   </div>
 </div>
 
+<!-- Bulk add -->
+{% set bulk_open = bulk_added is defined or bulk_errors is defined or bulk_text is defined %}
+<div class="box" style="margin-bottom:12px;">
+  <div class="box-header" onclick="toggleBox(this)">
+    + Bulk add from links <span style="font-weight:normal; font-size:11px; color:#666;">(click to expand)</span>
+  </div>
+  <div class="box-body" {% if not bulk_open %}style="display:none"{% endif %}>
+    {% if bulk_added %}
+    <div class="info-msg" style="margin-bottom:8px;">
+      Added {{ bulk_added | length }} item{{ 's' if bulk_added | length != 1 }}:
+      {{ bulk_added | join(', ') }}
+    </div>
+    {% endif %}
+    {% if bulk_duplicates %}
+    <div class="info-msg" style="margin-bottom:8px;">
+      Already in this assignment (skipped): {{ bulk_duplicates | join(', ') }}
+    </div>
+    {% endif %}
+    {% if bulk_errors %}
+    <div class="error-msg" style="margin-bottom:8px;">
+      Could not add:
+      <ul style="margin:4px 0 0 18px;">
+        {% for token, reason in bulk_errors %}
+        <li>{% if token %}<code>{{ token }}</code> — {% endif %}{{ reason }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+    <form method="post" action="/assignments/{{ assignment.id }}/items/bulk">
+      <textarea name="links" rows="6" required style="width:100%; margin-bottom:8px;"
+                placeholder="Paste links, one per line (or separated by spaces/commas)&#10;https://codeforces.com/contest/2085&#10;https://codeforces.com/contest/1234/problem/A&#10;https://atcoder.jp/contests/abc400/tasks/abc400_c&#10;https://kilonova.ro/problems/2460">{{ bulk_text or '' }}</textarea>
+      <button type="submit" class="btn btn-green">Detect &amp; add</button>
+    </form>
+    <p class="meta" style="margin-top:6px;">
+      Platform and contest/problem type are detected from each link. Supported: Codeforces contest and
+      problem URLs (or IDs like 1234A), AtCoder contest and task URLs (or IDs like abc400_c), Kilonova
+      problem and problem list URLs. Bare numbers are ambiguous, so use the full URL.
+      Up to 50 links per submission; duplicates are skipped.
+    </p>
+  </div>
+</div>
+
 {% if not members %}
 <p>No members in this group. <a href="/groups/{{ group.id }}">Add members first.</a></p>
 {% elif not items %}
@@ -144,7 +186,7 @@
                 <a href="https://codeforces.com/problemset/problem/{{ parts[0] }}/{{ parts[1] if parts|length > 1 else '' }}"
                    target="_blank">{{ item.title or item.external_id }}</a>
               {% elif item.platform == 'atcoder' %}
-                <a href="https://atcoder.jp/contests/{{ parts[0] }}/tasks/{{ item.external_id }}"
+                <a href="https://atcoder.jp/contests/{{ item.external_id.rsplit('_', 1)[0] }}/tasks/{{ item.external_id }}"
                    target="_blank">{{ item.title or item.external_id }}</a>
               {% else %}
                 <a href="https://kilonova.ro/problems/{{ item.external_id }}" target="_blank">
