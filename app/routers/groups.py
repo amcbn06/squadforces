@@ -6,41 +6,31 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import (
-    Group, User, GroupMembership, Assignment, AssignmentItem,
-    Result, ProblemResult, AccountGroupAccess, Account,
-)
+from app.models import Group, User, GroupMembership, Assignment, AssignmentItem, Result
 from app.auth import require_auth, require_admin, can_edit_user
 from app.scraper import codeforces as cf
 from app.scraper import atcoder as ac
-from app.scraper import kilonova as kn
 
 router = APIRouter(prefix="/groups", tags=["groups"])
 templates = Jinja2Templates(directory="app/templates")
 
 
 def _check_group_access(account, group_id: int, db: Session):
-    """Raise 403 if account cannot access this group."""
-    if account.role == "admin":
+    if account.user_type == "admin":
         return
-    # Primary: account is a group member (via user_id → GroupMembership)
-    if account.user_id:
-        if db.query(GroupMembership).filter_by(group_id=group_id, user_id=account.user_id).first():
-            return
-    # Fallback: explicit AccountGroupAccess (for mentor/user-role accounts)
-    if db.query(AccountGroupAccess).filter_by(account_id=account.id, group_id=group_id).first():
+    if db.query(GroupMembership).filter_by(group_id=group_id, user_id=account.id).first():
         return
     raise HTTPException(status_code=403)
 
 
 @router.get("/", response_class=HTMLResponse)
 async def list_groups(request: Request, db: Session = Depends(get_db), account=Depends(require_auth)):
-    if account.role == "admin":
+    if account.user_type == "admin":
         groups = db.query(Group).order_by(Group.created_at.desc()).all()
     else:
         accessible_ids = [
-            a.group_id for a in
-            db.query(AccountGroupAccess).filter_by(account_id=account.id).all()
+            m.group_id for m in
+            db.query(GroupMembership).filter_by(user_id=account.id).all()
         ]
         groups = (
             db.query(Group)
@@ -109,11 +99,7 @@ async def group_detail(
         problems_solved = 0
         contests_done = 0
         for item in recent_items:
-            result = (
-                db.query(Result)
-                .filter_by(assignment_item_id=item.id, user_id=user.id)
-                .first()
-            )
+            result = db.query(Result).filter_by(assignment_item_id=item.id, user_id=user.id).first()
             if item.type == "contest":
                 if result and result.participated:
                     contests_done += 1
@@ -186,7 +172,7 @@ async def delete_group(
 async def add_member(
     request: Request,
     group_id: int,
-    cf_handle: str = Form(...),
+    member_username: str = Form(...),
     db: Session = Depends(get_db),
     account=Depends(require_admin),
 ):
@@ -194,24 +180,22 @@ async def add_member(
     if not group:
         return HTMLResponse("Group not found", status_code=404)
 
-    cf_handle = cf_handle.strip()
+    member_username = member_username.strip()
+    user = db.query(User).filter_by(username=member_username).first()
     error = None
 
-    user = db.query(User).filter_by(codeforces_handle=cf_handle).first()
     if not user:
-        error = f"No registered user found with CF handle '{cf_handle}'. They must sign up first."
+        error = f"No user found with username '{member_username}'."
+    elif user.user_type == "admin":
+        error = "Admin cannot be added as a group member."
     else:
-        linked_account = db.query(Account).filter_by(user_id=user.id).first()
-        if not linked_account:
-            error = f"User '{cf_handle}' exists but has not registered an account yet."
+        existing = db.query(GroupMembership).filter_by(group_id=group_id, user_id=user.id).first()
+        if existing:
+            error = f"'{member_username}' is already in this group."
         else:
-            existing = db.query(GroupMembership).filter_by(group_id=group_id, user_id=user.id).first()
-            if existing:
-                error = f"{cf_handle} is already in this group."
-            else:
-                db.add(GroupMembership(group_id=group_id, user_id=user.id))
-                db.commit()
-                return RedirectResponse(f"/groups/{group_id}", status_code=303)
+            db.add(GroupMembership(group_id=group_id, user_id=user.id))
+            db.commit()
+            return RedirectResponse(f"/groups/{group_id}", status_code=303)
 
     members = [m.user for m in group.memberships]
     return templates.TemplateResponse(
@@ -222,43 +206,6 @@ async def add_member(
         },
         status_code=422,
     )
-
-
-@router.post("/{group_id}/members/{user_id}/edit")
-async def edit_member(
-    request: Request,
-    group_id: int,
-    user_id: int,
-    display_name: str = Form(""),
-    cf_handle: str = Form(""),
-    atcoder_handle: str = Form(""),
-    kilonova_handle: str = Form(""),
-    db: Session = Depends(get_db),
-    account=Depends(require_auth),
-):
-    user = db.get(User, user_id)
-    if not user:
-        return RedirectResponse(f"/groups/{group_id}", status_code=303)
-
-    if not can_edit_user(account, user):
-        raise HTTPException(status_code=403, detail="You cannot edit this profile.")
-
-    if display_name.strip():
-        user.display_name = display_name.strip()
-    user.atcoder_handle = atcoder_handle.strip() or None
-    user.kilonova_handle = kilonova_handle.strip() or None
-
-    new_cf = cf_handle.strip()
-    if new_cf and new_cf != user.codeforces_handle:
-        if account.role == "admin":
-            user_info = await cf.validate_handle(new_cf)
-            if user_info:
-                user.codeforces_handle = new_cf
-                user.cf_rating = user_info.get("rating")
-                user.cf_rank = user_info.get("rank")
-
-    db.commit()
-    return RedirectResponse(f"/groups/{group_id}/members/{user_id}", status_code=303)
 
 
 @router.post("/{group_id}/members/{user_id}/remove")
@@ -272,34 +219,12 @@ async def remove_member(
     return RedirectResponse(f"/groups/{group_id}", status_code=303)
 
 
-@router.get("/{group_id}/members/{user_id}", response_class=HTMLResponse)
-async def member_profile(
-    request: Request, group_id: int, user_id: int,
-    db: Session = Depends(get_db), account=Depends(require_auth),
-):
-    group = db.get(Group, group_id)
-    user = db.get(User, user_id)
-    if not group or not user:
-        return HTMLResponse("Not found", status_code=404)
-    _check_group_access(account, group_id, db)
-    return templates.TemplateResponse(
-        "groups/member.html",
-        {
-            "request": request,
-            "group": group,
-            "user": user,
-            "account": account,
-            "can_edit": can_edit_user(account, user),
-        },
-    )
-
-
 @router.get("/{group_id}/members/{user_id}/activity.json")
 async def member_activity(
     group_id: int, user_id: int,
     db: Session = Depends(get_db), account=Depends(require_auth),
 ):
-    """Return daily submission counts for CF and AtCoder (last 2 years)."""
+    """Legacy activity endpoint — redirects to the username-based endpoint."""
     _check_group_access(account, group_id, db)
     user = db.get(User, user_id)
     if not user:

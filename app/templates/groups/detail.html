@@ -9,7 +9,7 @@
     <h1>{{ group.name }}</h1>
     {% if group.description %}<p class="meta">{{ group.description }}</p>{% endif %}
   </div>
-  {% if account and account.role == "admin" %}
+  {% if account and account.user_type == "admin" %}
   <div style="display:flex; gap:6px;">
     <a href="/groups/{{ group.id }}/edit-page" class="btn">Edit</a>
     <form method="post" action="/groups/{{ group.id }}/delete" style="display:inline;"
@@ -32,10 +32,10 @@
         {% if error %}
         <div class="error-msg">{{ error }}</div>
         {% endif %}
-        {% if account and account.role == "admin" %}
+        {% if account and account.user_type == "admin" %}
         <form method="post" action="/groups/{{ group.id }}/members/add"
               style="display:flex; flex-direction:column; gap:5px; margin-bottom:10px;">
-          <input type="text" name="cf_handle" required placeholder="Codeforces handle (must be registered)" />
+          <input type="text" name="member_username" required placeholder="Username" />
           <button type="submit" class="btn btn-green">Add member</button>
         </form>
         {% endif %}
@@ -46,7 +46,7 @@
           <li style="flex-direction:column; align-items:stretch; gap:4px;">
             <div style="display:flex; align-items:center; justify-content:space-between;">
               <div>
-                <a href="/users/{{ user.id }}" style="font-weight:bold; color:inherit; text-decoration:none;">{{ user.display_name }}</a>
+                <a href="/users/{{ user.username }}" style="font-weight:bold; color:inherit; text-decoration:none;">{{ user.username }}</a>
                 {% if user.cf_rating %}
                 <span class="meta">({{ user.cf_rating }})</span>
                 {% endif %}<br>
@@ -61,12 +61,12 @@
                      class="meta">KN: {{ user.kilonova_handle }}</a>
                 {% endif %}
               </div>
-              {% if account and account.role == "admin" %}
+              {% if account and account.user_type == "admin" %}
               <div style="display:flex; gap:4px;">
-                <a href="/users/{{ user.id }}"
+                <a href="/users/{{ user.username }}"
                    class="btn" style="padding:1px 7px; font-size:11px;" title="View profile">✎</a>
                 <form method="post" action="/groups/{{ group.id }}/members/{{ user.id }}/remove"
-                      onsubmit="return confirm('Remove {{ user.display_name }}?')" style="margin:0;">
+                      onsubmit="return confirm('Remove {{ user.username }}?')" style="margin:0;">
                   <button class="del-btn" title="Remove">×</button>
                 </form>
               </div>
@@ -85,7 +85,7 @@
   <div>
     <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:6px;">
       <h2>Assignments</h2>
-      {% if account and account.role == "admin" %}
+      {% if account and account.user_type == "admin" %}
       <a href="/assignments/new?group_id={{ group.id }}" class="btn btn-green">+ New assignment</a>
       {% endif %}
     </div>
@@ -106,7 +106,7 @@
     <div class="box">
       <div class="box-body" style="text-align:center; padding:24px; color:#888;">
         No assignments yet.
-        {% if account and account.role == "admin" %}<a href="/assignments/new?group_id={{ group.id }}">Create one</a>{% endif %}
+        {% if account and account.user_type == "admin" %}<a href="/assignments/new?group_id={{ group.id }}">Create one</a>{% endif %}
       </div>
     </div>
     {% endif %}
@@ -134,7 +134,7 @@
         <tr>
           <td>{{ loop.index }}</td>
           <td class="l">
-            <a href="/groups/{{ group.id }}/members/{{ row.user.id }}" style="color:inherit; text-decoration:none;"><strong>{{ row.user.display_name }}</strong></a>
+            <a href="/users/{{ row.user.username }}" style="color:inherit; text-decoration:none;"><strong>{{ row.user.username }}</strong></a>
             {% if row.user.cf_rating %}<span class="meta"> ({{ row.user.cf_rating }})</span>{% endif %}
           </td>
           <td>{% if row.problems_solved %}<strong>{{ row.problems_solved }}</strong>{% else %}<span style="color:#ccc;">0</span>{% endif %}</td>

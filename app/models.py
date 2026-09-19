@@ -7,30 +7,18 @@ from sqlalchemy.orm import relationship
 from app.database import Base
 
 
-class Account(Base):
-    """Login account (admin / user / student)."""
-    __tablename__ = "accounts"
+class User(Base):
+    """Single auth + profile entity. id=0 is the admin."""
+    __tablename__ = "users"
 
     id = Column(Integer, primary_key=True)
     username = Column(String(50), unique=True, nullable=False, index=True)
     password_hash = Column(String(200), nullable=False)
-    role = Column(String(20), nullable=False, default="user")  # admin|user|student
-    created_at = Column(DateTime, default=datetime.utcnow)
-    # Explicit link to the competitive-programmer profile
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, unique=True)
-
-    group_access = relationship("AccountGroupAccess", back_populates="account", cascade="all, delete-orphan")
-    user = relationship("User", foreign_keys=[user_id])
-
-
-class User(Base):
-    __tablename__ = "users"
-
-    id = Column(Integer, primary_key=True, index=True)
-    display_name = Column(String(100), nullable=False)
-    codeforces_handle = Column(String(50), unique=True, nullable=False, index=True)
-    atcoder_handle = Column(String(50), unique=True, nullable=True)
-    kilonova_handle = Column(String(50), unique=True, nullable=True)
+    user_type = Column(String(20), nullable=False, default="user")  # admin|user|student
+    full_name = Column(String(100), nullable=True)
+    codeforces_handle = Column(String(50), nullable=True)
+    atcoder_handle = Column(String(50), nullable=True)
+    kilonova_handle = Column(String(50), nullable=True)
     cf_rating = Column(Integer, nullable=True)
     cf_rank = Column(String(30), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -49,7 +37,6 @@ class Group(Base):
 
     memberships = relationship("GroupMembership", back_populates="group", cascade="all, delete-orphan")
     assignments = relationship("Assignment", back_populates="group", cascade="all, delete-orphan")
-    account_access = relationship("AccountGroupAccess", back_populates="group", cascade="all, delete-orphan")
 
 
 class GroupMembership(Base):
@@ -63,19 +50,6 @@ class GroupMembership(Base):
 
     group = relationship("Group", back_populates="memberships")
     user = relationship("User", back_populates="memberships")
-
-
-class AccountGroupAccess(Base):
-    """Which login accounts can access which groups (admin bypasses this)."""
-    __tablename__ = "account_group_access"
-    __table_args__ = (UniqueConstraint("account_id", "group_id"),)
-
-    id = Column(Integer, primary_key=True)
-    account_id = Column(Integer, ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False)
-    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=False)
-
-    account = relationship("Account", back_populates="group_access")
-    group = relationship("Group", back_populates="account_access")
 
 
 class Assignment(Base):
@@ -98,15 +72,14 @@ class AssignmentItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     assignment_id = Column(Integer, ForeignKey("assignments.id", ondelete="CASCADE"), nullable=False)
     type = Column(String(10), nullable=False)      # "contest" | "problem"
-    platform = Column(String(15), nullable=False)  # "codeforces" | "atcoder"
+    platform = Column(String(15), nullable=False)  # "codeforces" | "atcoder" | "kilonova"
     external_id = Column(String(100), nullable=False)
-    title = Column(String(300), nullable=True)      # populated by scraping
+    title = Column(String(300), nullable=True)
     added_at = Column(DateTime, default=datetime.utcnow)
     last_synced_at = Column(DateTime, nullable=True)
     sync_status = Column(String(20), default="pending")  # pending|syncing|done|error
     sync_error = Column(Text, nullable=True)
-    # Account that added this item — used to gate delete for student role
-    created_by_id = Column(Integer, ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True)
+    created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     assignment = relationship("Assignment", back_populates="items")
     contest_problems = relationship("ContestProblem", back_populates="assignment_item", cascade="all, delete-orphan")
@@ -119,7 +92,7 @@ class ContestProblem(Base):
     id = Column(Integer, primary_key=True, index=True)
     assignment_item_id = Column(Integer, ForeignKey("assignment_items.id", ondelete="CASCADE"), nullable=False)
     platform_problem_id = Column(String(50), nullable=False)
-    index = Column(String(10), nullable=False)  # A, B, C...
+    index = Column(String(10), nullable=False)
     name = Column(String(300), nullable=False)
     rating = Column(Integer, nullable=True)
 
@@ -128,7 +101,6 @@ class ContestProblem(Base):
 
 
 class Result(Base):
-    """Result for a user on an AssignmentItem (contest or standalone problem)."""
     __tablename__ = "results"
     __table_args__ = (UniqueConstraint("assignment_item_id", "user_id"),)
 
@@ -136,11 +108,8 @@ class Result(Base):
     assignment_item_id = Column(Integer, ForeignKey("assignment_items.id", ondelete="CASCADE"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
 
-    # For standalone problems
     solved = Column(Boolean, nullable=True)
     solve_time = Column(DateTime, nullable=True)
-
-    # For contests
     rank = Column(Integer, nullable=True)
     old_rating = Column(Integer, nullable=True)
     new_rating = Column(Integer, nullable=True)
@@ -148,7 +117,6 @@ class Result(Base):
     problems_solved_count = Column(Integer, nullable=True)
     problems_total_count = Column(Integer, nullable=True)
     participated = Column(Boolean, nullable=True)
-
     last_synced_at = Column(DateTime, nullable=True)
     raw_scrape_data = Column(JSON, nullable=True)
 
@@ -157,33 +125,30 @@ class Result(Base):
 
 
 class CfContest(Base):
-    """Cached metadata for a CF rated contest (used by the recommendation engine)."""
     __tablename__ = "cf_contests"
 
-    id = Column(Integer, primary_key=True)  # CF contest id (not autoincrement)
+    id = Column(Integer, primary_key=True)
     name = Column(String(300), nullable=False)
-    start_time = Column(Integer, nullable=True)       # unix timestamp
+    start_time = Column(Integer, nullable=True)
     duration_seconds = Column(Integer, nullable=True)
-    division = Column(String(20), nullable=True)      # div1/div2/div3/div4/educational/global/combined/other
+    division = Column(String(20), nullable=True)
     problems_fetched = Column(Boolean, default=False, nullable=False)
 
     problems = relationship("CfContestProblem", back_populates="contest", cascade="all, delete-orphan")
 
 
 class CfContestProblem(Base):
-    """Cached problem rating for one problem in a CfContest."""
     __tablename__ = "cf_contest_problems"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     contest_id = Column(Integer, ForeignKey("cf_contests.id", ondelete="CASCADE"), nullable=False)
-    index = Column(String(5), nullable=False)   # "A", "B", "C", …
-    rating = Column(Integer, nullable=True)     # None for unrated problems
+    index = Column(String(5), nullable=False)
+    rating = Column(Integer, nullable=True)
 
     contest = relationship("CfContest", back_populates="problems")
 
 
 class ProblemResult(Base):
-    """Solved/unsolved per user per problem within a contest."""
     __tablename__ = "problem_results"
     __table_args__ = (UniqueConstraint("contest_problem_id", "user_id"),)
 
@@ -192,13 +157,9 @@ class ProblemResult(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     solved = Column(Boolean, default=False)
     penalty = Column(Integer, nullable=True)
-    # live | virtual | upsolving | standalone
     solve_type = Column(String(20), nullable=True)
-    # wrong submissions before first AC (or total if never AC'd)
     attempts = Column(Integer, nullable=True)
-    # space-separated short verdicts for unsolved problems, e.g. "WA TLE"
     best_wrong_verdict = Column(String(30), nullable=True)
-    # Kilonova partial score (raw, 0–score_scale)
     score = Column(Integer, nullable=True)
 
     contest_problem = relationship("ContestProblem", back_populates="problem_results")

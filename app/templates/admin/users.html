@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Users — Squadforces{% endblock %}
+
+{% block content %}
+<div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:12px;">
+  <h1>Users</h1>
+  <a href="/admin/users/new" class="btn btn-green">+ New user</a>
+</div>
+
+{% if error %}
+<div class="error-msg" style="margin-bottom:10px;">{{ error }}</div>
+{% endif %}
+
+<div class="box">
+  <div class="box-body" style="padding:0;">
+    <table class="t">
+      <thead>
+        <tr>
+          <th class="l">Username</th>
+          <th class="l">Full name</th>
+          <th>Type</th>
+          <th class="l">Groups</th>
+          <th class="l">Handles</th>
+          <th>Created</th>
+          <th style="width:100px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td class="l">
+            <a href="/users/{{ u.username }}" style="color:inherit; text-decoration:none;"><strong>{{ u.username }}</strong></a>
+          </td>
+          <td class="l">{{ u.full_name or '' }}</td>
+          <td>
+            {% if u.user_type == "student" %}
+              <span style="background:#2e7d32;color:#fff;padding:1px 7px;border-radius:3px;font-size:11px;">student</span>
+            {% else %}
+              <span style="background:#1565c0;color:#fff;padding:1px 7px;border-radius:3px;font-size:11px;">user</span>
+            {% endif %}
+          </td>
+          <td class="l">
+            {% set grps = u.memberships | map(attribute='group') | list %}
+            {% if grps %}
+              {{ grps | map(attribute='name') | join(', ') }}
+            {% else %}
+              <span class="meta">none</span>
+            {% endif %}
+          </td>
+          <td class="l" style="font-size:11px;">
+            {% if u.codeforces_handle %}<span style="color:#1565C0;">CF:{{ u.codeforces_handle }}</span>{% if u.cf_rating %} ({{ u.cf_rating }}){% endif %}{% endif %}
+            {% if u.atcoder_handle %} <span style="color:#E09000;">AC:{{ u.atcoder_handle }}</span>{% endif %}
+            {% if u.kilonova_handle %} <span style="color:#e8c84a;">KN:{{ u.kilonova_handle }}</span>{% endif %}
+          </td>
+          <td class="meta">{{ u.created_at.strftime('%Y-%m-%d') }}</td>
+          <td style="text-align:right;">
+            <a href="/admin/users/{{ u.id }}/edit" class="btn" style="font-size:11px; padding:2px 8px;">Edit</a>
+            <form method="post" action="/admin/users/{{ u.id }}/delete" style="display:inline;"
+                  onsubmit="return confirm('Delete user {{ u.username }}?')">
+              <button class="del-btn" title="Delete">×</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not users %}
+        <tr><td colspan="7" style="text-align:center; padding:24px; color:#888;">No users yet.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<p class="meta" style="margin-top:10px;">
+  <strong>user</strong> — access to assigned groups, can add/remove their own items &nbsp;·&nbsp;
+  <strong>student</strong> — access to assigned groups, can add items but cannot remove admin-added items
+</p>
+{% endblock %}

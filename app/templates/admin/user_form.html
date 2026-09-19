@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}{% if edit_user %}Edit {{ edit_user.username }}{% else %}New user{% endif %} — Squadforces{% endblock %}
+
+{% block content %}
+<p style="margin-bottom:6px;"><a href="/admin/users">← Users</a></p>
+<h1>{% if edit_user %}Edit user: {{ edit_user.username }}{% else %}New user{% endif %}</h1>
+
+{% if error %}
+<div class="error-msg" style="margin-bottom:10px;">{{ error }}</div>
+{% endif %}
+
+<div class="box" style="max-width:520px;">
+  <div class="box-body">
+    <form method="post"
+          action="{% if edit_user %}/admin/users/{{ edit_user.id }}/edit{% else %}/admin/users/new{% endif %}">
+
+      <div class="form-col" style="margin-bottom:10px;">
+        <label>Username</label>
+        <input type="text" name="username" required
+               value="{{ edit_user.username if edit_user else '' }}"
+               autocomplete="off" />
+      </div>
+
+      <div class="form-col" style="margin-bottom:10px;">
+        <label>Password{% if edit_user %} <span class="meta">(leave blank to keep current)</span>{% endif %}</label>
+        <input type="password" name="password" {% if not edit_user %}required{% endif %}
+               autocomplete="new-password" />
+      </div>
+
+      <div class="form-col" style="margin-bottom:10px;">
+        <label>Full name <span class="meta">(optional)</span></label>
+        <input type="text" name="full_name"
+               value="{{ edit_user.full_name if edit_user and edit_user.full_name else '' }}" />
+      </div>
+
+      <div class="form-col" style="margin-bottom:16px;">
+        <label>User type</label>
+        <select name="user_type">
+          <option value="user" {% if not edit_user or edit_user.user_type == 'user' %}selected{% endif %}>user — can add/remove own items</option>
+          <option value="student" {% if edit_user and edit_user.user_type == 'student' %}selected{% endif %}>student — can add items, cannot remove admin items</option>
+        </select>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:16px;">
+        <div class="form-col">
+          <label>Codeforces handle</label>
+          <input type="text" name="cf_handle"
+                 value="{{ edit_user.codeforces_handle if edit_user and edit_user.codeforces_handle else '' }}" />
+        </div>
+        <div class="form-col">
+          <label>AtCoder handle</label>
+          <input type="text" name="atcoder_handle"
+                 value="{{ edit_user.atcoder_handle if edit_user and edit_user.atcoder_handle else '' }}" />
+        </div>
+        <div class="form-col">
+          <label>Kilonova handle</label>
+          <input type="text" name="kilonova_handle"
+                 value="{{ edit_user.kilonova_handle if edit_user and edit_user.kilonova_handle else '' }}" />
+        </div>
+      </div>
+
+      {% if all_groups %}
+      <div class="form-col" style="margin-bottom:16px;">
+        <label>Group membership</label>
+        <div style="display:flex; flex-direction:column; gap:5px; margin-top:4px;">
+          {% for g in all_groups %}
+          <label style="display:flex; align-items:center; gap:6px; font-weight:normal; cursor:pointer;">
+            <input type="checkbox" name="group_ids" value="{{ g.id }}"
+                   {% if g.id in selected_group_ids %}checked{% endif %} />
+            {{ g.name }}
+            <span class="meta">({{ g.memberships | length }} member{{ 's' if g.memberships | length != 1 }})</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      {% else %}
+      <p class="meta" style="margin-bottom:16px;">No groups yet. <a href="/groups/new">Create a group first.</a></p>
+      {% endif %}
+
+      <div style="display:flex; gap:8px;">
+        <button type="submit" class="btn btn-green">
+          {% if edit_user %}Save changes{% else %}Create user{% endif %}
+        </button>
+        <a href="/admin/users" class="btn">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

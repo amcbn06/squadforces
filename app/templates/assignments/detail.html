@@ -18,7 +18,7 @@
     <form method="post" action="/assignments/{{ assignment.id }}/sync" style="display:inline;">
       <button class="btn" title="Re-sync all items">↻ Refresh all</button>
     </form>
-    {% if account and account.role == "admin" %}
+    {% if account and account.user_type == "admin" %}
     <form method="post" action="/assignments/{{ assignment.id }}/delete" style="display:inline;"
           onsubmit="return confirm('Delete this assignment and all its data?')">
       <button class="btn btn-red">Delete</button>
@@ -95,8 +95,8 @@
           <th class="l" style="min-width:220px; max-width:340px;">Problem / Contest</th>
           {% for user in members %}
           <th style="min-width:90px;">
-            <a href="https://codeforces.com/profile/{{ user.codeforces_handle }}" target="_blank"
-               style="color:inherit;">{{ user.display_name }}</a>
+            <a href="/users/{{ user.username }}"
+               style="color:inherit;">{{ user.username }}</a>
             {% if user.cf_rating %}<br><span class="meta">{{ user.cf_rating }}</span>{% endif %}
           </th>
           {% endfor %}
@@ -233,7 +233,7 @@
                   style="display:inline;">
               <button class="btn" style="padding:1px 5px;" title="Sync now">↻</button>
             </form>
-            {% if account and (account.role in ("admin", "user") or item.created_by_id == account.id) %}
+            {% if account and (account.user_type in ("admin", "user") or item.created_by_id == account.id) %}
             <form method="post" action="/assignments/{{ assignment.id }}/items/{{ item.id }}/delete"
                   style="display:inline;" onsubmit="return confirm('Remove?')">
               <button class="del-btn" title="Remove">×</button>
@@ -375,7 +375,7 @@
           {% endif %}
         {% endfor %}
         <tr>
-          <td class="l">{{ user.display_name }}</td>
+          <td class="l">{{ user.username }}</td>
           <td><span class="st-live">{{ ns.live }}</span></td>
           <td><span class="st-virtual">{{ ns.virt }}</span></td>
           <td><span class="st-up">{{ ns.up }}</span></td>

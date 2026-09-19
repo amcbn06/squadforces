@@ -1,11 +1,14 @@
 {% extends "base.html" %}
-{% block title %}{{ user.display_name }} — Squadforces{% endblock %}
+{% block title %}{{ user.username }} — Squadforces{% endblock %}
 
 {% block content %}
 <p style="margin-bottom:8px;"><a href="/groups/{{ group.id }}">← {{ group.name }}</a></p>
 
 <div style="display:flex; align-items:baseline; gap:12px; margin-bottom:16px;">
-  <h1>{{ user.display_name }}</h1>
+  <h1>{{ user.username }}</h1>
+  {% if user.full_name %}
+  <span class="meta" style="font-size:15px;">{{ user.full_name }}</span>
+  {% endif %}
   {% if user.cf_rating %}
   <span class="meta" style="font-size:15px;">({{ user.cf_rating }})</span>
   {% endif %}
@@ -22,19 +25,19 @@
   <div class="box">
     <div class="box-header" style="cursor:default;">Edit profile</div>
     <div class="box-body" style="padding:12px;">
-      <form method="post" action="/groups/{{ group.id }}/members/{{ user.id }}/edit"
+      <form method="post" action="/users/{{ user.username }}/edit"
             style="display:flex; flex-direction:column; gap:8px; max-width:340px;">
         <div class="form-col">
-          <label style="font-size:12px;">Display name</label>
-          <input type="text" name="display_name" value="{{ user.display_name }}" style="font-size:13px;" />
+          <label style="font-size:12px;">Full name <span class="meta">(optional)</span></label>
+          <input type="text" name="full_name" value="{{ user.full_name or '' }}" style="font-size:13px;" />
         </div>
-        {% if account and account.role == "admin" %}
+        {% if account and account.user_type == "admin" %}
         <div class="form-col">
           <label style="font-size:12px;">Codeforces handle</label>
-          <input type="text" name="cf_handle" value="{{ user.codeforces_handle }}" style="font-size:13px;" />
+          <input type="text" name="cf_handle" value="{{ user.codeforces_handle or '' }}" style="font-size:13px;" />
         </div>
         {% else %}
-        <input type="hidden" name="cf_handle" value="{{ user.codeforces_handle }}" />
+        <input type="hidden" name="cf_handle" value="{{ user.codeforces_handle or '' }}" />
         {% endif %}
         <div class="form-col">
           <label style="font-size:12px;">AtCoder handle <span class="meta">(optional)</span></label>
@@ -52,12 +55,14 @@
 {% endif %}
 
 <div style="display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap;">
+  {% if user.codeforces_handle %}
   <a href="https://codeforces.com/profile/{{ user.codeforces_handle }}" target="_blank"
      class="card" style="padding:8px 14px; display:inline-flex; align-items:center; gap:6px;">
     <span style="color:#1565C0; font-weight:bold;">CF</span>
     <span>{{ user.codeforces_handle }}</span>
     {% if user.cf_rank %}<span class="meta">{{ user.cf_rank }}</span>{% endif %}
   </a>
+  {% endif %}
   {% if user.atcoder_handle %}
   <a href="https://atcoder.jp/users/{{ user.atcoder_handle }}" target="_blank"
      class="card" style="padding:8px 14px; display:inline-flex; align-items:center; gap:6px;">
@@ -109,8 +114,8 @@
 <script>
 (function() {
   const CELL = 11, GAP = 2, STEP = CELL + GAP;
-  const CF_COLOR  = [21, 101, 192];   // #1565C0
-  const ATC_COLOR = [224, 144, 0];    // #E09000
+  const CF_COLOR  = [21, 101, 192];
+  const ATC_COLOR = [224, 144, 0];
   const MONTHS    = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
   function lerp(a, b, t) { return Math.round(a + (b - a) * t); }
@@ -139,17 +144,11 @@
     const jan1 = new Date(year, 0, 1);
     const dec31 = new Date(year, 11, 31);
     const totalDays = Math.round((dec31 - jan1) / 86400000) + 1;
-    // Mon-based day-of-week: Mon=0 … Sun=6
     const startDow = (jan1.getDay() + 6) % 7;
     const cols = Math.ceil((startDow + totalDays) / 7);
-
     const W = cols * STEP + 4;
-    const H = 7 * STEP + 22; // 22px for month labels below
-
-    let rects = '';
-    let monthLabels = '';
-    let lastMonth = -1;
-
+    const H = 7 * STEP + 22;
+    let rects = '', monthLabels = '', lastMonth = -1;
     for (let d = 0; d < totalDays; d++) {
       const col = Math.floor((startDow + d) / 7);
       const row = (startDow + d) % 7;
@@ -159,8 +158,7 @@
       const cf  = data[ds]?.cf  || 0;
       const atc = data[ds]?.atc || 0;
       const fill = cellColor(cf, atc, bg, empty);
-      const x = col * STEP;
-      const y = row * STEP;
+      const x = col * STEP, y = row * STEP;
       const tip = cf || atc ? `${ds}: CF ${cf}, AtC ${atc}` : ds;
       rects += `<rect x="${x}" y="${y}" width="${CELL}" height="${CELL}" fill="${fill}" rx="2"><title>${tip}</title></rect>`;
       if (mm !== lastMonth) {
@@ -168,27 +166,19 @@
         lastMonth = mm;
       }
     }
-
     return `<div style="margin-bottom:18px;">
       <div style="font-size:12px;font-weight:600;color:#aaa;margin-bottom:6px;">${year}</div>
-      <svg width="${W}" height="${H}" style="display:block;">
-        ${rects}
-        ${monthLabels}
-      </svg>
+      <svg width="${W}" height="${H}" style="display:block;">${rects}${monthLabels}</svg>
     </div>`;
   }
 
   function computeStreaks(data) {
     const active = d => (data[d]?.cf || 0) + (data[d]?.atc || 0) > 0;
     const toKey = d => d.toISOString().slice(0, 10);
-
-    // Current streak: walk backwards from today
     let current = 0;
     const today = new Date(); today.setHours(0,0,0,0);
     const d = new Date(today);
     while (active(toKey(d))) { current++; d.setDate(d.getDate() - 1); }
-
-    // Longest streak + total active days from all data
     const days = Object.keys(data).filter(active).sort();
     let longest = 0, run = 0;
     for (let i = 0; i < days.length; i++) {
@@ -199,7 +189,6 @@
       }
       if (run > longest) longest = run;
     }
-
     return { current, longest, total: days.length };
   }
 
@@ -216,7 +205,7 @@
   new MutationObserver(renderHeatmap)
     .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
-  fetch('/groups/{{ group.id }}/members/{{ user.id }}/activity.json')
+  fetch('/users/{{ user.username }}/activity.json')
     .then(r => r.json())
     .then(data => {
       _activityData = data;

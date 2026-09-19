@@ -20,36 +20,30 @@ def verify_password(password: str, stored: str) -> bool:
 
 
 def require_auth(request: Request, db: Session = Depends(get_db)):
-    from app.models import Account
-    account_id = request.session.get("account_id")
-    if not account_id:
+    from app.models import User
+    user_id = request.session.get("user_id")
+    if user_id is None:  # explicit None check — id=0 (admin) is valid
         raise HTTPException(status_code=401, detail="Not authenticated")
-    account = db.get(Account, account_id)
-    if not account:
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    return account
+    return user
 
 
-def require_admin(account=Depends(require_auth)):
-    if account.role != "admin":
+def require_admin(user=Depends(require_auth)):
+    if user.user_type != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
-    return account
+    return user
 
 
-def can_edit_user(account, user) -> bool:
-    """Returns True if this account is allowed to edit the given User's profile."""
-    if account.role == "admin":
+def can_edit_user(current_user, target_user) -> bool:
+    if current_user.user_type == "admin":
         return True
-    # Explicit link (new system)
-    if account.user_id and account.user_id == user.id:
-        return True
-    # Legacy: username matching CF handle
-    return account.username.lower() == user.codeforces_handle.lower()
+    return current_user.id == target_user.id
 
 
-def can_delete_item(account, item) -> bool:
-    """Returns True if this account is allowed to delete the given AssignmentItem."""
-    if account.role in ("admin", "user"):
+def can_delete_item(user, item) -> bool:
+    if user.user_type == "admin":
         return True
-    # student: only items they added (NULL created_by_id = admin-owned, cannot delete)
-    return item.created_by_id is not None and item.created_by_id == account.id
+    # user and student: only remove their own items
+    return item.created_by_id is not None and item.created_by_id == user.id

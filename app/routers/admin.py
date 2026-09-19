@@ -4,160 +4,204 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Account, AccountGroupAccess, Group
+from app.models import User, Group, GroupMembership
 from app.auth import require_admin, hash_password
+from app.scraper import codeforces as cf
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 templates = Jinja2Templates(directory="app/templates")
 
 
-@router.get("/accounts", response_class=HTMLResponse)
-async def list_accounts(
+@router.get("/users", response_class=HTMLResponse)
+async def list_users(
     request: Request,
     db: Session = Depends(get_db),
     account=Depends(require_admin),
 ):
-    accounts = db.query(Account).order_by(Account.created_at).all()
+    users = db.query(User).filter(User.user_type != "admin").order_by(User.created_at).all()
     all_groups = db.query(Group).order_by(Group.name).all()
     error = request.query_params.get("error", "")
-    return templates.TemplateResponse("admin/accounts.html", {
+    return templates.TemplateResponse("admin/users.html", {
         "request": request,
         "account": account,
-        "accounts": accounts,
+        "users": users,
         "all_groups": all_groups,
         "error": error,
     })
 
 
-@router.get("/accounts/new", response_class=HTMLResponse)
-async def new_account_form(
+@router.get("/users/new", response_class=HTMLResponse)
+async def new_user_form(
     request: Request,
     db: Session = Depends(get_db),
     account=Depends(require_admin),
 ):
     all_groups = db.query(Group).order_by(Group.name).all()
-    return templates.TemplateResponse("admin/account_form.html", {
+    return templates.TemplateResponse("admin/user_form.html", {
         "request": request,
         "account": account,
-        "edit_account": None,
+        "edit_user": None,
         "all_groups": all_groups,
         "selected_group_ids": [],
         "error": None,
     })
 
 
-@router.post("/accounts/new")
-async def create_account(
+@router.post("/users/new")
+async def create_user(
     request: Request,
     username: str = Form(...),
     password: str = Form(...),
-    role: str = Form(...),
+    user_type: str = Form("user"),
+    full_name: str = Form(""),
+    cf_handle: str = Form(""),
+    atcoder_handle: str = Form(""),
+    kilonova_handle: str = Form(""),
     group_ids: list[int] = Form(default=[]),
     db: Session = Depends(get_db),
     account=Depends(require_admin),
 ):
     username = username.strip()
+    cf_handle = cf_handle.strip()
+    error = None
+
     if not username or not password:
+        error = "Username and password are required."
+    elif db.query(User).filter_by(username=username).first():
+        error = f"Username '{username}' is already taken."
+    elif cf_handle and db.query(User).filter_by(codeforces_handle=cf_handle).first():
+        error = f"Codeforces handle '{cf_handle}' is already in use."
+
+    if error:
         all_groups = db.query(Group).order_by(Group.name).all()
-        return templates.TemplateResponse("admin/account_form.html", {
-            "request": request, "account": account, "edit_account": None,
-            "all_groups": all_groups, "selected_group_ids": group_ids,
-            "error": "Username and password are required.",
+        return templates.TemplateResponse("admin/user_form.html", {
+            "request": request, "account": account, "edit_user": None,
+            "all_groups": all_groups, "selected_group_ids": group_ids, "error": error,
         }, status_code=422)
 
-    if db.query(Account).filter_by(username=username).first():
-        all_groups = db.query(Group).order_by(Group.name).all()
-        return templates.TemplateResponse("admin/account_form.html", {
-            "request": request, "account": account, "edit_account": None,
-            "all_groups": all_groups, "selected_group_ids": group_ids,
-            "error": f"Username '{username}' is already taken.",
-        }, status_code=422)
+    # Validate + fetch CF rating if handle provided
+    cf_rating = cf_rank = None
+    if cf_handle:
+        user_info = await cf.validate_handle(cf_handle)
+        if user_info:
+            cf_rating = user_info.get("rating")
+            cf_rank = user_info.get("rank")
 
-    role = role if role in ("admin", "user", "student") else "user"
-    new_acct = Account(username=username, password_hash=hash_password(password), role=role)
-    db.add(new_acct)
+    user_type = user_type if user_type in ("user", "student") else "user"
+    new_user = User(
+        username=username,
+        password_hash=hash_password(password),
+        user_type=user_type,
+        full_name=full_name.strip() or None,
+        codeforces_handle=cf_handle or None,
+        atcoder_handle=atcoder_handle.strip() or None,
+        kilonova_handle=kilonova_handle.strip() or None,
+        cf_rating=cf_rating,
+        cf_rank=cf_rank,
+    )
+    db.add(new_user)
     db.flush()
     for gid in group_ids:
         if db.get(Group, gid):
-            db.add(AccountGroupAccess(account_id=new_acct.id, group_id=gid))
+            db.add(GroupMembership(group_id=gid, user_id=new_user.id))
     db.commit()
-    return RedirectResponse("/admin/accounts", status_code=303)
+    return RedirectResponse("/admin/users", status_code=303)
 
 
-@router.get("/accounts/{account_id}/edit", response_class=HTMLResponse)
-async def edit_account_form(
+@router.get("/users/{user_id}/edit", response_class=HTMLResponse)
+async def edit_user_form(
     request: Request,
-    account_id: int,
+    user_id: int,
     db: Session = Depends(get_db),
     account=Depends(require_admin),
 ):
-    edit_acct = db.get(Account, account_id)
-    if not edit_acct:
-        return HTMLResponse("Account not found", status_code=404)
+    edit_user = db.query(User).filter(User.id == user_id).first()
+    if not edit_user:
+        return HTMLResponse("User not found", status_code=404)
     all_groups = db.query(Group).order_by(Group.name).all()
-    selected_ids = [a.group_id for a in edit_acct.group_access]
-    return templates.TemplateResponse("admin/account_form.html", {
+    selected_ids = [m.group_id for m in edit_user.memberships]
+    return templates.TemplateResponse("admin/user_form.html", {
         "request": request,
         "account": account,
-        "edit_account": edit_acct,
+        "edit_user": edit_user,
         "all_groups": all_groups,
         "selected_group_ids": selected_ids,
         "error": None,
     })
 
 
-@router.post("/accounts/{account_id}/edit")
-async def edit_account(
+@router.post("/users/{user_id}/edit")
+async def edit_user(
     request: Request,
-    account_id: int,
+    user_id: int,
     username: str = Form(...),
     password: str = Form(""),
-    role: str = Form(...),
+    user_type: str = Form("user"),
+    full_name: str = Form(""),
+    cf_handle: str = Form(""),
+    atcoder_handle: str = Form(""),
+    kilonova_handle: str = Form(""),
     group_ids: list[int] = Form(default=[]),
     db: Session = Depends(get_db),
     account=Depends(require_admin),
 ):
-    edit_acct = db.get(Account, account_id)
-    if not edit_acct:
-        return HTMLResponse("Account not found", status_code=404)
+    edit_user = db.query(User).filter(User.id == user_id).first()
+    if not edit_user:
+        return HTMLResponse("User not found", status_code=404)
 
     username = username.strip()
-    duplicate = db.query(Account).filter(
-        Account.username == username, Account.id != account_id
-    ).first()
+    cf_handle = cf_handle.strip()
+    duplicate = db.query(User).filter(User.username == username, User.id != user_id).first()
     if duplicate:
         all_groups = db.query(Group).order_by(Group.name).all()
-        return templates.TemplateResponse("admin/account_form.html", {
-            "request": request, "account": account, "edit_account": edit_acct,
+        return templates.TemplateResponse("admin/user_form.html", {
+            "request": request, "account": account, "edit_user": edit_user,
             "all_groups": all_groups, "selected_group_ids": group_ids,
             "error": f"Username '{username}' is already taken.",
         }, status_code=422)
 
-    edit_acct.username = username
+    edit_user.username = username
     if password.strip():
-        edit_acct.password_hash = hash_password(password.strip())
-    if role in ("admin", "user", "student"):
-        edit_acct.role = role
+        edit_user.password_hash = hash_password(password.strip())
+    if user_type in ("user", "student"):
+        edit_user.user_type = user_type
+    edit_user.full_name = full_name.strip() or None
+    edit_user.atcoder_handle = atcoder_handle.strip() or None
+    edit_user.kilonova_handle = kilonova_handle.strip() or None
 
-    # Replace group access
-    db.query(AccountGroupAccess).filter_by(account_id=account_id).delete()
+    if cf_handle != (edit_user.codeforces_handle or ""):
+        edit_user.codeforces_handle = cf_handle or None
+        if cf_handle:
+            user_info = await cf.validate_handle(cf_handle)
+            if user_info:
+                edit_user.cf_rating = user_info.get("rating")
+                edit_user.cf_rank = user_info.get("rank")
+
+    # Replace group memberships
+    db.query(GroupMembership).filter_by(user_id=user_id).delete()
     for gid in group_ids:
         if db.get(Group, gid):
-            db.add(AccountGroupAccess(account_id=account_id, group_id=gid))
+            db.add(GroupMembership(group_id=gid, user_id=user_id))
     db.commit()
-    return RedirectResponse("/admin/accounts", status_code=303)
+    return RedirectResponse("/admin/users", status_code=303)
 
 
-@router.post("/accounts/{account_id}/delete")
-async def delete_account(
-    account_id: int,
+@router.post("/users/{user_id}/delete")
+async def delete_user(
+    user_id: int,
     db: Session = Depends(get_db),
     account=Depends(require_admin),
 ):
-    if account.id == account_id:
-        return RedirectResponse("/admin/accounts?error=Cannot+delete+your+own+account", status_code=303)
-    edit_acct = db.get(Account, account_id)
-    if edit_acct:
-        db.delete(edit_acct)
+    if user_id == 0:
+        return RedirectResponse("/admin/users?error=Cannot+delete+admin", status_code=303)
+    user = db.query(User).filter(User.id == user_id).first()
+    if user:
+        db.delete(user)
         db.commit()
-    return RedirectResponse("/admin/accounts", status_code=303)
+    return RedirectResponse("/admin/users", status_code=303)
+
+
+# Legacy redirect: old /admin/accounts URL
+@router.get("/accounts", response_class=HTMLResponse)
+async def legacy_accounts(account=Depends(require_admin)):
+    return RedirectResponse("/admin/users", status_code=303)

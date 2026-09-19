@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 from app import models, recommend as rec
 from app.auth import require_auth
 from app.database import get_db
-from app.models import Account
 from app.scraper import codeforces as cf
 
 logger = logging.getLogger(__name__)
@@ -105,7 +104,7 @@ async def recommend_page(
     except (ValueError, TypeError):
         member_id_int = None
 
-    all_members = db.query(models.User).order_by(models.User.display_name).all()
+    all_members = db.query(models.User).filter(models.User.user_type != "admin").order_by(models.User.username).all()
 
     selected_divs = [d for d in (divisions or DEFAULT_DIVISIONS) if d in rec.DIVISION_LABELS]
     if not selected_divs:

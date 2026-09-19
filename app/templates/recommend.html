@@ -31,7 +31,7 @@
               {% for m in all_members %}
               <option value="{{ m.id }}" data-rating="{{ m.cf_rating or '' }}"
                       {% if m.id == member_id %}selected{% endif %}>
-                {{ m.display_name }}{% if m.cf_rating %} ({{ m.cf_rating }}){% endif %}
+                {{ m.username }}{% if m.cf_rating %} ({{ m.cf_rating }}){% endif %}
               </option>
               {% endfor %}
             </select>

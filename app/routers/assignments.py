@@ -4,7 +4,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Group, Assignment, AssignmentItem, Result, ProblemResult, AccountGroupAccess
+from app.models import Group, Assignment, AssignmentItem, Result, ProblemResult, GroupMembership
 from app.auth import require_auth, require_admin, can_delete_item
 from app.scraper import codeforces as cf
 from app.scraper import atcoder as ac
@@ -16,11 +16,11 @@ templates = Jinja2Templates(directory="app/templates")
 
 
 def _check_group_access(account, group_id: int, db: Session):
-    if account.role == "admin":
+    if account.user_type == "admin":
         return
-    ok = db.query(AccountGroupAccess).filter_by(account_id=account.id, group_id=group_id).first()
-    if not ok:
-        raise HTTPException(status_code=403)
+    if db.query(GroupMembership).filter_by(group_id=group_id, user_id=account.id).first():
+        return
+    raise HTTPException(status_code=403)
 
 
 @router.get("/new", response_class=HTMLResponse)
