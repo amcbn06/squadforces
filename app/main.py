@@ -7,13 +7,13 @@ from fastapi import FastAPI, Request, Form, Depends
 from fastapi.exceptions import HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
 load_dotenv()
 
 from app.database import engine, Base, get_db, SessionLocal, ensure_columns
+from app.templating import make_templates
 from app import models
 from app.auth import hash_password, verify_password, require_auth, can_edit_user
 from app.routers import groups, assignments, recommend
@@ -64,7 +64,7 @@ class RevalidatingStaticFiles(StaticFiles):
 
 
 app.mount("/static", RevalidatingStaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="app/templates")
+templates = make_templates()
 
 app.include_router(groups.router)
 app.include_router(assignments.router)

@@ -2,17 +2,17 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Request, Form, BackgroundTasks, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.templating import make_templates
 from app.models import Group, User, GroupMembership, Assignment, AssignmentItem, Result
 from app.auth import require_auth, require_admin, can_edit_user
 from app.scraper import codeforces as cf
 from app.scraper import atcoder as ac
 
 router = APIRouter(prefix="/groups", tags=["groups"])
-templates = Jinja2Templates(directory="app/templates")
+templates = make_templates()
 
 
 def _check_group_access(account, group_id: int, db: Session):

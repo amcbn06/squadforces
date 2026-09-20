@@ -4,18 +4,18 @@ from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app import models, recommend as rec
 from app.auth import require_auth
 from app.database import get_db
+from app.templating import make_templates
 from app.scraper import codeforces as cf
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/recommend", tags=["recommend"])
-templates = Jinja2Templates(directory="app/templates")
+templates = make_templates()
 
 templates.env.filters["ts_to_date"] = (
     lambda ts: datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")

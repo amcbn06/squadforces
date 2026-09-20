@@ -1,15 +1,15 @@
 from fastapi import APIRouter, Depends, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.templating import make_templates
 from app.models import User, Group, GroupMembership
 from app.auth import require_admin, hash_password
 from app.scraper import codeforces as cf
 
 router = APIRouter(prefix="/admin", tags=["admin"])
-templates = Jinja2Templates(directory="app/templates")
+templates = make_templates()
 
 
 @router.get("/users", response_class=HTMLResponse)

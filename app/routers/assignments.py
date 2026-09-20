@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, Request, Form, BackgroundTasks, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.templating import make_templates
 from sqlalchemy import or_
 
 from app.models import (
@@ -17,7 +17,7 @@ from app import link_parser
 from app import sync as sync_svc
 
 router = APIRouter(prefix="/assignments", tags=["assignments"])
-templates = Jinja2Templates(directory="app/templates")
+templates = make_templates()
 
 
 def _check_group_access(account, group_id: int, db: Session):
