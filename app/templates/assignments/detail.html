@@ -2,6 +2,26 @@
 {% block title %}{{ assignment.title }} — Squadforces{% endblock %}
 
 {% block content %}
+{% set is_admin = account and account.user_type == "admin" %}
+{% macro hint_btn(key, title) %}
+  {% if group.hints_allowed %}
+  {% set n = (hints_map.get(key) or []) | length %}
+  <button type="button"
+          class="hint-btn{{ ' has-hints' if n }}{{ ' admin-add' if is_admin and not n }}"
+          data-key="{{ key }}" data-title="{{ title }}"
+          {% if not n and not is_admin %}disabled{% endif %}
+          title="{% if n %}{{ n }} hint{{ 's' if n != 1 }}{% elif is_admin %}Add a hint{% else %}No hints available{% endif %}"
+          onclick="openHints(this)">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M12 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6l5 5v3"/>
+      <path d="M13 3v5h5"/>
+      <path d="M8 12h4M8 16h2"/>
+      <path d="M13.5 21l.8-3.2 6.2-6.2a1.6 1.6 0 0 1 2.3 2.3l-6.2 6.2z"/>
+    </svg>
+  </button>
+  {% endif %}
+{% endmacro %}
 <p style="margin-bottom:6px;"><a href="/groups/{{ group.id }}">← {{ group.name }}</a></p>
 
 <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:10px;">
@@ -192,6 +212,8 @@
                 <a href="https://kilonova.ro/problems/{{ item.external_id }}" target="_blank">
                   {{ item.title or item.external_id }}</a>
               {% endif %}
+              {% if item.rating %}<span class="meta prob-rating">[{{ item.rating }}]</span>{% endif %}
+              {{ hint_btn('i' ~ item.id, item.title or item.external_id) }}
             {% endif %}
 
             <span class="dot dot-{{ item.sync_status }}"
@@ -303,6 +325,7 @@
                target="_blank">{{ cp.index }}. {{ cp.name }}</a>
             {% endif %}
             {% if cp.rating %}<span class="meta prob-rating">[{{ cp.rating }}]</span>{% endif %}
+            {{ hint_btn('p' ~ cp.id, cp.index ~ '. ' ~ cp.name) }}
           </td>
           {% for cell in row.cells %}
           {% set pr = cell.problem_results.get(cp.id) %}
@@ -442,6 +465,94 @@
 </p>
 {% endif %}
 
+{% endif %}
+
+{% if group.hints_allowed %}
+<div id="hint-overlay" class="modal-overlay" hidden onclick="if (event.target === this) closeHints()">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="hint-title">
+    <div class="modal-head">
+      <span id="hint-title">Hints</span>
+      <button type="button" class="modal-close" onclick="closeHints()" aria-label="Close">×</button>
+    </div>
+    <div id="hint-list" class="modal-body"></div>
+    {% if is_admin %}
+    <div class="modal-foot">
+      <form method="post" action="/assignments/{{ assignment.id }}/hints/add">
+        <input type="hidden" name="target" id="hint-target" />
+        <textarea name="text" rows="3" required maxlength="5000" style="width:100%; margin-bottom:6px;"
+                  placeholder="Write a new hint…"></textarea>
+        <button type="submit" class="btn btn-green">Add hint</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+</div>
+<script>
+var HINTS = {{ hints_map | tojson }};
+var HINT_ADMIN = {{ 'true' if is_admin else 'false' }};
+var HINT_DELETE_URL = "/assignments/{{ assignment.id }}/hints/";
+
+function openHints(btn) {
+  var key = btn.dataset.key;
+  var hints = HINTS[key] || [];
+  document.getElementById('hint-title').textContent = 'Hints — ' + btn.dataset.title;
+  var list = document.getElementById('hint-list');
+  list.replaceChildren();
+  if (!hints.length) {
+    var empty = document.createElement('p');
+    empty.className = 'meta';
+    empty.textContent = 'No hints yet.';
+    list.appendChild(empty);
+  }
+  hints.forEach(function (h, i) {
+    var box = document.createElement('div');
+    box.className = 'hint-item';
+    var head = document.createElement('div');
+    head.className = 'hint-item-head';
+    var label = document.createElement('span');
+    label.textContent = 'Hint #' + (i + 1);
+    head.appendChild(label);
+    if (HINT_ADMIN) {
+      var form = document.createElement('form');
+      form.method = 'post';
+      form.action = HINT_DELETE_URL + h.id + '/delete';
+      form.style.margin = '0';
+      form.onsubmit = function () { return confirm('Delete hint #' + (i + 1) + '?'); };
+      var del = document.createElement('button');
+      del.className = 'del-btn';
+      del.title = 'Delete hint';
+      del.textContent = '×';
+      form.appendChild(del);
+      head.appendChild(form);
+    }
+    var text = document.createElement('div');
+    text.className = 'hint-item-text';
+    text.textContent = h.text;
+    box.appendChild(head);
+    box.appendChild(text);
+    list.appendChild(box);
+  });
+  var target = document.getElementById('hint-target');
+  if (target) target.value = key;
+  document.getElementById('hint-overlay').hidden = false;
+}
+
+function closeHints() {
+  document.getElementById('hint-overlay').hidden = true;
+}
+
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') closeHints();
+});
+
+(function () {
+  var key = new URLSearchParams(location.search).get('hint');
+  if (!key) return;
+  var btn = document.querySelector('.hint-btn[data-key="' + key.replace(/[^a-z0-9]/gi, '') + '"]');
+  if (btn && !btn.disabled) openHints(btn);
+  history.replaceState(null, '', location.pathname);
+})();
+</script>
 {% endif %}
 
 <script>

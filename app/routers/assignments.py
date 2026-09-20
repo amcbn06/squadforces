@@ -4,7 +4,11 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Group, Assignment, AssignmentItem, Result, ProblemResult, GroupMembership
+from sqlalchemy import or_
+
+from app.models import (
+    Group, Assignment, AssignmentItem, ContestProblem, Result, ProblemResult, GroupMembership, Hint,
+)
 from app.auth import require_auth, require_admin, can_delete_item
 from app.scraper import codeforces as cf
 from app.scraper import atcoder as ac
@@ -238,6 +242,64 @@ async def bulk_add_items(
     )
 
 
+@router.post("/{assignment_id}/hints/add")
+async def add_hint(
+    assignment_id: int,
+    target: str = Form(...),
+    text: str = Form(...),
+    db: Session = Depends(get_db),
+    account=Depends(require_admin),
+):
+    assignment = db.get(Assignment, assignment_id)
+    if not assignment:
+        return HTMLResponse("Assignment not found", status_code=404)
+    if not assignment.group.hints_allowed:
+        raise HTTPException(status_code=400, detail="Hints are not enabled for this group.")
+
+    kind, raw_id = target[:1], target[1:]
+    if kind not in ("i", "p") or not raw_id.isdigit():
+        return HTMLResponse("Bad hint target", status_code=400)
+    target_id = int(raw_id)
+
+    text = text.strip()
+    if not text:
+        return RedirectResponse(f"/assignments/{assignment_id}?hint={target}", status_code=303)
+    if len(text) > 5000:
+        raise HTTPException(status_code=400, detail="Hint is too long (max 5000 characters).")
+
+    if kind == "i":
+        item = db.get(AssignmentItem, target_id)
+        if not item or item.assignment_id != assignment_id or item.type != "problem":
+            return HTMLResponse("Problem not found", status_code=404)
+        db.add(Hint(assignment_item_id=item.id, text=text))
+    else:
+        cp = db.get(ContestProblem, target_id)
+        if not cp or cp.assignment_item.assignment_id != assignment_id:
+            return HTMLResponse("Problem not found", status_code=404)
+        db.add(Hint(contest_problem_id=cp.id, text=text))
+    db.commit()
+    return RedirectResponse(f"/assignments/{assignment_id}?hint={target}", status_code=303)
+
+
+@router.post("/{assignment_id}/hints/{hint_id}/delete")
+async def delete_hint(
+    assignment_id: int,
+    hint_id: int,
+    db: Session = Depends(get_db),
+    account=Depends(require_admin),
+):
+    hint = db.get(Hint, hint_id)
+    if not hint:
+        return RedirectResponse(f"/assignments/{assignment_id}", status_code=303)
+    owner = hint.assignment_item or hint.contest_problem.assignment_item
+    if owner.assignment_id != assignment_id:
+        return HTMLResponse("Hint not found", status_code=404)
+    target = f"i{hint.assignment_item_id}" if hint.assignment_item_id else f"p{hint.contest_problem_id}"
+    db.delete(hint)
+    db.commit()
+    return RedirectResponse(f"/assignments/{assignment_id}?hint={target}", status_code=303)
+
+
 @router.post("/{assignment_id}/items/{item_id}/delete")
 async def delete_item(
     assignment_id: int,
@@ -287,6 +349,25 @@ async def sync_item(
 
 # --- Helpers ---
 
+def _hints_map(assignment, db: Session) -> dict[str, list[dict]]:
+    """Hints keyed by 'i<item id>' (standalone problem) or 'p<contest problem id>', oldest first."""
+    item_ids = [i.id for i in assignment.items if i.type == "problem"]
+    cp_ids = [cp.id for i in assignment.items for cp in i.contest_problems]
+    if not item_ids and not cp_ids:
+        return {}
+    hints = (
+        db.query(Hint)
+        .filter(or_(Hint.assignment_item_id.in_(item_ids), Hint.contest_problem_id.in_(cp_ids)))
+        .order_by(Hint.id)
+        .all()
+    )
+    result: dict[str, list[dict]] = {}
+    for h in hints:
+        key = f"i{h.assignment_item_id}" if h.assignment_item_id else f"p{h.contest_problem_id}"
+        result.setdefault(key, []).append({"id": h.id, "text": h.text})
+    return result
+
+
 def _render_detail(request: Request, assignment, account, db: Session, status_code: int = 200, **extra):
     group = assignment.group
     members = [m.user for m in group.memberships]
@@ -299,6 +380,7 @@ def _render_detail(request: Request, assignment, account, db: Session, status_co
             "members": members,
             "items": assignment.items,
             "matrix": _build_matrix(assignment.items, members, db),
+            "hints_map": _hints_map(assignment, db) if group.hints_allowed else {},
             "account": account,
             **extra,
         },

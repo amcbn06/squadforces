@@ -55,6 +55,7 @@ async def create_group(
     request: Request,
     name: str = Form(...),
     description: str = Form(""),
+    hints_allowed: str = Form(""),
     db: Session = Depends(get_db),
     account=Depends(require_admin),
 ):
@@ -65,7 +66,7 @@ async def create_group(
             {"request": request, "group": None, "error": "Group name is required.", "account": account},
             status_code=422,
         )
-    group = Group(name=name, description=description.strip() or None)
+    group = Group(name=name, description=description.strip() or None, hints_allowed=bool(hints_allowed))
     db.add(group)
     db.commit()
     return RedirectResponse(f"/groups/{group.id}", status_code=303)
@@ -145,6 +146,7 @@ async def edit_group(
     group_id: int,
     name: str = Form(...),
     description: str = Form(""),
+    hints_allowed: str = Form(""),
     db: Session = Depends(get_db),
     account=Depends(require_admin),
 ):
@@ -153,6 +155,7 @@ async def edit_group(
         return HTMLResponse("Group not found", status_code=404)
     group.name = name.strip()
     group.description = description.strip() or None
+    group.hints_allowed = bool(hints_allowed)
     db.commit()
     return RedirectResponse(f"/groups/{group_id}", status_code=303)
 

@@ -22,6 +22,14 @@
         <label>Description</label>
         <textarea name="description" rows="3" style="width:100%;">{{ group.description if group else '' }}</textarea>
       </div>
+      <div class="form-col" style="margin-bottom:14px;">
+        <label style="display:flex; align-items:center; gap:6px; font-weight:normal; cursor:pointer;">
+          <input type="checkbox" name="hints_allowed" value="1"
+                 {% if group and group.hints_allowed %}checked{% endif %} style="min-width:0;" />
+          Allow hints
+        </label>
+        <span class="meta">Shows a hint button on every problem in this group's assignments. Only the admin can write hints.</span>
+      </div>
       <div style="display:flex; gap:8px;">
         <button type="submit" class="btn btn-green">{{ 'Save' if group else 'Create' }}</button>
         <a href="{{ '/groups/' ~ group.id if group else '/groups/' }}" class="btn">Cancel</a>

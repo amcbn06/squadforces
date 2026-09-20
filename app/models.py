@@ -3,6 +3,7 @@ from sqlalchemy import (
     Column, Integer, String, Boolean, DateTime, Date,
     Text, JSON, ForeignKey, UniqueConstraint
 )
+from sqlalchemy import false
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -33,6 +34,7 @@ class Group(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
+    hints_allowed = Column(Boolean, nullable=False, default=False, server_default=false())
     created_at = Column(DateTime, default=datetime.utcnow)
 
     memberships = relationship("GroupMembership", back_populates="group", cascade="all, delete-orphan")
@@ -75,6 +77,7 @@ class AssignmentItem(Base):
     platform = Column(String(15), nullable=False)  # "codeforces" | "atcoder" | "kilonova"
     external_id = Column(String(100), nullable=False)
     title = Column(String(300), nullable=True)
+    rating = Column(Integer, nullable=True)  # standalone Codeforces problems only
     added_at = Column(DateTime, default=datetime.utcnow)
     last_synced_at = Column(DateTime, nullable=True)
     sync_status = Column(String(20), default="pending")  # pending|syncing|done|error
@@ -84,6 +87,7 @@ class AssignmentItem(Base):
     assignment = relationship("Assignment", back_populates="items")
     contest_problems = relationship("ContestProblem", back_populates="assignment_item", cascade="all, delete-orphan")
     results = relationship("Result", back_populates="assignment_item", cascade="all, delete-orphan")
+    hints = relationship("Hint", back_populates="assignment_item", cascade="all, delete-orphan")
 
 
 class ContestProblem(Base):
@@ -98,6 +102,21 @@ class ContestProblem(Base):
 
     assignment_item = relationship("AssignmentItem", back_populates="contest_problems")
     problem_results = relationship("ProblemResult", back_populates="contest_problem", cascade="all, delete-orphan")
+    hints = relationship("Hint", back_populates="contest_problem", cascade="all, delete-orphan")
+
+
+class Hint(Base):
+    """A hint on one problem: either a standalone problem item or a problem inside a contest."""
+    __tablename__ = "hints"
+
+    id = Column(Integer, primary_key=True)
+    assignment_item_id = Column(Integer, ForeignKey("assignment_items.id", ondelete="CASCADE"), nullable=True, index=True)
+    contest_problem_id = Column(Integer, ForeignKey("contest_problems.id", ondelete="CASCADE"), nullable=True, index=True)
+    text = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    assignment_item = relationship("AssignmentItem", back_populates="hints")
+    contest_problem = relationship("ContestProblem", back_populates="hints")
 
 
 class Result(Base):

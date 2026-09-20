@@ -19,6 +19,24 @@ class Base(DeclarativeBase):
     pass
 
 
+def ensure_columns():
+    """Additive schema upgrade: create_all skips existing tables, so add columns introduced later.
+    Only ever adds a missing column; never drops or rewrites anything."""
+    from sqlalchemy import inspect, text
+    additions = {
+        "groups": {"hints_allowed": "BOOLEAN NOT NULL DEFAULT {false}"},
+        "assignment_items": {"rating": "INTEGER"},
+    }
+    false = "0" if engine.dialect.name == "sqlite" else "false"
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for table, columns in additions.items():
+            existing = {c["name"] for c in insp.get_columns(table)}
+            for name, ddl in columns.items():
+                if name not in existing:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl.format(false=false)}"))
+
+
 def get_db():
     db = SessionLocal()
     try:

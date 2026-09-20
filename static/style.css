@@ -293,3 +293,41 @@ input:focus, textarea:focus, select:focus { outline: 1px solid var(--border-focu
 .member-list li:last-child { border-bottom: none; }
 .del-btn { background: none; border: none; color: var(--border); cursor: pointer; font-size: 16px; line-height: 1; }
 .del-btn:hover { color: #c00; }
+
+/* Hints */
+.hint-btn {
+  background: none; border: none; padding: 0 2px; margin-left: 4px; vertical-align: middle;
+  line-height: 1; color: var(--text-meta); opacity: .35; cursor: not-allowed;
+}
+.hint-btn svg { display: block; }
+.hint-btn.has-hints { color: var(--text); opacity: 1; cursor: pointer; }
+.hint-btn.has-hints:hover { color: var(--text-link); }
+.hint-btn.admin-add { cursor: pointer; }
+.hint-btn.admin-add:hover { opacity: .8; }
+
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, .45); padding: 16px;
+}
+.modal-overlay[hidden] { display: none; }
+.modal {
+  background: var(--bg-surface); color: var(--text); border: 1px solid var(--border);
+  border-radius: 4px; box-shadow: 0 8px 30px rgba(0, 0, 0, .35);
+  width: 100%; max-width: 560px; max-height: 80vh; display: flex; flex-direction: column;
+}
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; background: var(--bg-header); border-bottom: 1px solid var(--border);
+  font-weight: bold;
+}
+.modal-close { background: none; border: none; color: var(--text-meta); font-size: 20px; line-height: 1; cursor: pointer; }
+.modal-close:hover { color: var(--text); }
+.modal-body { padding: 12px 14px; overflow-y: auto; }
+.hint-item { border: 1px solid var(--border-light); border-radius: 3px; margin-bottom: 8px; }
+.hint-item-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 10px; background: var(--bg-header); font-size: 12px; font-weight: bold; color: var(--text-meta);
+}
+.hint-item-text { padding: 8px 10px; white-space: pre-wrap; word-break: break-word; }
+.modal-foot { padding: 10px 14px; border-top: 1px solid var(--border-light); }

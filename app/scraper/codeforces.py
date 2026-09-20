@@ -78,6 +78,25 @@ async def get_contest_standings(contest_id: str, handles: list[str]) -> dict:
     return result
 
 
+_PROBLEMSET_TTL = 12 * 3600
+_problemset_ratings: Optional[tuple[float, dict[tuple[str, str], int]]] = None
+
+
+async def get_problem_rating(contest_id: str, index: str) -> Optional[int]:
+    """Rating of a problem, or None if unrated. Uses one cached problemset.problems call for all lookups."""
+    global _problemset_ratings
+    now = time.monotonic()
+    if _problemset_ratings is None or now - _problemset_ratings[0] > _PROBLEMSET_TTL:
+        result = await _call("problemset.problems", {}, signed=False)
+        ratings = {
+            (str(p["contestId"]), p["index"]): p["rating"]
+            for p in result.get("problems", [])
+            if "contestId" in p and "rating" in p
+        }
+        _problemset_ratings = (now, ratings)
+    return _problemset_ratings[1].get((str(contest_id), index.upper()))
+
+
 async def get_contest_problems(contest_id: str) -> list[dict]:
     """Return list of problems in a contest."""
     info = await get_contest_info(contest_id)

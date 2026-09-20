@@ -1,5 +1,6 @@
 """Sync service — fetches data from CF/AtCoder/Kilonova APIs and writes Results to DB."""
 import asyncio
+import logging
 from collections import defaultdict
 from datetime import datetime
 from sqlalchemy.orm import Session
@@ -7,6 +8,8 @@ from app import models
 from app.scraper import codeforces as cf
 from app.scraper import atcoder as ac
 from app.scraper import kilonova as kn
+
+logger = logging.getLogger(__name__)
 
 SYNC_TIMEOUT_SECONDS = 300  # 5 minutes hard cap per item
 
@@ -439,6 +442,12 @@ async def _sync_cf_problem(
                     break
         except Exception:
             item.title = f"CF {item.external_id}"
+
+    if item.rating is None:
+        try:
+            item.rating = await cf.get_problem_rating(contest_id, index)
+        except Exception:
+            logger.warning("Could not fetch CF rating for %s", item.external_id, exc_info=True)
 
     for user in members:
         solved = await cf.get_problem_solved(user.codeforces_handle, contest_id, index)

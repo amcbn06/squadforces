@@ -13,7 +13,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 load_dotenv()
 
-from app.database import engine, Base, get_db, SessionLocal
+from app.database import engine, Base, get_db, SessionLocal, ensure_columns
 from app import models
 from app.auth import hash_password, verify_password, require_auth, can_edit_user
 from app.routers import groups, assignments, recommend
@@ -26,6 +26,7 @@ from app.scraper import atcoder as ac
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    ensure_columns()
 
     db = SessionLocal()
     try:
@@ -53,7 +54,16 @@ app.add_middleware(
     SessionMiddleware,
     secret_key=os.getenv("SECRET_KEY", "squadforces-dev-secret-change-me"),
 )
-app.mount("/static", StaticFiles(directory="static"), name="static")
+class RevalidatingStaticFiles(StaticFiles):
+    """Force browsers to revalidate (ETag -> 304) so CSS/JS edits show up right after a deploy."""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/static", RevalidatingStaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
 app.include_router(groups.router)
