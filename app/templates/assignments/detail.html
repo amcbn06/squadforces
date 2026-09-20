@@ -468,7 +468,7 @@
 {% endif %}
 
 {% if group.hints_allowed %}
-<div id="hint-overlay" class="modal-overlay" hidden onclick="if (event.target === this) closeHints()">
+<div id="hint-overlay" class="modal-overlay" hidden>
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="hint-title">
     <div class="modal-head">
       <div class="modal-title">
@@ -478,31 +478,65 @@
       <button type="button" class="modal-close" onclick="closeHints()" aria-label="Close">×</button>
     </div>
     <div id="hint-list" class="modal-body"></div>
-    {% if is_admin %}
-    <div class="modal-foot">
-      <div class="modal-foot-title">Add a hint</div>
-      <form method="post" action="/assignments/{{ assignment.id }}/hints/add">
-        <input type="hidden" name="target" id="hint-target" />
-        <textarea name="text" rows="3" required maxlength="5000" placeholder="Write the hint here…"></textarea>
-        <div class="hint-form-row">
-          <label class="hint-check"><input type="checkbox" name="is_solution" value="1" /> Mark as solution</label>
-          <button type="submit" class="btn btn-green">Add hint</button>
-        </div>
-      </form>
-    </div>
-    {% endif %}
   </div>
 </div>
 <script>
 var HINTS = {{ hints_map | tojson }};
 var HINT_ADMIN = {{ 'true' if is_admin else 'false' }};
 var HINT_URL = "/assignments/{{ assignment.id }}/hints/";
+var hintKey = null;
+
+// Constant icon markup only; no user data is ever passed through innerHTML.
+var ICON_ATTRS = 'viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
+var ICON_EDIT = '<svg ' + ICON_ATTRS + '><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
+var ICON_TRASH = '<svg ' + ICON_ATTRS + '><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>';
 
 function el(tag, cls, text) {
   var e = document.createElement(tag);
   if (cls) e.className = cls;
   if (text !== undefined) e.textContent = text;
   return e;
+}
+
+function iconButton(icon, title, danger) {
+  var b = el('button', 'hint-icon-btn' + (danger ? ' danger' : ''));
+  b.type = 'button';
+  b.title = title;
+  b.setAttribute('aria-label', title);
+  b.innerHTML = icon;
+  return b;
+}
+
+// Trailing punctuation is rarely part of a pasted URL; closing brackets only if unbalanced.
+function trimUrl(url) {
+  var pairs = { ')': '(', ']': '[', '}': '{' };
+  for (;;) {
+    var c = url.slice(-1);
+    if ('.,;:!?\'"'.indexOf(c) !== -1) { url = url.slice(0, -1); continue; }
+    if (pairs[c] && url.split(c).length > url.split(pairs[c]).length) { url = url.slice(0, -1); continue; }
+    return url;
+  }
+}
+
+// Builds text nodes and <a> elements (never HTML strings), so hint text can't inject markup.
+function linkify(text) {
+  var frag = document.createDocumentFragment();
+  var re = /(?:https?:\/\/|www\.)[^\s<>"']+/g;
+  var last = 0, m;
+  while ((m = re.exec(text)) !== null) {
+    var url = trimUrl(m[0]);
+    if (!/^(?:https?:\/\/|www\.)[^\s]/.test(url)) continue;
+    if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+    var a = el('a', 'hint-link', url);
+    a.href = url.indexOf('www.') === 0 ? 'https://' + url : url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    frag.appendChild(a);
+    last = m.index + url.length;
+    re.lastIndex = last;
+  }
+  if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+  return frag;
 }
 
 function solutionCheckbox(checked) {
@@ -517,6 +551,37 @@ function solutionCheckbox(checked) {
   return label;
 }
 
+function hintForm(o) {
+  var form = el('form', 'hint-form');
+  form.method = 'post';
+  form.action = o.action;
+  if (o.target) {
+    var hidden = document.createElement('input');
+    hidden.type = 'hidden';
+    hidden.name = 'target';
+    hidden.value = o.target;
+    form.appendChild(hidden);
+  }
+  var ta = el('textarea');
+  ta.name = 'text';
+  ta.rows = 4;
+  ta.required = true;
+  ta.maxLength = 5000;
+  ta.value = o.text || '';
+  ta.placeholder = 'Write the hint here… (links become clickable)';
+  var submit = el('button', 'btn btn-green', o.submitLabel);
+  submit.type = 'submit';
+  var cancel = el('button', 'btn', 'Cancel');
+  cancel.type = 'button';
+  cancel.onclick = o.onCancel;
+  var buttons = el('div', 'hint-btn-row');
+  buttons.append(submit, cancel);
+  var row = el('div', 'hint-form-row');
+  row.append(solutionCheckbox(o.solution), buttons);
+  form.append(ta, row);
+  return form;
+}
+
 function setHintOpen(item, open) {
   item.classList.toggle('open', open);
   item.querySelector('.hint-toggle').setAttribute('aria-expanded', open ? 'true' : 'false');
@@ -524,32 +589,22 @@ function setHintOpen(item, open) {
 }
 
 function showHintText(item, h) {
-  item.querySelector('.hint-content').replaceChildren(el('div', 'hint-text', h.text));
+  var body = el('div', 'hint-text');
+  body.appendChild(linkify(h.text));
+  item.querySelector('.hint-content').replaceChildren(body);
 }
 
 function showHintEditor(item, h) {
-  var form = el('form', 'hint-edit');
-  form.method = 'post';
-  form.action = HINT_URL + h.id + '/edit';
-  var ta = el('textarea');
-  ta.name = 'text';
-  ta.rows = 4;
-  ta.required = true;
-  ta.maxLength = 5000;
-  ta.value = h.text;
-  var save = el('button', 'btn btn-green', 'Save');
-  save.type = 'submit';
-  var cancel = el('button', 'btn', 'Cancel');
-  cancel.type = 'button';
-  cancel.onclick = function () { showHintText(item, h); };
-  var buttons = el('div', 'hint-btn-row');
-  buttons.append(save, cancel);
-  var row = el('div', 'hint-form-row');
-  row.append(solutionCheckbox(h.solution), buttons);
-  form.append(ta, row);
+  var form = hintForm({
+    action: HINT_URL + h.id + '/edit',
+    text: h.text,
+    solution: h.solution,
+    submitLabel: 'Save',
+    onCancel: function () { showHintText(item, h); }
+  });
   item.querySelector('.hint-content').replaceChildren(form);
   setHintOpen(item, true);
-  ta.focus();
+  form.querySelector('textarea').focus();
 }
 
 function buildHint(h, label, expanded) {
@@ -560,21 +615,21 @@ function buildHint(h, label, expanded) {
   toggle.type = 'button';
   toggle.appendChild(el('span', 'hint-chevron', '▸'));
   toggle.appendChild(el('span', 'hint-label' + (h.solution ? ' solution' : ''), label));
-  if (HINT_ADMIN) toggle.appendChild(el('span', 'hint-preview', h.text.replace(/\s+/g, ' ').slice(0, 120)));
   toggle.onclick = function () { setHintOpen(item, !item.classList.contains('open')); };
   row.appendChild(toggle);
 
   if (HINT_ADMIN) {
     var actions = el('div', 'hint-actions');
-    var edit = el('button', 'hint-action', 'Edit');
-    edit.type = 'button';
+    var edit = iconButton(ICON_EDIT, 'Edit ' + label, false);
     edit.onclick = function () { showHintEditor(item, h); };
-    var form = el('form');
-    form.method = 'post';
-    form.action = HINT_URL + h.id + '/delete';
-    form.onsubmit = function () { return confirm('Delete ' + label + '?'); };
-    form.appendChild(el('button', 'hint-action danger', 'Delete'));
-    actions.append(edit, form);
+    var del = el('form');
+    del.method = 'post';
+    del.action = HINT_URL + h.id + '/delete';
+    del.onsubmit = function () { return confirm('Delete ' + label + '?'); };
+    var delBtn = iconButton(ICON_TRASH, 'Delete ' + label, true);
+    delBtn.type = 'submit';
+    del.appendChild(delBtn);
+    actions.append(edit, del);
     row.appendChild(actions);
   }
 
@@ -584,16 +639,35 @@ function buildHint(h, label, expanded) {
   return item;
 }
 
+function showAddButton(wrap) {
+  var b = el('button', 'hint-add-btn', '+ Add hint');
+  b.type = 'button';
+  b.onclick = function () { showAddForm(wrap); };
+  wrap.replaceChildren(b);
+}
+
+function showAddForm(wrap) {
+  var form = hintForm({
+    action: HINT_URL + 'add',
+    target: hintKey,
+    submitLabel: 'Add hint',
+    onCancel: function () { showAddButton(wrap); }
+  });
+  wrap.replaceChildren(form);
+  form.querySelector('textarea').focus();
+  form.scrollIntoView({ block: 'nearest' });
+}
+
 function openHints(btn, highlightId) {
-  var key = btn.dataset.key;
-  var hints = HINTS[key] || [];
+  hintKey = btn.dataset.key;
+  var hints = HINTS[hintKey] || [];
   document.getElementById('hint-title').textContent = 'Hints — ' + btn.dataset.title;
   document.getElementById('hint-sub').textContent = HINT_ADMIN
     ? hints.length + ' hint' + (hints.length === 1 ? '' : 's')
     : 'Click a hint to reveal it.';
   var list = document.getElementById('hint-list');
   list.replaceChildren();
-  if (!hints.length) list.appendChild(el('p', 'meta', 'No hints yet. Add the first one below.'));
+  if (!hints.length) list.appendChild(el('p', 'meta', 'No hints yet.'));
   var n = 0, focused = null;
   hints.forEach(function (h) {
     var label = h.solution ? 'Solution' : 'Hint #' + (++n);
@@ -601,8 +675,11 @@ function openHints(btn, highlightId) {
     if (h.id === highlightId) focused = item;
     list.appendChild(item);
   });
-  var target = document.getElementById('hint-target');
-  if (target) target.value = key;
+  if (HINT_ADMIN) {
+    var wrap = el('div', 'hint-add');
+    showAddButton(wrap);
+    list.appendChild(wrap);
+  }
   document.getElementById('hint-overlay').hidden = false;
   if (focused) focused.scrollIntoView({ block: 'nearest' });
 }
@@ -611,8 +688,23 @@ function closeHints() {
   document.getElementById('hint-overlay').hidden = true;
 }
 
+// Close on backdrop click only when the press also started on the backdrop, so dragging a
+// text selection out of a textarea doesn't dismiss the panel and lose what was typed.
+(function () {
+  var overlay = document.getElementById('hint-overlay');
+  var pressedOnBackdrop = false;
+  overlay.addEventListener('mousedown', function (e) { pressedOnBackdrop = e.target === overlay; });
+  overlay.addEventListener('click', function (e) {
+    if (pressedOnBackdrop && e.target === overlay) closeHints();
+    pressedOnBackdrop = false;
+  });
+})();
+
 document.addEventListener('keydown', function (e) {
-  if (e.key === 'Escape') closeHints();
+  if (e.key !== 'Escape') return;
+  var active = document.activeElement;
+  if (active && active.tagName === 'TEXTAREA') return;
+  closeHints();
 });
 
 (function () {

@@ -338,21 +338,26 @@ input:focus, textarea:focus, select:focus { outline: 1px solid var(--border-focu
 .hint-chevron { display: inline-block; width: 10px; font-size: 11px; color: var(--text-meta); transition: transform .12s; }
 .hint-item.open .hint-chevron { transform: rotate(90deg); }
 .hint-label.solution { color: var(--text-err); }
-.hint-preview {
-  min-width: 0; font-weight: normal; font-size: 12px; color: var(--text-meta);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
 .hint-actions { display: flex; align-items: center; gap: 2px; padding-right: 8px; flex-shrink: 0; }
 .hint-actions form { margin: 0; }
-.hint-action { background: none; border: none; padding: 3px 7px; border-radius: 3px; font-size: 12px; color: var(--text-link); cursor: pointer; }
-.hint-action:hover { background: var(--bg-btn-h); }
-.hint-action.danger { color: var(--text-err); }
+.hint-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px;
+  background: none; border: none; border-radius: 3px; color: var(--text-meta); cursor: pointer;
+}
+.hint-icon-btn:hover { background: var(--bg-btn-h); color: var(--text); }
+.hint-icon-btn.danger:hover { color: var(--text-err); }
+.hint-link { color: var(--text-link); text-decoration: underline; word-break: break-all; }
+.hint-add { margin-top: 4px; }
+.hint-add-btn {
+  width: 100%; padding: 9px 12px; background: none; border: 1px dashed var(--border); border-radius: 4px;
+  color: var(--text-meta); font: inherit; cursor: pointer;
+}
+.hint-add-btn:hover { border-color: var(--text-link); color: var(--text-link); }
+.hint-add .hint-form { padding: 12px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-surface); }
 .hint-content { padding: 10px 12px; border-top: 1px solid var(--border-light); }
 .hint-text { white-space: pre-wrap; word-break: break-word; }
-.hint-edit textarea, .modal-foot textarea { width: 100%; margin-bottom: 8px; resize: vertical; }
+.hint-form textarea { width: 100%; margin-bottom: 8px; resize: vertical; }
 .hint-form-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .hint-btn-row { display: flex; gap: 6px; }
 .hint-check { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: normal; cursor: pointer; }
 .hint-check input { width: auto; min-width: 0; margin: 0; }
-.modal-foot { padding: 12px 14px; border-top: 1px solid var(--border); background: var(--bg-header); }
-.modal-foot-title { margin-bottom: 6px; font-size: 11px; font-weight: bold; letter-spacing: .04em; text-transform: uppercase; color: var(--text-meta); }
