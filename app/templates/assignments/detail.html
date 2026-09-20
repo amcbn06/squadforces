@@ -471,17 +471,23 @@
 <div id="hint-overlay" class="modal-overlay" hidden onclick="if (event.target === this) closeHints()">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="hint-title">
     <div class="modal-head">
-      <span id="hint-title">Hints</span>
+      <div class="modal-title">
+        <span id="hint-title">Hints</span>
+        <span id="hint-sub" class="modal-sub"></span>
+      </div>
       <button type="button" class="modal-close" onclick="closeHints()" aria-label="Close">×</button>
     </div>
     <div id="hint-list" class="modal-body"></div>
     {% if is_admin %}
     <div class="modal-foot">
+      <div class="modal-foot-title">Add a hint</div>
       <form method="post" action="/assignments/{{ assignment.id }}/hints/add">
         <input type="hidden" name="target" id="hint-target" />
-        <textarea name="text" rows="3" required maxlength="5000" style="width:100%; margin-bottom:6px;"
-                  placeholder="Write a new hint…"></textarea>
-        <button type="submit" class="btn btn-green">Add hint</button>
+        <textarea name="text" rows="3" required maxlength="5000" placeholder="Write the hint here…"></textarea>
+        <div class="hint-form-row">
+          <label class="hint-check"><input type="checkbox" name="is_solution" value="1" /> Mark as solution</label>
+          <button type="submit" class="btn btn-green">Add hint</button>
+        </div>
       </form>
     </div>
     {% endif %}
@@ -490,51 +496,115 @@
 <script>
 var HINTS = {{ hints_map | tojson }};
 var HINT_ADMIN = {{ 'true' if is_admin else 'false' }};
-var HINT_DELETE_URL = "/assignments/{{ assignment.id }}/hints/";
+var HINT_URL = "/assignments/{{ assignment.id }}/hints/";
 
-function openHints(btn) {
+function el(tag, cls, text) {
+  var e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+function solutionCheckbox(checked) {
+  var label = el('label', 'hint-check');
+  var box = document.createElement('input');
+  box.type = 'checkbox';
+  box.name = 'is_solution';
+  box.value = '1';
+  box.checked = !!checked;
+  label.appendChild(box);
+  label.appendChild(document.createTextNode(' Mark as solution'));
+  return label;
+}
+
+function setHintOpen(item, open) {
+  item.classList.toggle('open', open);
+  item.querySelector('.hint-toggle').setAttribute('aria-expanded', open ? 'true' : 'false');
+  item.querySelector('.hint-content').hidden = !open;
+}
+
+function showHintText(item, h) {
+  item.querySelector('.hint-content').replaceChildren(el('div', 'hint-text', h.text));
+}
+
+function showHintEditor(item, h) {
+  var form = el('form', 'hint-edit');
+  form.method = 'post';
+  form.action = HINT_URL + h.id + '/edit';
+  var ta = el('textarea');
+  ta.name = 'text';
+  ta.rows = 4;
+  ta.required = true;
+  ta.maxLength = 5000;
+  ta.value = h.text;
+  var save = el('button', 'btn btn-green', 'Save');
+  save.type = 'submit';
+  var cancel = el('button', 'btn', 'Cancel');
+  cancel.type = 'button';
+  cancel.onclick = function () { showHintText(item, h); };
+  var buttons = el('div', 'hint-btn-row');
+  buttons.append(save, cancel);
+  var row = el('div', 'hint-form-row');
+  row.append(solutionCheckbox(h.solution), buttons);
+  form.append(ta, row);
+  item.querySelector('.hint-content').replaceChildren(form);
+  setHintOpen(item, true);
+  ta.focus();
+}
+
+function buildHint(h, label, expanded) {
+  var item = el('div', 'hint-item');
+  var row = el('div', 'hint-row');
+
+  var toggle = el('button', 'hint-toggle');
+  toggle.type = 'button';
+  toggle.appendChild(el('span', 'hint-chevron', '▸'));
+  toggle.appendChild(el('span', 'hint-label' + (h.solution ? ' solution' : ''), label));
+  if (HINT_ADMIN) toggle.appendChild(el('span', 'hint-preview', h.text.replace(/\s+/g, ' ').slice(0, 120)));
+  toggle.onclick = function () { setHintOpen(item, !item.classList.contains('open')); };
+  row.appendChild(toggle);
+
+  if (HINT_ADMIN) {
+    var actions = el('div', 'hint-actions');
+    var edit = el('button', 'hint-action', 'Edit');
+    edit.type = 'button';
+    edit.onclick = function () { showHintEditor(item, h); };
+    var form = el('form');
+    form.method = 'post';
+    form.action = HINT_URL + h.id + '/delete';
+    form.onsubmit = function () { return confirm('Delete ' + label + '?'); };
+    form.appendChild(el('button', 'hint-action danger', 'Delete'));
+    actions.append(edit, form);
+    row.appendChild(actions);
+  }
+
+  item.append(row, el('div', 'hint-content'));
+  showHintText(item, h);
+  setHintOpen(item, !!expanded);
+  return item;
+}
+
+function openHints(btn, highlightId) {
   var key = btn.dataset.key;
   var hints = HINTS[key] || [];
   document.getElementById('hint-title').textContent = 'Hints — ' + btn.dataset.title;
+  document.getElementById('hint-sub').textContent = HINT_ADMIN
+    ? hints.length + ' hint' + (hints.length === 1 ? '' : 's')
+    : 'Click a hint to reveal it.';
   var list = document.getElementById('hint-list');
   list.replaceChildren();
-  if (!hints.length) {
-    var empty = document.createElement('p');
-    empty.className = 'meta';
-    empty.textContent = 'No hints yet.';
-    list.appendChild(empty);
-  }
-  hints.forEach(function (h, i) {
-    var box = document.createElement('div');
-    box.className = 'hint-item';
-    var head = document.createElement('div');
-    head.className = 'hint-item-head';
-    var label = document.createElement('span');
-    label.textContent = 'Hint #' + (i + 1);
-    head.appendChild(label);
-    if (HINT_ADMIN) {
-      var form = document.createElement('form');
-      form.method = 'post';
-      form.action = HINT_DELETE_URL + h.id + '/delete';
-      form.style.margin = '0';
-      form.onsubmit = function () { return confirm('Delete hint #' + (i + 1) + '?'); };
-      var del = document.createElement('button');
-      del.className = 'del-btn';
-      del.title = 'Delete hint';
-      del.textContent = '×';
-      form.appendChild(del);
-      head.appendChild(form);
-    }
-    var text = document.createElement('div');
-    text.className = 'hint-item-text';
-    text.textContent = h.text;
-    box.appendChild(head);
-    box.appendChild(text);
-    list.appendChild(box);
+  if (!hints.length) list.appendChild(el('p', 'meta', 'No hints yet. Add the first one below.'));
+  var n = 0, focused = null;
+  hints.forEach(function (h) {
+    var label = h.solution ? 'Solution' : 'Hint #' + (++n);
+    var item = buildHint(h, label, h.id === highlightId);
+    if (h.id === highlightId) focused = item;
+    list.appendChild(item);
   });
   var target = document.getElementById('hint-target');
   if (target) target.value = key;
   document.getElementById('hint-overlay').hidden = false;
+  if (focused) focused.scrollIntoView({ block: 'nearest' });
 }
 
 function closeHints() {
@@ -546,10 +616,11 @@ document.addEventListener('keydown', function (e) {
 });
 
 (function () {
-  var key = new URLSearchParams(location.search).get('hint');
+  var params = new URLSearchParams(location.search);
+  var key = params.get('hint');
   if (!key) return;
   var btn = document.querySelector('.hint-btn[data-key="' + key.replace(/[^a-z0-9]/gi, '') + '"]');
-  if (btn && !btn.disabled) openHints(btn);
+  if (btn && !btn.disabled) openHints(btn, parseInt(params.get('hl'), 10) || null);
   history.replaceState(null, '', location.pathname);
 })();
 </script>

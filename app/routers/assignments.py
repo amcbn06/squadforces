@@ -242,11 +242,31 @@ async def bulk_add_items(
     )
 
 
+MAX_HINT_LENGTH = 5000
+
+
+def _hint_redirect(assignment_id: int, target: str, hint_id: int | None = None) -> RedirectResponse:
+    """Back to the assignment with the hint panel reopened (and one hint expanded, if given)."""
+    url = f"/assignments/{assignment_id}?hint={target}"
+    if hint_id:
+        url += f"&hl={hint_id}"
+    return RedirectResponse(url, status_code=303)
+
+
+def _hint_target(hint: Hint) -> str:
+    return f"i{hint.assignment_item_id}" if hint.assignment_item_id else f"p{hint.contest_problem_id}"
+
+
+def _hint_assignment_id(hint: Hint) -> int:
+    return (hint.assignment_item or hint.contest_problem.assignment_item).assignment_id
+
+
 @router.post("/{assignment_id}/hints/add")
 async def add_hint(
     assignment_id: int,
     target: str = Form(...),
     text: str = Form(...),
+    is_solution: str = Form(""),
     db: Session = Depends(get_db),
     account=Depends(require_admin),
 ):
@@ -261,24 +281,50 @@ async def add_hint(
         return HTMLResponse("Bad hint target", status_code=400)
     target_id = int(raw_id)
 
-    text = text.strip()
+    text = text.replace("\r\n", "\n").strip()
     if not text:
-        return RedirectResponse(f"/assignments/{assignment_id}?hint={target}", status_code=303)
-    if len(text) > 5000:
-        raise HTTPException(status_code=400, detail="Hint is too long (max 5000 characters).")
+        return _hint_redirect(assignment_id, target)
+    if len(text) > MAX_HINT_LENGTH:
+        raise HTTPException(status_code=400, detail=f"Hint is too long (max {MAX_HINT_LENGTH} characters).")
 
     if kind == "i":
         item = db.get(AssignmentItem, target_id)
         if not item or item.assignment_id != assignment_id or item.type != "problem":
             return HTMLResponse("Problem not found", status_code=404)
-        db.add(Hint(assignment_item_id=item.id, text=text))
+        hint = Hint(assignment_item_id=item.id, text=text, is_solution=bool(is_solution))
     else:
         cp = db.get(ContestProblem, target_id)
         if not cp or cp.assignment_item.assignment_id != assignment_id:
             return HTMLResponse("Problem not found", status_code=404)
-        db.add(Hint(contest_problem_id=cp.id, text=text))
+        hint = Hint(contest_problem_id=cp.id, text=text, is_solution=bool(is_solution))
+    db.add(hint)
     db.commit()
-    return RedirectResponse(f"/assignments/{assignment_id}?hint={target}", status_code=303)
+    return _hint_redirect(assignment_id, target, hint.id)
+
+
+@router.post("/{assignment_id}/hints/{hint_id}/edit")
+async def edit_hint(
+    assignment_id: int,
+    hint_id: int,
+    text: str = Form(...),
+    is_solution: str = Form(""),
+    db: Session = Depends(get_db),
+    account=Depends(require_admin),
+):
+    hint = db.get(Hint, hint_id)
+    if not hint:
+        return RedirectResponse(f"/assignments/{assignment_id}", status_code=303)
+    if _hint_assignment_id(hint) != assignment_id:
+        return HTMLResponse("Hint not found", status_code=404)
+
+    text = text.replace("\r\n", "\n").strip()
+    if len(text) > MAX_HINT_LENGTH:
+        raise HTTPException(status_code=400, detail=f"Hint is too long (max {MAX_HINT_LENGTH} characters).")
+    if text:
+        hint.text = text
+        hint.is_solution = bool(is_solution)
+        db.commit()
+    return _hint_redirect(assignment_id, _hint_target(hint), hint.id)
 
 
 @router.post("/{assignment_id}/hints/{hint_id}/delete")
@@ -291,13 +337,12 @@ async def delete_hint(
     hint = db.get(Hint, hint_id)
     if not hint:
         return RedirectResponse(f"/assignments/{assignment_id}", status_code=303)
-    owner = hint.assignment_item or hint.contest_problem.assignment_item
-    if owner.assignment_id != assignment_id:
+    if _hint_assignment_id(hint) != assignment_id:
         return HTMLResponse("Hint not found", status_code=404)
-    target = f"i{hint.assignment_item_id}" if hint.assignment_item_id else f"p{hint.contest_problem_id}"
+    target = _hint_target(hint)
     db.delete(hint)
     db.commit()
-    return RedirectResponse(f"/assignments/{assignment_id}?hint={target}", status_code=303)
+    return _hint_redirect(assignment_id, target)
 
 
 @router.post("/{assignment_id}/items/{item_id}/delete")
@@ -350,7 +395,7 @@ async def sync_item(
 # --- Helpers ---
 
 def _hints_map(assignment, db: Session) -> dict[str, list[dict]]:
-    """Hints keyed by 'i<item id>' (standalone problem) or 'p<contest problem id>', oldest first."""
+    """Hints keyed by 'i<item id>' (standalone problem) or 'p<contest problem id>'."""
     item_ids = [i.id for i in assignment.items if i.type == "problem"]
     cp_ids = [cp.id for i in assignment.items for cp in i.contest_problems]
     if not item_ids and not cp_ids:
@@ -363,8 +408,9 @@ def _hints_map(assignment, db: Session) -> dict[str, list[dict]]:
     )
     result: dict[str, list[dict]] = {}
     for h in hints:
-        key = f"i{h.assignment_item_id}" if h.assignment_item_id else f"p{h.contest_problem_id}"
-        result.setdefault(key, []).append({"id": h.id, "text": h.text})
+        result.setdefault(_hint_target(h), []).append({"id": h.id, "text": h.text, "solution": h.is_solution})
+    for entries in result.values():
+        entries.sort(key=lambda e: e["solution"])  # stable: solutions last, otherwise oldest first
     return result
 
 

@@ -113,6 +113,7 @@ class Hint(Base):
     assignment_item_id = Column(Integer, ForeignKey("assignment_items.id", ondelete="CASCADE"), nullable=True, index=True)
     contest_problem_id = Column(Integer, ForeignKey("contest_problems.id", ondelete="CASCADE"), nullable=True, index=True)
     text = Column(Text, nullable=False)
+    is_solution = Column(Boolean, nullable=False, default=False, server_default=false())
     created_at = Column(DateTime, default=datetime.utcnow)
 
     assignment_item = relationship("AssignmentItem", back_populates="hints")
