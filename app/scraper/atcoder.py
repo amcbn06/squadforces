@@ -9,12 +9,14 @@ import httpx
 AC_PROBLEMS_BASE = "https://kenkoooo.com/atcoder"
 
 _CATALOG_TTL = 12 * 3600
-# (fetched_at, problems by id, [(contest_id, problem_index)] by problem id)
-_catalog: Optional[tuple[float, dict[str, dict], dict[str, list[tuple[str, str]]]]] = None
+# (fetched_at, problems by id, [(contest_id, problem_index)] by problem id, problem ids by contest)
+_catalog: Optional[tuple[float, dict[str, dict], dict[str, list[tuple[str, str]]], dict[str, list[str]]]] = None
+_models: Optional[tuple[float, dict[str, dict]]] = None  # (fetched_at, difficulty models by problem id)
 
 
-async def _get_catalog() -> tuple[dict[str, dict], dict[str, list[tuple[str, str]]]]:
-    """Every AtCoder problem and every contest it appeared in. ~4 MB of JSON, so cached for all lookups."""
+async def _get_catalog() -> tuple[dict[str, dict], dict[str, list[tuple[str, str]]], dict[str, list[str]]]:
+    """Every AtCoder problem, every contest it appeared in, and each contest's problems.
+    ~4 MB of JSON, so cached for all lookups."""
     global _catalog
     if _catalog is None or time.monotonic() - _catalog[0] > _CATALOG_TTL:
         async with httpx.AsyncClient(timeout=30) as client:
@@ -25,10 +27,27 @@ async def _get_catalog() -> tuple[dict[str, dict], dict[str, list[tuple[str, str
         problems_resp.raise_for_status()
         mapping_resp.raise_for_status()
         appearances: dict[str, list[tuple[str, str]]] = defaultdict(list)
+        by_contest: dict[str, list[str]] = defaultdict(list)
         for row in mapping_resp.json():
             appearances[row["problem_id"]].append((row["contest_id"], row["problem_index"]))
-        _catalog = (time.monotonic(), {p["id"]: p for p in problems_resp.json()}, appearances)
-    return _catalog[1], _catalog[2]
+            by_contest[row["contest_id"]].append(row["problem_id"])
+        _catalog = (time.monotonic(), {p["id"]: p for p in problems_resp.json()}, appearances, by_contest)
+    return _catalog[1], _catalog[2], _catalog[3]
+
+
+async def _get_models() -> dict[str, dict]:
+    """Kenkoooo's per-problem difficulty estimates. Optional: a failed fetch just means no ratings."""
+    global _models
+    if _models is None or time.monotonic() - _models[0] > _CATALOG_TTL:
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.get(f"{AC_PROBLEMS_BASE}/resources/problem-models.json")
+            if resp.status_code != 200:
+                return {}
+            _models = (time.monotonic(), resp.json())
+        except Exception:
+            return {}
+    return _models[1]
 
 
 async def get_problem_title(problem_id: str) -> Optional[str]:
@@ -37,7 +56,7 @@ async def get_problem_title(problem_id: str) -> Optional[str]:
     The letter comes from the problem's home contest (the ID prefix, e.g. abc343 for abc343_f). Kenkoooo's
     own problem_index is the position in the latest contest that reused the problem (an ADT), so it's wrong here.
     """
-    problems, appearances = await _get_catalog()
+    problems, appearances, _ = await _get_catalog()
     problem = problems.get(problem_id)
     if not problem or not problem.get("name"):
         return None
@@ -87,25 +106,27 @@ async def get_contest_results(contest_id: str, handle: str) -> dict:
 
 
 async def get_contest_tasks(contest_id: str) -> list[dict]:
-    """Return list of tasks in a contest with difficulty ratings from kenkoooo."""
-    async with httpx.AsyncClient(timeout=20) as client:
-        problems_resp = await client.get(f"{AC_PROBLEMS_BASE}/resources/problems.json")
-        models_resp = await client.get(f"{AC_PROBLEMS_BASE}/resources/problem-models.json")
-    problems_resp.raise_for_status()
-    all_problems = problems_resp.json()
-    tasks = [p for p in all_problems if p.get("contest_id") == contest_id]
-    tasks.sort(key=lambda p: p.get("id", ""))
+    """Tasks of a contest, each with kenkoooo's difficulty estimate when it has one.
 
-    if models_resp.status_code == 200:
-        models = models_resp.json()
-        for t in tasks:
-            model = models.get(t.get("id", ""), {})
-            diff = model.get("difficulty")
-            if diff is not None:
-                if diff >= 400:
-                    t["difficulty"] = int(round(diff))
-                else:
-                    t["difficulty"] = max(1, int(round(400 / (2 ** ((400 - diff) / 278)))))
+    Membership comes from contest-problem.json, not from problems.json: that file lists each problem under
+    a single contest, the latest one to reuse it (usually an AtCoder Daily Training), so filtering it by
+    contest dropped most of an ABC's tasks (abc343 came back with 1 of its 7).
+    """
+    problems, appearances, by_contest = await _get_catalog()
+    ids = set(by_contest.get(contest_id, ()))
+    ids |= {pid for pid, p in problems.items() if p.get("contest_id") == contest_id}  # too new for the mapping
+    tasks = [dict(problems[pid]) for pid in sorted(ids) if pid in problems]  # copies: the catalog is shared
+
+    models = await _get_models()
+    for t in tasks:
+        # The label AtCoder gives the task in *this* contest (A..G, Ex); differs from the ID suffix for reused tasks.
+        t["contest_index"] = next((idx for cid, idx in appearances.get(t["id"], ()) if cid == contest_id), None)
+        diff = models.get(t.get("id", ""), {}).get("difficulty")
+        if diff is not None:
+            if diff >= 400:
+                t["difficulty"] = int(round(diff))
+            else:
+                t["difficulty"] = max(1, int(round(400 / (2 ** ((400 - diff) / 278)))))
 
     return tasks
 
@@ -167,11 +188,12 @@ def parse_contest_id(url_or_id: str) -> Optional[str]:
     """
     Parse an AtCoder contest URL or slug.
     Supports: https://atcoder.jp/contests/abc123  → "abc123"
+    Slugs may contain "_" and "-" (e.g. adt_hard_20240502_2).
     """
     url_or_id = url_or_id.strip()
     m = re.search(r"contests/([^/?#]+)", url_or_id)
     if m:
         return m.group(1)
-    if re.match(r"^[a-z0-9]+$", url_or_id, re.I):
+    if re.match(r"^[a-z0-9_-]+$", url_or_id, re.I):
         return url_or_id
     return None

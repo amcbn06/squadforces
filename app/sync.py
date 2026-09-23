@@ -169,6 +169,8 @@ def _classify_ac_submissions(
 
         live_ac = next((s for s in live_subs if s.get("result") == "AC"), None)
         post_ac = next((s for s in post_subs if s.get("result") == "AC"), None)
+        # Tasks reused by a later contest (an ADT) were often solved long before it started.
+        pre_ac = next((s for s in psubs if s.get("epoch_second", 0) < contest_start and s.get("result") == "AC"), None)
 
         if live_ac:
             wrong_before = [
@@ -194,6 +196,8 @@ def _classify_ac_submissions(
                 "attempts": len(all_wrong_before),
                 "wrong_verdicts": list(dict.fromkeys(all_wrong_before)),
             }
+        elif pre_ac:
+            per_problem[pid] = {"solved": True, "solve_type": "standalone", "attempts": 0, "wrong_verdicts": []}
         else:
             all_wrong = [
                 s.get("result", "") for s in psubs
@@ -487,6 +491,19 @@ async def _sync_ac_item(item: models.AssignmentItem, db: Session) -> None:
         await _sync_ac_problem(item, members, db)
 
 
+def _ac_task_index(task: dict, contest_id: str) -> str:
+    """Row label for a task. A task from its own contest keeps the letter in its ID (abc300_h -> "H", which also
+    sorts after G, unlike AtCoder's "Ex"). A task reused from another contest has no useful suffix, so it gets
+    the label AtCoder gives it in this contest."""
+    task_id = task.get("id", "")
+    home, sep, suffix = task_id.rpartition("_")
+    if not sep:
+        return task_id[-1].upper()
+    if home != contest_id and task.get("contest_index"):
+        return str(task["contest_index"]).upper()
+    return suffix.upper()
+
+
 async def _sync_ac_contest(
     item: models.AssignmentItem,
     members: list,
@@ -502,15 +519,18 @@ async def _sync_ac_contest(
         else:
             item.title = item.external_id.upper()
 
-    existing_problems = {cp.index: cp for cp in item.contest_problems}
+    # Keyed by problem id, not by letter: a contest made of reused tasks (an ADT) can hold several tasks whose
+    # IDs end in the same letter, and a row must keep its own hints/results if its label ever changes.
+    existing_problems = {cp.platform_problem_id: cp for cp in item.contest_problems}
     for task in tasks:
         task_id = task.get("id", "")
-        idx = task_id.split("_")[-1].upper() if "_" in task_id else task_id[-1].upper()
+        idx = _ac_task_index(task, item.external_id)
         raw_title = task.get("title", task_id)
         # kenkoooo titles include a leading "X. " prefix — strip it
         import re as _re
         name = _re.sub(r'^[A-Za-z]\.\s*', '', raw_title) or raw_title
-        if idx not in existing_problems:
+        cp = existing_problems.get(task_id)
+        if cp is None:
             cp = models.ContestProblem(
                 assignment_item_id=item.id,
                 platform_problem_id=task_id,
@@ -520,11 +540,12 @@ async def _sync_ac_contest(
             )
             db.add(cp)
             db.flush()
-            existing_problems[idx] = cp
+            existing_problems[task_id] = cp
         else:
-            existing_problems[idx].name = name
+            cp.index = idx
+            cp.name = name
             if task.get("difficulty"):
-                existing_problems[idx].rating = int(round(task["difficulty"]))
+                cp.rating = int(round(task["difficulty"]))
 
     # Fetch contest timing once — used to classify live vs upsolving submissions
     timing = await ac.get_contest_timing(item.external_id)
