@@ -15,7 +15,10 @@ load_dotenv()
 from app.database import engine, Base, get_db, SessionLocal, ensure_columns
 from app.templating import make_templates
 from app import models
-from app.auth import hash_password, verify_password, require_auth, can_edit_user, MIN_PASSWORD_LENGTH
+from app.auth import (
+    hash_password, hash_password_async, verify_password_async, needs_rehash, dummy_hash,
+    require_auth, can_edit_user, MIN_PASSWORD_LENGTH,
+)
 from app.routers import groups, assignments, recommend
 from app.routers import admin as admin_router
 from app import scheduler
@@ -27,6 +30,7 @@ from app.scraper import atcoder as ac
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     ensure_columns()
+    dummy_hash()  # build it now, so the first login for an unknown name isn't visibly slower than later ones
 
     db = SessionLocal()
     try:
@@ -110,7 +114,13 @@ async def login(
     db: Session = Depends(get_db),
 ):
     user = db.query(models.User).filter_by(username=username.strip()).first()
-    if user and verify_password(password, user.password_hash):
+    # Always do a full hash, even for an unknown username, so response time doesn't reveal which names exist.
+    verified = await verify_password_async(password, user.password_hash if user else dummy_hash())
+    if user and verified:
+        if needs_rehash(user.password_hash):
+            # Legacy SHA-256 hash (or fewer iterations than now): upgrade it while we hold the plaintext.
+            user.password_hash = await hash_password_async(password)
+            db.commit()
         request.session["user_id"] = user.id
         request.session["sv"] = user.session_version
         return RedirectResponse(url=next or "/", status_code=303)
@@ -182,7 +192,7 @@ async def register(
 
     user = models.User(
         username=username,
-        password_hash=hash_password(password),
+        password_hash=await hash_password_async(password),
         user_type="user",
         full_name=full_name.strip() or None,
         codeforces_handle=cf_handle or None,
@@ -223,7 +233,7 @@ async def change_password(
     account=Depends(require_auth),
 ):
     error = ""
-    if not verify_password(current_password, account.password_hash):
+    if not await verify_password_async(current_password, account.password_hash):
         error = "Current password is incorrect."
     elif len(new_password) < MIN_PASSWORD_LENGTH:
         error = f"New password must be at least {MIN_PASSWORD_LENGTH} characters."
@@ -234,7 +244,7 @@ async def change_password(
     if error:
         return _password_page(request, account, error=error, status_code=422)
 
-    account.password_hash = hash_password(new_password)
+    account.password_hash = await hash_password_async(new_password)
     account.session_version += 1   # signs out every other device; this one is re-stamped just below
     db.commit()
     request.session["sv"] = account.session_version

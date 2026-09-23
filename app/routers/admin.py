@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.templating import make_templates
 from app.models import User, Group, GroupMembership
-from app.auth import require_admin, hash_password
+from app.auth import require_admin, hash_password_async
 from app.scraper import codeforces as cf
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -90,7 +90,7 @@ async def create_user(
     user_type = user_type if user_type in ("user", "student") else "user"
     new_user = User(
         username=username,
-        password_hash=hash_password(password),
+        password_hash=await hash_password_async(password),
         user_type=user_type,
         full_name=full_name.strip() or None,
         codeforces_handle=cf_handle or None,
@@ -163,7 +163,7 @@ async def edit_user(
     edit_user.username = username
     password_reset = bool(password.strip())
     if password_reset:
-        edit_user.password_hash = hash_password(password.strip())
+        edit_user.password_hash = await hash_password_async(password.strip())
         edit_user.session_version += 1   # signs that user out on every device
     if user_type in ("user", "student"):
         edit_user.user_type = user_type
