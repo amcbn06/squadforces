@@ -220,12 +220,6 @@ table.t { border-collapse: collapse; width: 100%; }
 
 /* ── Platform icon ───────────────────── */
 .picon { width: 14px; height: 14px; vertical-align: middle; margin-right: 2px; }
-/* Wide wordmark (CSES): fix the height and let the width follow. The gold is pale, so sit it on a dark chip
-   (same colour as the nav bar) to stay legible on the light theme. */
-.picon.picon-wide {
-  width: auto; height: 12px; margin-right: 5px; padding: 2px 5px;
-  background: #2c3444; border-radius: 3px; box-sizing: content-box;
-}
 /* A long title with no spaces must wrap inside the first column instead of stretching the whole matrix. */
 .t td.item-cell { max-width: 340px; overflow-wrap: anywhere; }
 
