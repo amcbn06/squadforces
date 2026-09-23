@@ -7,10 +7,9 @@
   {% if group.hints_allowed %}
   {% set n = (hints_map.get(key) or []) | length %}
   <button type="button"
-          class="hint-btn{{ ' has-hints' if n }}{{ ' admin-add' if is_admin and not n }}"
+          class="hint-btn{{ ' has-hints' if n }}"
           data-key="{{ key }}" data-title="{{ title }}"
-          {% if not n and not is_admin %}disabled{% endif %}
-          title="{% if n %}{{ n }} hint{{ 's' if n != 1 }}{% elif is_admin %}Add a hint{% else %}No hints available{% endif %}"
+          title="{% if n %}{{ n }} entr{{ 'y' if n == 1 else 'ies' }}{% else %}Add a hint or note{% endif %}"
           onclick="openHints(this)">
     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"
          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -568,7 +567,7 @@ function hintForm(o) {
   ta.required = true;
   ta.maxLength = 5000;
   ta.value = o.text || '';
-  ta.placeholder = 'Write the hint here… (links become clickable)';
+  ta.placeholder = o.placeholder + ' (links become clickable)';
   var submit = el('button', 'btn btn-green', o.submitLabel);
   submit.type = 'submit';
   var cancel = el('button', 'btn', 'Cancel');
@@ -577,7 +576,9 @@ function hintForm(o) {
   var buttons = el('div', 'hint-btn-row');
   buttons.append(submit, cancel);
   var row = el('div', 'hint-form-row');
-  row.append(solutionCheckbox(o.solution), buttons);
+  if (o.showSolutionCheckbox) row.appendChild(solutionCheckbox(o.solution));
+  else row.appendChild(el('span'));
+  row.appendChild(buttons);
   form.append(ta, row);
   return form;
 }
@@ -588,18 +589,24 @@ function setHintOpen(item, open) {
   item.querySelector('.hint-content').hidden = !open;
 }
 
+var KIND_LABEL = { hint: 'hint', solution: 'solution', note: 'note' };
+
 function showHintText(item, h) {
   var body = el('div', 'hint-text');
   body.appendChild(linkify(h.text));
+  if (h.kind === 'note' && h.author) body.appendChild(el('div', 'hint-note-author', '— ' + h.author));
   item.querySelector('.hint-content').replaceChildren(body);
 }
 
 function showHintEditor(item, h) {
+  var canToggleKind = HINT_ADMIN && h.kind !== 'note';
   var form = hintForm({
     action: HINT_URL + h.id + '/edit',
     text: h.text,
-    solution: h.solution,
+    solution: h.kind === 'solution',
     submitLabel: 'Save',
+    placeholder: 'Write the ' + KIND_LABEL[h.kind] + ' here…',
+    showSolutionCheckbox: canToggleKind,
     onCancel: function () { showHintText(item, h); }
   });
   item.querySelector('.hint-content').replaceChildren(form);
@@ -614,11 +621,11 @@ function buildHint(h, label, expanded) {
   var toggle = el('button', 'hint-toggle');
   toggle.type = 'button';
   toggle.appendChild(el('span', 'hint-chevron', '▸'));
-  toggle.appendChild(el('span', 'hint-label' + (h.solution ? ' solution' : ''), label));
+  toggle.appendChild(el('span', 'hint-label' + (h.kind === 'solution' ? ' solution' : h.kind === 'note' ? ' note' : ''), label));
   toggle.onclick = function () { setHintOpen(item, !item.classList.contains('open')); };
   row.appendChild(toggle);
 
-  if (HINT_ADMIN) {
+  if (h.can_edit) {
     var actions = el('div', 'hint-actions');
     var edit = iconButton(ICON_EDIT, 'Edit ' + label, false);
     edit.onclick = function () { showHintEditor(item, h); };
@@ -640,7 +647,7 @@ function buildHint(h, label, expanded) {
 }
 
 function showAddButton(wrap) {
-  var b = el('button', 'hint-add-btn', '+ Add hint');
+  var b = el('button', 'hint-add-btn', HINT_ADMIN ? '+ Add hint' : '+ Add note');
   b.type = 'button';
   b.onclick = function () { showAddForm(wrap); };
   wrap.replaceChildren(b);
@@ -650,7 +657,9 @@ function showAddForm(wrap) {
   var form = hintForm({
     action: HINT_URL + 'add',
     target: hintKey,
-    submitLabel: 'Add hint',
+    submitLabel: HINT_ADMIN ? 'Add hint' : 'Add note',
+    placeholder: HINT_ADMIN ? 'Write the hint here…' : 'Write your note here…',
+    showSolutionCheckbox: HINT_ADMIN,
     onCancel: function () { showAddButton(wrap); }
   });
   wrap.replaceChildren(form);
@@ -663,23 +672,27 @@ function openHints(btn, highlightId) {
   var hints = HINTS[hintKey] || [];
   document.getElementById('hint-title').textContent = 'Hints — ' + btn.dataset.title;
   document.getElementById('hint-sub').textContent = HINT_ADMIN
-    ? hints.length + ' hint' + (hints.length === 1 ? '' : 's')
-    : 'Click a hint to reveal it.';
+    ? hints.length + ' entr' + (hints.length === 1 ? 'y' : 'ies')
+    : 'Click an entry to reveal it.';
   var list = document.getElementById('hint-list');
   list.replaceChildren();
-  if (!hints.length) list.appendChild(el('p', 'meta', 'No hints yet.'));
-  var n = 0, focused = null;
+  if (!hints.length) list.appendChild(el('p', 'meta', 'Nothing here yet.'));
+  var seen = { hint: 0, note: 0, solution: 0 };
+  var solutionCount = hints.filter(function (h) { return h.kind === 'solution'; }).length;
+  var focused = null;
   hints.forEach(function (h) {
-    var label = h.solution ? 'Solution' : 'Hint #' + (++n);
+    seen[h.kind] = (seen[h.kind] || 0) + 1;
+    var label;
+    if (h.kind === 'solution') label = solutionCount > 1 ? 'Solution #' + seen.solution : 'Solution';
+    else if (h.kind === 'note') label = 'Note #' + seen.note + (h.author ? ' — ' + h.author : '');
+    else label = 'Hint #' + seen.hint;
     var item = buildHint(h, label, h.id === highlightId);
     if (h.id === highlightId) focused = item;
     list.appendChild(item);
   });
-  if (HINT_ADMIN) {
-    var wrap = el('div', 'hint-add');
-    showAddButton(wrap);
-    list.appendChild(wrap);
-  }
+  var wrap = el('div', 'hint-add');
+  showAddButton(wrap);
+  list.appendChild(wrap);
   document.getElementById('hint-overlay').hidden = false;
   if (focused) focused.scrollIntoView({ block: 'nearest' });
 }
@@ -712,7 +725,7 @@ document.addEventListener('keydown', function (e) {
   var key = params.get('hint');
   if (!key) return;
   var btn = document.querySelector('.hint-btn[data-key="' + key.replace(/[^a-z0-9]/gi, '') + '"]');
-  if (btn && !btn.disabled) openHints(btn, parseInt(params.get('hl'), 10) || null);
+  if (btn) openHints(btn, parseInt(params.get('hl'), 10) || null);
   history.replaceState(null, '', location.pathname);
 })();
 </script>

@@ -257,8 +257,14 @@ def _hint_target(hint: Hint) -> str:
     return f"i{hint.assignment_item_id}" if hint.assignment_item_id else f"p{hint.contest_problem_id}"
 
 
-def _hint_assignment_id(hint: Hint) -> int:
-    return (hint.assignment_item or hint.contest_problem.assignment_item).assignment_id
+def _hint_owner_item(hint: Hint) -> AssignmentItem:
+    return hint.assignment_item or hint.contest_problem.assignment_item
+
+
+def _can_edit_hint(account, hint: Hint) -> bool:
+    if account.user_type == "admin":
+        return True
+    return hint.kind == "note" and hint.author_id == account.id
 
 
 @router.post("/{assignment_id}/hints/add")
@@ -268,11 +274,12 @@ async def add_hint(
     text: str = Form(...),
     is_solution: str = Form(""),
     db: Session = Depends(get_db),
-    account=Depends(require_admin),
+    account=Depends(require_auth),
 ):
     assignment = db.get(Assignment, assignment_id)
     if not assignment:
         return HTMLResponse("Assignment not found", status_code=404)
+    _check_group_access(account, assignment.group_id, db)
     if not assignment.group.hints_allowed:
         raise HTTPException(status_code=400, detail="Hints are not enabled for this group.")
 
@@ -287,16 +294,24 @@ async def add_hint(
     if len(text) > MAX_HINT_LENGTH:
         raise HTTPException(status_code=400, detail=f"Hint is too long (max {MAX_HINT_LENGTH} characters).")
 
+    if account.user_type == "admin":
+        entry_kind = "solution" if is_solution else "hint"
+        author_id = None
+    else:
+        # Non-admin group members can only leave notes, never hints or solutions.
+        entry_kind = "note"
+        author_id = account.id
+
     if kind == "i":
         item = db.get(AssignmentItem, target_id)
         if not item or item.assignment_id != assignment_id or item.type != "problem":
             return HTMLResponse("Problem not found", status_code=404)
-        hint = Hint(assignment_item_id=item.id, text=text, is_solution=bool(is_solution))
+        hint = Hint(assignment_item_id=item.id, text=text, kind=entry_kind, author_id=author_id)
     else:
         cp = db.get(ContestProblem, target_id)
         if not cp or cp.assignment_item.assignment_id != assignment_id:
             return HTMLResponse("Problem not found", status_code=404)
-        hint = Hint(contest_problem_id=cp.id, text=text, is_solution=bool(is_solution))
+        hint = Hint(contest_problem_id=cp.id, text=text, kind=entry_kind, author_id=author_id)
     db.add(hint)
     db.commit()
     return _hint_redirect(assignment_id, target, hint.id)
@@ -309,20 +324,26 @@ async def edit_hint(
     text: str = Form(...),
     is_solution: str = Form(""),
     db: Session = Depends(get_db),
-    account=Depends(require_admin),
+    account=Depends(require_auth),
 ):
     hint = db.get(Hint, hint_id)
     if not hint:
         return RedirectResponse(f"/assignments/{assignment_id}", status_code=303)
-    if _hint_assignment_id(hint) != assignment_id:
+    owner_item = _hint_owner_item(hint)
+    if owner_item.assignment_id != assignment_id:
         return HTMLResponse("Hint not found", status_code=404)
+    _check_group_access(account, owner_item.assignment.group_id, db)
+    if not _can_edit_hint(account, hint):
+        raise HTTPException(status_code=403, detail="You can only edit your own notes.")
 
     text = text.replace("\r\n", "\n").strip()
     if len(text) > MAX_HINT_LENGTH:
         raise HTTPException(status_code=400, detail=f"Hint is too long (max {MAX_HINT_LENGTH} characters).")
     if text:
         hint.text = text
-        hint.is_solution = bool(is_solution)
+        # Only an admin-authored hint/solution can be re-toggled; a note always stays a note.
+        if account.user_type == "admin" and hint.kind != "note":
+            hint.kind = "solution" if is_solution else "hint"
         db.commit()
     return _hint_redirect(assignment_id, _hint_target(hint), hint.id)
 
@@ -332,13 +353,17 @@ async def delete_hint(
     assignment_id: int,
     hint_id: int,
     db: Session = Depends(get_db),
-    account=Depends(require_admin),
+    account=Depends(require_auth),
 ):
     hint = db.get(Hint, hint_id)
     if not hint:
         return RedirectResponse(f"/assignments/{assignment_id}", status_code=303)
-    if _hint_assignment_id(hint) != assignment_id:
+    owner_item = _hint_owner_item(hint)
+    if owner_item.assignment_id != assignment_id:
         return HTMLResponse("Hint not found", status_code=404)
+    _check_group_access(account, owner_item.assignment.group_id, db)
+    if not _can_edit_hint(account, hint):
+        raise HTTPException(status_code=403, detail="You can only delete your own notes.")
     target = _hint_target(hint)
     db.delete(hint)
     db.commit()
@@ -394,7 +419,10 @@ async def sync_item(
 
 # --- Helpers ---
 
-def _hints_map(assignment, db: Session) -> dict[str, list[dict]]:
+_HINT_KIND_ORDER = {"hint": 0, "note": 1, "solution": 2}
+
+
+def _hints_map(assignment, db: Session, account) -> dict[str, list[dict]]:
     """Hints keyed by 'i<item id>' (standalone problem) or 'p<contest problem id>'."""
     item_ids = [i.id for i in assignment.items if i.type == "problem"]
     cp_ids = [cp.id for i in assignment.items for cp in i.contest_problems]
@@ -408,9 +436,15 @@ def _hints_map(assignment, db: Session) -> dict[str, list[dict]]:
     )
     result: dict[str, list[dict]] = {}
     for h in hints:
-        result.setdefault(_hint_target(h), []).append({"id": h.id, "text": h.text, "solution": h.is_solution})
+        result.setdefault(_hint_target(h), []).append({
+            "id": h.id,
+            "text": h.text,
+            "kind": h.kind,
+            "author": h.author.username if h.author_id else None,
+            "can_edit": _can_edit_hint(account, h),
+        })
     for entries in result.values():
-        entries.sort(key=lambda e: e["solution"])  # stable: solutions last, otherwise oldest first
+        entries.sort(key=lambda e: (_HINT_KIND_ORDER[e["kind"]], e["id"]))  # hints, then notes, solutions last
     return result
 
 
@@ -426,7 +460,7 @@ def _render_detail(request: Request, assignment, account, db: Session, status_co
             "members": members,
             "items": assignment.items,
             "matrix": _build_matrix(assignment.items, members, db),
-            "hints_map": _hints_map(assignment, db) if group.hints_allowed else {},
+            "hints_map": _hints_map(assignment, db, account) if group.hints_allowed else {},
             "account": account,
             **extra,
         },

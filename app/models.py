@@ -3,7 +3,7 @@ from sqlalchemy import (
     Column, Integer, String, Boolean, DateTime, Date,
     Text, JSON, ForeignKey, UniqueConstraint
 )
-from sqlalchemy import false
+from sqlalchemy import false, text as sql_text
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -106,18 +106,20 @@ class ContestProblem(Base):
 
 
 class Hint(Base):
-    """A hint on one problem: either a standalone problem item or a problem inside a contest."""
+    """An entry on one problem: a hint or solution (admin-only) or a note (any group member)."""
     __tablename__ = "hints"
 
     id = Column(Integer, primary_key=True)
     assignment_item_id = Column(Integer, ForeignKey("assignment_items.id", ondelete="CASCADE"), nullable=True, index=True)
     contest_problem_id = Column(Integer, ForeignKey("contest_problems.id", ondelete="CASCADE"), nullable=True, index=True)
     text = Column(Text, nullable=False)
-    is_solution = Column(Boolean, nullable=False, default=False, server_default=false())
+    kind = Column(String(10), nullable=False, default="hint", server_default=sql_text("'hint'"))  # hint|solution|note
+    author_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)  # set for notes only
     created_at = Column(DateTime, default=datetime.utcnow)
 
     assignment_item = relationship("AssignmentItem", back_populates="hints")
     contest_problem = relationship("ContestProblem", back_populates="hints")
+    author = relationship("User")
 
 
 class Result(Base):
