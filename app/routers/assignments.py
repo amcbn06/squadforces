@@ -243,6 +243,21 @@ async def bulk_add_items(
 
 
 MAX_HINT_LENGTH = 5000
+MAX_TIME_MINUTES = 100_000  # ~69 days; generous upper bound against fat-fingering
+
+
+def _parse_time_minutes(raw: str) -> tuple[int | None, bool]:
+    """Returns (minutes, ok). minutes is None for blank input; ok is False for anything unparseable or out of range."""
+    raw = raw.strip()
+    if not raw:
+        return None, True
+    try:
+        minutes = int(raw)
+    except ValueError:
+        return None, False
+    if minutes <= 0 or minutes > MAX_TIME_MINUTES:
+        return None, False
+    return minutes, True
 
 
 def _hint_redirect(assignment_id: int, target: str, hint_id: int | None = None) -> RedirectResponse:
@@ -273,6 +288,7 @@ async def add_hint(
     target: str = Form(...),
     text: str = Form(...),
     is_solution: str = Form(""),
+    time_minutes: str = Form(""),
     db: Session = Depends(get_db),
     account=Depends(require_auth),
 ):
@@ -297,21 +313,25 @@ async def add_hint(
     if account.user_type == "admin":
         entry_kind = "solution" if is_solution else "hint"
         author_id = None
+        minutes = None
     else:
         # Non-admin group members can only leave notes, never hints or solutions.
         entry_kind = "note"
         author_id = account.id
+        minutes, minutes_ok = _parse_time_minutes(time_minutes)
+        if not minutes_ok:
+            raise HTTPException(status_code=400, detail="Time to solve must be a whole number of minutes.")
 
     if kind == "i":
         item = db.get(AssignmentItem, target_id)
         if not item or item.assignment_id != assignment_id or item.type != "problem":
             return HTMLResponse("Problem not found", status_code=404)
-        hint = Hint(assignment_item_id=item.id, text=text, kind=entry_kind, author_id=author_id)
+        hint = Hint(assignment_item_id=item.id, text=text, kind=entry_kind, author_id=author_id, time_minutes=minutes)
     else:
         cp = db.get(ContestProblem, target_id)
         if not cp or cp.assignment_item.assignment_id != assignment_id:
             return HTMLResponse("Problem not found", status_code=404)
-        hint = Hint(contest_problem_id=cp.id, text=text, kind=entry_kind, author_id=author_id)
+        hint = Hint(contest_problem_id=cp.id, text=text, kind=entry_kind, author_id=author_id, time_minutes=minutes)
     db.add(hint)
     db.commit()
     return _hint_redirect(assignment_id, target, hint.id)
@@ -323,6 +343,7 @@ async def edit_hint(
     hint_id: int,
     text: str = Form(...),
     is_solution: str = Form(""),
+    time_minutes: str = Form(""),
     db: Session = Depends(get_db),
     account=Depends(require_auth),
 ):
@@ -344,6 +365,11 @@ async def edit_hint(
         # Only an admin-authored hint/solution can be re-toggled; a note always stays a note.
         if account.user_type == "admin" and hint.kind != "note":
             hint.kind = "solution" if is_solution else "hint"
+        if hint.kind == "note":
+            minutes, minutes_ok = _parse_time_minutes(time_minutes)
+            if not minutes_ok:
+                raise HTTPException(status_code=400, detail="Time to solve must be a whole number of minutes.")
+            hint.time_minutes = minutes
         db.commit()
     return _hint_redirect(assignment_id, _hint_target(hint), hint.id)
 
@@ -441,6 +467,7 @@ def _hints_map(assignment, db: Session, account) -> dict[str, list[dict]]:
             "text": h.text,
             "kind": h.kind,
             "author": h.author.username if h.author_id else None,
+            "time_minutes": h.time_minutes,
             "can_edit": _can_edit_hint(account, h),
         })
     for entries in result.values():

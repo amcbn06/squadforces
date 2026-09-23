@@ -26,7 +26,11 @@ def ensure_columns():
     additions = {
         "groups": {"hints_allowed": "BOOLEAN NOT NULL DEFAULT {false}"},
         "assignment_items": {"rating": "INTEGER"},
-        "hints": {"kind": "VARCHAR(10) NOT NULL DEFAULT 'hint'", "author_id": "INTEGER"},
+        "hints": {
+            "kind": "VARCHAR(10) NOT NULL DEFAULT 'hint'",
+            "author_id": "INTEGER",
+            "time_minutes": "INTEGER",
+        },
     }
     false = "0" if engine.dialect.name == "sqlite" else "false"
     insp = inspect(engine)

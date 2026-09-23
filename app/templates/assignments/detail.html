@@ -550,6 +550,29 @@ function solutionCheckbox(checked) {
   return label;
 }
 
+function timeMinutesField(minutes) {
+  var label = el('label', 'hint-time');
+  label.appendChild(document.createTextNode('Time to solve'));
+  var box = document.createElement('input');
+  box.type = 'number';
+  box.name = 'time_minutes';
+  box.min = '1';
+  box.max = '100000';
+  box.step = '1';
+  box.placeholder = 'min';
+  if (minutes) box.value = minutes;
+  label.appendChild(box);
+  label.appendChild(document.createTextNode('min'));
+  return label;
+}
+
+function formatMinutes(m) {
+  if (!m) return null;
+  if (m < 60) return m + 'm';
+  var h = Math.floor(m / 60), rem = m % 60;
+  return rem ? (h + 'h ' + rem + 'm') : (h + 'h');
+}
+
 function hintForm(o) {
   var form = el('form', 'hint-form');
   form.method = 'post';
@@ -577,6 +600,7 @@ function hintForm(o) {
   buttons.append(submit, cancel);
   var row = el('div', 'hint-form-row');
   if (o.showSolutionCheckbox) row.appendChild(solutionCheckbox(o.solution));
+  else if (o.isNote) row.appendChild(timeMinutesField(o.timeMinutes));
   else row.appendChild(el('span'));
   row.appendChild(buttons);
   form.append(ta, row);
@@ -594,7 +618,12 @@ var KIND_LABEL = { hint: 'hint', solution: 'solution', note: 'note' };
 function showHintText(item, h) {
   var body = el('div', 'hint-text');
   body.appendChild(linkify(h.text));
-  if (h.kind === 'note' && h.author) body.appendChild(el('div', 'hint-note-author', '— ' + h.author));
+  if (h.kind === 'note' && (h.author || h.time_minutes)) {
+    var line = h.author ? '— ' + h.author : '';
+    var dur = formatMinutes(h.time_minutes);
+    if (dur) line += (line ? ' · ' : '') + 'took ' + dur;
+    body.appendChild(el('div', 'hint-note-author', line));
+  }
   item.querySelector('.hint-content').replaceChildren(body);
 }
 
@@ -607,6 +636,8 @@ function showHintEditor(item, h) {
     submitLabel: 'Save',
     placeholder: 'Write the ' + KIND_LABEL[h.kind] + ' here…',
     showSolutionCheckbox: canToggleKind,
+    isNote: h.kind === 'note',
+    timeMinutes: h.time_minutes,
     onCancel: function () { showHintText(item, h); }
   });
   item.querySelector('.hint-content').replaceChildren(form);
@@ -660,6 +691,7 @@ function showAddForm(wrap) {
     submitLabel: HINT_ADMIN ? 'Add hint' : 'Add note',
     placeholder: HINT_ADMIN ? 'Write the hint here…' : 'Write your note here…',
     showSolutionCheckbox: HINT_ADMIN,
+    isNote: !HINT_ADMIN,
     onCancel: function () { showAddButton(wrap); }
   });
   wrap.replaceChildren(form);

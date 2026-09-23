@@ -115,6 +115,7 @@ class Hint(Base):
     text = Column(Text, nullable=False)
     kind = Column(String(10), nullable=False, default="hint", server_default=sql_text("'hint'"))  # hint|solution|note
     author_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)  # set for notes only
+    time_minutes = Column(Integer, nullable=True)  # self-reported time to solve; notes only
     created_at = Column(DateTime, default=datetime.utcnow)
 
     assignment_item = relationship("AssignmentItem", back_populates="hints")
