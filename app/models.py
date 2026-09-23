@@ -78,6 +78,7 @@ class AssignmentItem(Base):
     external_id = Column(String(100), nullable=False)
     title = Column(String(300), nullable=True)
     rating = Column(Integer, nullable=True)  # standalone Codeforces problems only
+    source_url = Column(String(500), nullable=True)  # original link, kept where it can't be rebuilt from the ID (CF EDU)
     added_at = Column(DateTime, default=datetime.utcnow)
     last_synced_at = Column(DateTime, nullable=True)
     sync_status = Column(String(20), default="pending")  # pending|syncing|done|error
@@ -88,6 +89,18 @@ class AssignmentItem(Base):
     contest_problems = relationship("ContestProblem", back_populates="assignment_item", cascade="all, delete-orphan")
     results = relationship("Result", back_populates="assignment_item", cascade="all, delete-orphan")
     hints = relationship("Hint", back_populates="assignment_item", cascade="all, delete-orphan")
+
+    @property
+    def manual_status(self) -> bool:
+        """True where solve status can't be fetched (CSES has no API; Codeforces EDU isn't exposed), so
+        members mark it themselves and the title is entered by hand."""
+        return self.platform == "cses" or (self.platform == "codeforces" and bool(self.source_url))
+
+    @property
+    def display_title(self) -> str:
+        if self.title:
+            return self.title
+        return f"CSES {self.external_id}" if self.platform == "cses" else self.external_id
 
 
 class ContestProblem(Base):

@@ -278,8 +278,12 @@ async def get_user_submissions_for_contest(handle: str, contest_id: str) -> list
         return []
 
 
-async def get_problem_solved(handle: str, contest_id: str, problem_index: str) -> bool:
-    """Check if handle solved a specific problem (by contestId + index)."""
+async def get_problem_status(handle: str, contest_id: str, problem_index: str) -> tuple[bool, Optional[str]]:
+    """(solved, problem name) for one problem, from the user's public submissions.
+
+    The name is None if the user never submitted to it; it's a title fallback when the contest lookup
+    returns nothing. Not usable for Codeforces EDU problems: their submissions aren't in this data.
+    """
     try:
         submissions = await _call("user.status", {
             "handle": handle,
@@ -287,17 +291,17 @@ async def get_problem_solved(handle: str, contest_id: str, problem_index: str) -
             "count": "10000",
         })
     except Exception:
-        return False
+        return False, None
 
+    solved = False
+    name: Optional[str] = None
     for sub in submissions:
         p = sub.get("problem", {})
-        if (
-            str(p.get("contestId")) == str(contest_id)
-            and p.get("index") == problem_index
-            and sub.get("verdict") == "OK"
-        ):
-            return True
-    return False
+        if str(p.get("contestId")) == str(contest_id) and p.get("index") == problem_index:
+            name = name or p.get("name")
+            if sub.get("verdict") == "OK":
+                solved = True
+    return solved, name
 
 
 def parse_problem_external_id(url_or_id: str) -> Optional[tuple[str, str]]:

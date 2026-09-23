@@ -1,9 +1,54 @@
 """AtCoder adapter — uses the AtCoder Problems API (kenkoooo.com)."""
+import asyncio
 import re
+import time
+from collections import defaultdict
 from typing import Optional
 import httpx
 
 AC_PROBLEMS_BASE = "https://kenkoooo.com/atcoder"
+
+_CATALOG_TTL = 12 * 3600
+# (fetched_at, problems by id, [(contest_id, problem_index)] by problem id)
+_catalog: Optional[tuple[float, dict[str, dict], dict[str, list[tuple[str, str]]]]] = None
+
+
+async def _get_catalog() -> tuple[dict[str, dict], dict[str, list[tuple[str, str]]]]:
+    """Every AtCoder problem and every contest it appeared in. ~4 MB of JSON, so cached for all lookups."""
+    global _catalog
+    if _catalog is None or time.monotonic() - _catalog[0] > _CATALOG_TTL:
+        async with httpx.AsyncClient(timeout=30) as client:
+            problems_resp, mapping_resp = await asyncio.gather(
+                client.get(f"{AC_PROBLEMS_BASE}/resources/problems.json"),
+                client.get(f"{AC_PROBLEMS_BASE}/resources/contest-problem.json"),
+            )
+        problems_resp.raise_for_status()
+        mapping_resp.raise_for_status()
+        appearances: dict[str, list[tuple[str, str]]] = defaultdict(list)
+        for row in mapping_resp.json():
+            appearances[row["problem_id"]].append((row["contest_id"], row["problem_index"]))
+        _catalog = (time.monotonic(), {p["id"]: p for p in problems_resp.json()}, appearances)
+    return _catalog[1], _catalog[2]
+
+
+async def get_problem_title(problem_id: str) -> Optional[str]:
+    """AtCoder's own task title, e.g. 'F - Second Largest Query'; None if the problem isn't indexed.
+
+    The letter comes from the problem's home contest (the ID prefix, e.g. abc343 for abc343_f). Kenkoooo's
+    own problem_index is the position in the latest contest that reused the problem (an ADT), so it's wrong here.
+    """
+    problems, appearances = await _get_catalog()
+    problem = problems.get(problem_id)
+    if not problem or not problem.get("name"):
+        return None
+
+    home_contest, _, suffix = problem_id.rpartition("_")
+    index = next((idx for cid, idx in appearances.get(problem_id, []) if cid == home_contest), None)
+    if index is None and suffix.isalpha():
+        index = suffix.upper()
+    if index is None and appearances.get(problem_id):
+        index = appearances[problem_id][0][1]
+    return f"{index} - {problem['name']}" if index else problem["name"]
 
 
 async def get_user_submissions(handle: str, from_epoch: int = 0) -> list[dict]:

@@ -227,6 +227,7 @@ async def sync_item(item_id: int, db: Session) -> None:
             await asyncio.wait_for(_sync_ac_item(item, db), timeout=SYNC_TIMEOUT_SECONDS)
         elif item.platform == "kilonova":
             await asyncio.wait_for(_sync_kn_item(item, db), timeout=SYNC_TIMEOUT_SECONDS)
+        # "cses": no API, nothing to fetch. Solve status is marked by hand, so it is never overwritten here.
 
         item.last_synced_at = datetime.utcnow()
         item.sync_status = "done"
@@ -433,6 +434,12 @@ async def _sync_cf_problem(
         raise ValueError(f"Cannot parse CF problem ID: {item.external_id}")
     contest_id, index = parsed
 
+    # Codeforces EDU practice contests (source_url set) are invisible to the public API: contest.* says "not
+    # found" and user.status omits their submissions. Nothing can be looked up, and recording "not solved"
+    # would be wrong for people who did solve it, so leave the results unknown.
+    if item.source_url:
+        return
+
     if not item.title:
         try:
             probs = await cf.get_contest_problems(contest_id)
@@ -450,7 +457,11 @@ async def _sync_cf_problem(
             logger.warning("Could not fetch CF rating for %s", item.external_id, exc_info=True)
 
     for user in members:
-        solved = await cf.get_problem_solved(user.codeforces_handle, contest_id, index)
+        if not user.codeforces_handle:
+            continue
+        solved, name = await cf.get_problem_status(user.codeforces_handle, contest_id, index)
+        if not item.title and name:
+            item.title = name
 
         result = (
             db.query(models.Result)
@@ -602,6 +613,12 @@ async def _sync_ac_problem(
     if not parsed:
         raise ValueError(f"Cannot parse AtCoder problem ID: {item.external_id}")
     _, problem_id = parsed
+
+    if not item.title:
+        try:
+            item.title = await ac.get_problem_title(problem_id)
+        except Exception:
+            logger.warning("Could not fetch AtCoder title for %s", problem_id, exc_info=True)
 
     for user in members:
         if not user.atcoder_handle:

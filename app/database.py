@@ -25,7 +25,7 @@ def ensure_columns():
     from sqlalchemy import inspect, text
     additions = {
         "groups": {"hints_allowed": "BOOLEAN NOT NULL DEFAULT {false}"},
-        "assignment_items": {"rating": "INTEGER"},
+        "assignment_items": {"rating": "INTEGER", "source_url": "VARCHAR(500)"},
         "hints": {
             "kind": "VARCHAR(10) NOT NULL DEFAULT 'hint'",
             "author_id": "INTEGER",

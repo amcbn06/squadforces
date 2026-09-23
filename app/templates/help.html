@@ -6,7 +6,7 @@
 
 <div class="box" style="margin-bottom:14px;">
   <div class="box-header" style="cursor:default; display:flex; align-items:center; gap:8px;">
-    <img src="/static/cf.svg" alt="" height="16" style="vertical-align:middle;">
+    <img src="/static/cf.png" alt="" height="16" style="vertical-align:middle;">
     Codeforces
   </div>
   <div class="box-body" style="padding:14px 18px;">
@@ -53,7 +53,7 @@
 
 <div class="box" style="margin-bottom:14px;">
   <div class="box-header" style="cursor:default; display:flex; align-items:center; gap:8px;">
-    <img src="/static/ac.svg" alt="" height="16" style="vertical-align:middle;">
+    <img src="/static/ac.png" alt="" height="16" style="vertical-align:middle;">
     AtCoder
   </div>
   <div class="box-body" style="padding:14px 18px;">
@@ -122,6 +122,46 @@
     <p class="meta" style="margin-top:10px;">
       In contest sub-rows, each cell shows the raw score for that individual problem.
       A score equal to the problem's maximum counts as solved.
+    </p>
+  </div>
+</div>
+
+<div class="box" style="margin-bottom:14px;">
+  <div class="box-header" style="cursor:default; display:flex; align-items:center; gap:8px;">
+    <img src="/static/cses-logo.png" alt="" style="vertical-align:middle; height:12px; padding:2px 5px; background:#2c3444; border-radius:3px; box-sizing:content-box;">
+    CSES and Codeforces EDU &mdash; marked by hand
+  </div>
+  <div class="box-body" style="padding:14px 18px;">
+    <p style="margin-bottom:10px;">
+      CSES has no API, and Codeforces does not publish submissions for its EDU practice problems, so the app cannot
+      check who solved these. Members tick problems off themselves instead.
+    </p>
+    <table class="t" style="width:auto; max-width:540px;">
+      <thead>
+        <tr>
+          <th class="l" style="min-width:100px;">Display</th>
+          <th class="l">Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="solved manual">✓</span></td>
+          <td>Marked as solved. This is self-reported, not verified against the site.</td>
+        </tr>
+        <tr>
+          <td><span style="color:var(--text-meta);">○</span></td>
+          <td>Not marked yet. Click it to mark the problem as solved; click the ✓ to undo. You can change your own row; an admin can change anyone's.</td>
+        </tr>
+        <tr>
+          <td><span style="color:#ddd;">·</span></td>
+          <td>Not marked (someone else's cell, read-only).</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="meta" style="margin-top:10px;">
+      The title of these problems can't be looked up either. Enter it in the optional <strong>Title</strong> field when
+      adding the problem, or set it later with the ✎ button on its row (the person who added it, or an admin).
+      Without one, the row shows the task number.
     </p>
   </div>
 </div>

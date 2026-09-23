@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, Request, Form, BackgroundTasks, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
@@ -18,6 +20,9 @@ from app import sync as sync_svc
 
 router = APIRouter(prefix="/assignments", tags=["assignments"])
 templates = make_templates()
+
+PLATFORMS = ("codeforces", "atcoder", "kilonova", "cses")
+MAX_TITLE_LENGTH = 300
 
 
 def _check_group_access(account, group_id: int, db: Session):
@@ -114,6 +119,7 @@ async def add_item(
     item_type: str = Form(...),
     platform: str = Form(...),
     external_id: str = Form(...),
+    title: str = Form(""),
     db: Session = Depends(get_db),
     account=Depends(require_auth),
 ):
@@ -125,9 +131,14 @@ async def add_item(
 
     external_id = external_id.strip()
     error = None
+    source_url = None
 
-    if item_type == "contest":
-        if platform == "codeforces":
+    if platform not in PLATFORMS or item_type not in ("contest", "problem"):
+        error = "Unknown platform or item type."
+    elif item_type == "contest":
+        if platform == "cses":
+            error = "CSES has no contests; add its tasks one by one as problems."
+        elif platform == "codeforces":
             parsed = cf.parse_contest_id(external_id)
             if not parsed:
                 error = "Invalid Codeforces contest URL or ID."
@@ -147,6 +158,7 @@ async def add_item(
                 external_id = str(parsed)
     elif item_type == "problem":
         if platform == "codeforces":
+            source_url = link_parser.edu_problem_url(external_id)
             parsed = cf.parse_problem_external_id(external_id)
             if not parsed:
                 error = "Invalid Codeforces problem URL or ID (e.g. 1234A or https://codeforces.com/contest/1234/problem/A)."
@@ -164,6 +176,12 @@ async def add_item(
                 error = "Invalid Kilonova problem URL or ID (e.g. 2460 or https://kilonova.ro/problems/2460)."
             else:
                 external_id = str(parsed)
+        elif platform == "cses":
+            parsed = link_parser.cses_task_id(external_id)
+            if not parsed:
+                error = "Invalid CSES task URL or ID (e.g. 1068 or https://cses.fi/problemset/task/1068)."
+            else:
+                external_id = parsed
 
     if error:
         return _render_detail(request, assignment, account, db, status_code=422, add_error=error)
@@ -173,6 +191,8 @@ async def add_item(
         type=item_type,
         platform=platform,
         external_id=external_id,
+        title=title.strip()[:MAX_TITLE_LENGTH] or None,
+        source_url=source_url,
         sync_status="pending",
         created_by_id=account.id,
     )
@@ -218,6 +238,7 @@ async def bulk_add_items(
             type=p["type"],
             platform=p["platform"],
             external_id=p["external_id"],
+            source_url=p.get("source_url"),
             sync_status="pending",
             created_by_id=account.id,
         )
@@ -394,6 +415,63 @@ async def delete_hint(
     db.delete(hint)
     db.commit()
     return _hint_redirect(assignment_id, target)
+
+
+@router.post("/{assignment_id}/items/{item_id}/solved")
+async def set_manual_solved(
+    assignment_id: int,
+    item_id: int,
+    user_id: int = Form(...),
+    solved: str = Form("1"),
+    db: Session = Depends(get_db),
+    account=Depends(require_auth),
+):
+    """Mark or unmark a problem as solved where status can't be fetched (CSES, Codeforces EDU)."""
+    item = db.get(AssignmentItem, item_id)
+    if not item or item.assignment_id != assignment_id:
+        return HTMLResponse("Item not found", status_code=404)
+    group_id = item.assignment.group_id
+    _check_group_access(account, group_id, db)
+    if not item.manual_status:
+        raise HTTPException(status_code=400, detail="Solve status for this problem is tracked automatically.")
+    if account.user_type != "admin" and user_id != account.id:
+        raise HTTPException(status_code=403, detail="You can only mark your own progress.")
+    if not db.query(GroupMembership).filter_by(group_id=group_id, user_id=user_id).first():
+        raise HTTPException(status_code=400, detail="That user is not a member of this group.")
+
+    result = db.query(Result).filter_by(assignment_item_id=item.id, user_id=user_id).first()
+    if solved == "1":
+        if not result:
+            result = Result(assignment_item_id=item.id, user_id=user_id)
+            db.add(result)
+        result.solved = True
+        result.last_synced_at = datetime.utcnow()
+    elif result:
+        db.delete(result)  # no row means "not marked", which the matrix shows as unknown rather than "not solved"
+    db.commit()
+    return RedirectResponse(f"/assignments/{assignment_id}#item-{item_id}", status_code=303)
+
+
+@router.post("/{assignment_id}/items/{item_id}/title")
+async def set_item_title(
+    assignment_id: int,
+    item_id: int,
+    title: str = Form(""),
+    db: Session = Depends(get_db),
+    account=Depends(require_auth),
+):
+    """Set or clear the title of a manual-status problem (its title can't be looked up)."""
+    item = db.get(AssignmentItem, item_id)
+    if not item or item.assignment_id != assignment_id:
+        return HTMLResponse("Item not found", status_code=404)
+    _check_group_access(account, item.assignment.group_id, db)
+    if not item.manual_status:
+        raise HTTPException(status_code=400, detail="This problem's title is filled in automatically.")
+    if not can_delete_item(account, item):
+        raise HTTPException(status_code=403, detail="You can only rename items you added.")
+    item.title = title.strip()[:MAX_TITLE_LENGTH] or None
+    db.commit()
+    return RedirectResponse(f"/assignments/{assignment_id}#item-{item_id}", status_code=303)
 
 
 @router.post("/{assignment_id}/items/{item_id}/delete")

@@ -70,6 +70,7 @@
             <option value="codeforces">Codeforces</option>
             <option value="atcoder">AtCoder</option>
             <option value="kilonova">Kilonova</option>
+            <option value="cses">CSES</option>
           </select>
         </div>
         <div class="form-col" style="flex:1; min-width:200px;">
@@ -77,15 +78,22 @@
           <input type="text" name="external_id" required style="width:100%;"
                  placeholder="e.g. 2085 or https://codeforces.com/contest/2085" />
         </div>
+        <div class="form-col" style="min-width:160px;">
+          <label>Title <span class="meta">(optional)</span></label>
+          <input type="text" name="title" maxlength="300" style="width:100%;" placeholder="for CSES / CF EDU" />
+        </div>
         <div class="form-col">
           <label>&nbsp;</label>
           <button type="submit" class="btn btn-green">Add &amp; sync</button>
         </div>
       </div>
       <p class="meta">
-        CF contest: ID (2085) or full URL. CF problem: 2085A or full URL.
+        CF contest: ID (2085) or full URL. CF problem: 2085A or full URL (Codeforces EDU problem links work too).
         AtCoder: slug (abc400) or full URL.
         Kilonova: problem ID or URL, problem list ID or URL.
+        CSES: task ID or URL (problems only).
+        CSES and Codeforces EDU problems can't be looked up automatically: give them a title here, and members tick
+        them off themselves.
       </p>
     </form>
   </div>
@@ -126,9 +134,10 @@
     </form>
     <p class="meta" style="margin-top:6px;">
       Platform and contest/problem type are detected from each link. Supported: Codeforces contest and
-      problem URLs (or IDs like 1234A), AtCoder contest and task URLs (or IDs like abc400_c), Kilonova
-      problem and problem list URLs. Bare numbers are ambiguous, so use the full URL.
-      Up to 50 links per submission; duplicates are skipped.
+      problem URLs (or IDs like 1234A, and Codeforces EDU problem links), AtCoder contest and task URLs
+      (or IDs like abc400_c), Kilonova problem and problem list URLs, CSES task URLs. Bare numbers are
+      ambiguous, so use the full URL. Up to 50 links per submission; duplicates are skipped.
+      CSES and EDU problems come in without a title: set one afterwards with the ✎ button on their row.
     </p>
   </div>
 </div>
@@ -170,11 +179,13 @@
         {% set has_sub = item.contest_problems | length > 0 %}
 
         <tr id="item-{{ item.id }}">
-          <td class="l">
+          <td class="l item-cell">
             {% if item.platform == 'codeforces' %}
             <img src="/static/cf.png" class="picon" alt="CF" title="Codeforces">
             {% elif item.platform == 'atcoder' %}
             <img src="/static/ac.png" class="picon" alt="AC" title="AtCoder">
+            {% elif item.platform == 'cses' %}
+            <img src="/static/cses-logo.png" class="picon picon-wide" alt="CSES" title="CSES">
             {% else %}
             <img src="/static/kn.png" class="picon" alt="KN" title="Kilonova">
             {% endif %}
@@ -202,17 +213,20 @@
             {% else %}
               {% set parts = item.external_id.split('/') %}
               {% if item.platform == 'codeforces' %}
-                <a href="https://codeforces.com/problemset/problem/{{ parts[0] }}/{{ parts[1] if parts|length > 1 else '' }}"
-                   target="_blank">{{ item.title or item.external_id }}</a>
+                <a href="{{ item.source_url or ('https://codeforces.com/problemset/problem/' ~ parts[0] ~ '/' ~ (parts[1] if parts|length > 1 else '')) }}"
+                   target="_blank">{{ item.display_title }}</a>
               {% elif item.platform == 'atcoder' %}
                 <a href="https://atcoder.jp/contests/{{ item.external_id.rsplit('_', 1)[0] }}/tasks/{{ item.external_id }}"
-                   target="_blank">{{ item.title or item.external_id }}</a>
+                   target="_blank">{{ item.display_title }}</a>
+              {% elif item.platform == 'cses' %}
+                <a href="https://cses.fi/problemset/task/{{ item.external_id }}" target="_blank">
+                  {{ item.display_title }}</a>
               {% else %}
                 <a href="https://kilonova.ro/problems/{{ item.external_id }}" target="_blank">
-                  {{ item.title or item.external_id }}</a>
+                  {{ item.display_title }}</a>
               {% endif %}
               {% if item.rating %}<span class="meta prob-rating">[{{ item.rating }}]</span>{% endif %}
-              {{ hint_btn('i' ~ item.id, item.title or item.external_id) }}
+              {{ hint_btn('i' ~ item.id, item.display_title) }}
             {% endif %}
 
             <span class="dot dot-{{ item.sync_status }}"
@@ -281,6 +295,18 @@
                 {% else %}
                   <span style="color:#ddd;">?</span>
                 {% endif %}
+              {% elif item.manual_status %}
+                {# CSES / Codeforces EDU: nothing to fetch, so members tick problems off themselves #}
+                {% set marked = r and r.solved %}
+                {% if is_admin or (account and account.id == cell.user.id) %}
+                <form method="post" action="/assignments/{{ assignment.id }}/items/{{ item.id }}/solved" style="display:inline;">
+                  <input type="hidden" name="user_id" value="{{ cell.user.id }}">
+                  <input type="hidden" name="solved" value="{{ '0' if marked else '1' }}">
+                  <button class="solve-toggle{{ ' on' if marked }}"
+                          title="{{ 'Marked solved (self-reported). Click to undo.' if marked else 'Not marked. Click to mark as solved.' }}">{{ '✓' if marked else '○' }}</button>
+                </form>
+                {% elif marked %}<span class="solved manual" title="Marked solved (self-reported)">✓</span>
+                {% else %}<span style="color:#ddd;" title="Not marked">·</span>{% endif %}
               {% else %}
                 {% if r and r.solved %}<span class="solved">✓</span>
                 {% elif r and r.solved == false %}<span style="color:#ccc;">—</span>
@@ -292,10 +318,18 @@
 
           {# actions #}
           <td>
+            {% if not item.manual_status %}
             <form method="post" action="/assignments/{{ assignment.id }}/items/{{ item.id }}/sync"
                   style="display:inline;">
               <button class="btn" style="padding:1px 5px;" title="Sync now">↻</button>
             </form>
+            {% elif is_admin or (account and item.created_by_id == account.id) %}
+            <form method="post" action="/assignments/{{ assignment.id }}/items/{{ item.id }}/title"
+                  style="display:inline;" data-title="{{ item.title or '' }}" onsubmit="return askTitle(this)">
+              <input type="hidden" name="title" value="">
+              <button class="btn" style="padding:1px 5px;" title="Set title">✎</button>
+            </form>
+            {% endif %}
             {% if account and (account.user_type in ("admin", "user") or item.created_by_id == account.id) %}
             <form method="post" action="/assignments/{{ assignment.id }}/items/{{ item.id }}/delete"
                   style="display:inline;" onsubmit="return confirm('Remove?')">
@@ -782,6 +816,13 @@ function applyRatings(hidden) {
 // Apply on load — default hidden unless user explicitly showed them
 var _stored = localStorage.getItem('ratingsHidden');
 applyRatings(_stored === null ? true : _stored === '1');
+
+function askTitle(form) {
+  var t = prompt('Problem title (leave empty to clear):', form.dataset.title || '');
+  if (t === null) return false;
+  form.querySelector('input[name=title]').value = t;
+  return true;
+}
 
 function toggleBox(header) {
   var body = header.nextElementSibling;
