@@ -26,6 +26,7 @@ def ensure_columns():
     additions = {
         "groups": {"hints_allowed": "BOOLEAN NOT NULL DEFAULT {false}"},
         "assignment_items": {"rating": "INTEGER", "source_url": "VARCHAR(500)"},
+        "users": {"session_version": "INTEGER NOT NULL DEFAULT 0"},
         "hints": {
             "kind": "VARCHAR(10) NOT NULL DEFAULT 'hint'",
             "author_id": "INTEGER",

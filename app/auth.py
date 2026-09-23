@@ -28,7 +28,11 @@ def require_auth(request: Request, db: Session = Depends(get_db)):
     if user_id is None:  # explicit None check — id=0 (admin) is valid
         raise HTTPException(status_code=401, detail="Not authenticated")
     user = db.query(User).filter(User.id == user_id).first()
-    if not user:
+    # A session with no stored version predates session versioning, so it counts as version 0 and stays valid
+    # until that user's password is next changed.
+    if not user or request.session.get("sv", 0) != user.session_version:
+        # Drop the dead cookie: /login and / redirect anyone who still has a user_id, which would loop forever.
+        request.session.clear()
         raise HTTPException(status_code=401, detail="Not authenticated")
     return user
 

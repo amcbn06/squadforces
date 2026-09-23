@@ -112,6 +112,7 @@ async def login(
     user = db.query(models.User).filter_by(username=username.strip()).first()
     if user and verify_password(password, user.password_hash):
         request.session["user_id"] = user.id
+        request.session["sv"] = user.session_version
         return RedirectResponse(url=next or "/", status_code=303)
     return templates.TemplateResponse(
         "login.html",
@@ -193,6 +194,7 @@ async def register(
     db.add(user)
     db.commit()
     request.session["user_id"] = user.id
+    request.session["sv"] = user.session_version
     return RedirectResponse("/", status_code=303)
 
 
@@ -233,7 +235,9 @@ async def change_password(
         return _password_page(request, account, error=error, status_code=422)
 
     account.password_hash = hash_password(new_password)
+    account.session_version += 1   # signs out every other device; this one is re-stamped just below
     db.commit()
+    request.session["sv"] = account.session_version
     return RedirectResponse("/account/password?changed=1", status_code=303)
 
 

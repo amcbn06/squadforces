@@ -15,6 +15,8 @@ class User(Base):
     id = Column(Integer, primary_key=True)
     username = Column(String(50), unique=True, nullable=False, index=True)
     password_hash = Column(String(200), nullable=False)
+    # Bumped whenever the password changes; a session is only valid while its stored copy matches.
+    session_version = Column(Integer, nullable=False, default=0, server_default="0")
     user_type = Column(String(20), nullable=False, default="user")  # admin|user|student
     full_name = Column(String(100), nullable=True)
     codeforces_handle = Column(String(50), nullable=True)

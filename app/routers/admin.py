@@ -161,8 +161,10 @@ async def edit_user(
         }, status_code=422)
 
     edit_user.username = username
-    if password.strip():
+    password_reset = bool(password.strip())
+    if password_reset:
         edit_user.password_hash = hash_password(password.strip())
+        edit_user.session_version += 1   # signs that user out on every device
     if user_type in ("user", "student"):
         edit_user.user_type = user_type
     edit_user.full_name = full_name.strip() or None
@@ -183,6 +185,8 @@ async def edit_user(
         if db.get(Group, gid):
             db.add(GroupMembership(group_id=gid, user_id=user_id))
     db.commit()
+    if password_reset and edit_user.id == account.id:
+        request.session["sv"] = edit_user.session_version   # the admin reset their own; keep this session
     return RedirectResponse("/admin/users", status_code=303)
 
 
