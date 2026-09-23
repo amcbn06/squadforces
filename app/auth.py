@@ -5,6 +5,9 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 
 
+MIN_PASSWORD_LENGTH = 6
+
+
 def hash_password(password: str) -> str:
     salt = secrets.token_hex(16)
     h = hashlib.sha256((salt + password).encode()).hexdigest()

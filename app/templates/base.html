@@ -29,9 +29,9 @@
   {% endif %}
   <div class="spacer"></div>
   {% if account %}
-  <span class="meta" style="padding:0 8px; opacity:0.7;">{{ account.username }}
-    {% if account.user_type != "user" %}<span style="font-size:10px; opacity:0.7;">({{ account.user_type }})</span>{% endif %}
-  </span>
+  <a href="/account/password" title="Change password" style="padding:9px 8px; opacity:0.85;">{{ account.username }}
+    {% if account.user_type != "user" %}<span style="font-size:10px; opacity:0.7; margin-left:4px;">({{ account.user_type }})</span>{% endif %}
+  </a>
   {% endif %}
   <button class="theme-btn" id="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode">☾</button>
   <form method="post" action="/logout">

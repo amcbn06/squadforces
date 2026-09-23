@@ -11,10 +11,15 @@
   <span class="meta" style="font-size:15px;">({{ user.cf_rating }})</span>
   {% endif %}
   {% if can_edit %}
-  <button class="btn" style="padding:2px 9px; font-size:12px; margin-left:auto;"
-          onclick="document.getElementById('edit-handles').style.display = document.getElementById('edit-handles').style.display === 'none' ? 'block' : 'none';">
-    ✎ Edit
-  </button>
+  <span style="margin-left:auto; display:flex; gap:6px;">
+    {% if account and account.id == user.id %}
+    <a href="/account/password" class="btn" style="padding:2px 9px; font-size:12px;">Change password</a>
+    {% endif %}
+    <button class="btn" style="padding:2px 9px; font-size:12px;"
+            onclick="document.getElementById('edit-handles').style.display = document.getElementById('edit-handles').style.display === 'none' ? 'block' : 'none';">
+      ✎ Edit
+    </button>
+  </span>
   {% endif %}
 </div>
 

@@ -11,7 +11,7 @@ python run.py
 
 App runs at `http://localhost:8000`. The SQLite database (`squadforces.db`) is created automatically on first startup via SQLAlchemy's `create_all`. To reset the DB, delete the file and restart.
 
-Default admin password: set in `.env` as `ADMIN_PASSWORD` (default `squadforces2024`).
+Initial admin password: set in `.env` as `ADMIN_PASSWORD` (default `squadforces2024`). It only seeds the admin account when the database is first created; after that, change it from the **Password** link in the nav (`/account/password`), and editing `ADMIN_PASSWORD` has no effect.
 
 ## Architecture
 
@@ -51,7 +51,7 @@ Central entities:
 
 | Variable | Purpose |
 |---|---|
-| `ADMIN_PASSWORD` | Login password (shared for all mentors) |
+| `ADMIN_PASSWORD` | Initial admin password, used only when the admin account is first created |
 | `SECRET_KEY` | Unused currently; reserved for future session signing |
 | `DATABASE_URL` | SQLAlchemy URL, defaults to `sqlite:///./squadforces.db` |
 | `CF_API_KEY` / `CF_API_SECRET` | Optional; enables signed CF API requests for higher rate limits |

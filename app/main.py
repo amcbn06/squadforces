@@ -15,7 +15,7 @@ load_dotenv()
 from app.database import engine, Base, get_db, SessionLocal, ensure_columns
 from app.templating import make_templates
 from app import models
-from app.auth import hash_password, verify_password, require_auth, can_edit_user
+from app.auth import hash_password, verify_password, require_auth, can_edit_user, MIN_PASSWORD_LENGTH
 from app.routers import groups, assignments, recommend
 from app.routers import admin as admin_router
 from app import scheduler
@@ -154,8 +154,8 @@ async def register(
         error = "Username and password are required."
     elif password != password2:
         error = "Passwords do not match."
-    elif len(password) < 6:
-        error = "Password must be at least 6 characters."
+    elif len(password) < MIN_PASSWORD_LENGTH:
+        error = f"Password must be at least {MIN_PASSWORD_LENGTH} characters."
     elif db.query(models.User).filter_by(username=username).first():
         error = f"Username '{username}' is already taken."
     elif cf_handle and db.query(models.User).filter_by(codeforces_handle=cf_handle).first():
@@ -194,6 +194,47 @@ async def register(
     db.commit()
     request.session["user_id"] = user.id
     return RedirectResponse("/", status_code=303)
+
+
+# --- Change password ---
+def _password_page(request: Request, account, error: str = "", changed: bool = False, status_code: int = 200):
+    return templates.TemplateResponse(
+        "account/password.html",
+        {"request": request, "account": account, "error": error, "changed": changed,
+         "min_length": MIN_PASSWORD_LENGTH},
+        status_code=status_code,
+    )
+
+
+@app.get("/account/password", response_class=HTMLResponse)
+async def password_page(request: Request, changed: str = "", account=Depends(require_auth)):
+    return _password_page(request, account, changed=bool(changed))
+
+
+@app.post("/account/password")
+async def change_password(
+    request: Request,
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    confirm_password: str = Form(...),
+    db: Session = Depends(get_db),
+    account=Depends(require_auth),
+):
+    error = ""
+    if not verify_password(current_password, account.password_hash):
+        error = "Current password is incorrect."
+    elif len(new_password) < MIN_PASSWORD_LENGTH:
+        error = f"New password must be at least {MIN_PASSWORD_LENGTH} characters."
+    elif new_password != confirm_password:
+        error = "The new passwords do not match."
+    elif new_password == current_password:
+        error = "Choose a password different from your current one."
+    if error:
+        return _password_page(request, account, error=error, status_code=422)
+
+    account.password_hash = hash_password(new_password)
+    db.commit()
+    return RedirectResponse("/account/password?changed=1", status_code=303)
 
 
 # --- User profiles ---
