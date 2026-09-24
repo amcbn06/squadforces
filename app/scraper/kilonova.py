@@ -71,22 +71,13 @@ async def get_problem_list(list_id: int) -> dict:
 # Submissions
 # ---------------------------------------------------------------------------
 
-async def get_best_submission(user_id: int, problem_id: int) -> dict | None:
-    """
-    Return the user's best submission for a problem, or None.
-    Best = highest score; if multiple tied, most recent.
-    A submission is 'solved' when score == score_scale (100/100).
-    """
-    data = await _get("/submissions/get", params={
-        "user_id": user_id,
-        "problem_id": problem_id,
-        "limit": 50,
-    })
-    subs = data.get("submissions", [])
-    if not subs:
-        return None
-    # Pick highest score; tiebreak by most recent (first in list = newest)
-    return max(subs, key=lambda s: s.get("score", 0))
+KN_PAGE_SIZE = 50  # the API's maximum
+
+
+async def get_user_submissions(user_id: int, offset: int = 0) -> tuple[list[dict], int]:
+    """One page of a user's submissions, newest first, and the user's total submission count."""
+    data = await _get("/submissions/get", params={"user_id": user_id, "limit": KN_PAGE_SIZE, "offset": offset})
+    return data.get("submissions", []), data.get("count", 0)
 
 
 async def get_user_id(username: str) -> int | None:

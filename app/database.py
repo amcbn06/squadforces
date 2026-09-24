@@ -26,6 +26,7 @@ def ensure_columns():
     additions = {
         "groups": {"hints_allowed": "BOOLEAN NOT NULL DEFAULT {false}"},
         "assignment_items": {"rating": "INTEGER", "source_url": "VARCHAR(500)"},
+        "contest_problems": {"max_score": "INTEGER"},
         "users": {"session_version": "INTEGER NOT NULL DEFAULT 0"},
         "hints": {
             "kind": "VARCHAR(10) NOT NULL DEFAULT 'hint'",
@@ -38,6 +39,8 @@ def ensure_columns():
     with engine.begin() as conn:
         existing_by_table = {}
         for table, columns in additions.items():
+            if not insp.has_table(table):
+                continue  # create_all makes missing tables complete; nothing to add to
             existing = {c["name"] for c in insp.get_columns(table)}
             existing_by_table[table] = existing
             for name, ddl in columns.items():

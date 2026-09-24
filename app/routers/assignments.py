@@ -12,16 +12,12 @@ from app.models import (
     Group, Assignment, AssignmentItem, ContestProblem, Result, ProblemResult, GroupMembership, Hint,
 )
 from app.auth import require_auth, require_admin, can_delete_item
-from app.scraper import codeforces as cf
-from app.scraper import atcoder as ac
-from app.scraper import kilonova as kn
-from app import link_parser
+from app import problems
 from app import sync as sync_svc
 
 router = APIRouter(prefix="/assignments", tags=["assignments"])
 templates = make_templates()
 
-PLATFORMS = ("codeforces", "atcoder", "kilonova", "cses")
 MAX_TITLE_LENGTH = 300
 
 
@@ -129,70 +125,17 @@ async def add_item(
 
     _check_group_access(account, assignment.group_id, db)
 
-    external_id = external_id.strip()
-    error = None
-    source_url = None
-
-    if platform not in PLATFORMS or item_type not in ("contest", "problem"):
-        error = "Unknown platform or item type."
-    elif item_type == "contest":
-        if platform == "cses":
-            error = "CSES has no contests; add its tasks one by one as problems."
-        elif platform == "codeforces":
-            parsed = cf.parse_contest_id(external_id)
-            if not parsed:
-                error = "Invalid Codeforces contest URL or ID."
-            else:
-                external_id = parsed
-        elif platform == "atcoder":
-            parsed = ac.parse_contest_id(external_id)
-            if not parsed:
-                error = "Invalid AtCoder contest URL or slug."
-            else:
-                external_id = parsed
-        elif platform == "kilonova":
-            parsed = kn.parse_contest_id(external_id)
-            if not parsed:
-                error = "Invalid Kilonova problem list URL or ID (e.g. 1572 or https://kilonova.ro/problem_lists/1572)."
-            else:
-                external_id = str(parsed)
-    elif item_type == "problem":
-        if platform == "codeforces":
-            source_url = link_parser.edu_problem_url(external_id)
-            parsed = cf.parse_problem_external_id(external_id)
-            if not parsed:
-                error = "Invalid Codeforces problem URL or ID (e.g. 1234A or https://codeforces.com/contest/1234/problem/A)."
-            else:
-                external_id = f"{parsed[0]}/{parsed[1]}"
-        elif platform == "atcoder":
-            parsed = ac.parse_problem_id(external_id)
-            if not parsed:
-                error = "Invalid AtCoder problem URL (e.g. https://atcoder.jp/contests/abc123/tasks/abc123_a)."
-            else:
-                external_id = parsed[1]
-        elif platform == "kilonova":
-            parsed = kn.parse_problem_id(external_id)
-            if not parsed:
-                error = "Invalid Kilonova problem URL or ID (e.g. 2460 or https://kilonova.ro/problems/2460)."
-            else:
-                external_id = str(parsed)
-        elif platform == "cses":
-            parsed = link_parser.cses_task_id(external_id)
-            if not parsed:
-                error = "Invalid CSES task URL or ID (e.g. 1068 or https://cses.fi/problemset/task/1068)."
-            else:
-                external_id = parsed
-
+    link, error = problems.parse_form(platform, item_type, external_id)
     if error:
         return _render_detail(request, assignment, account, db, status_code=422, add_error=error)
 
     item = AssignmentItem(
         assignment_id=assignment_id,
-        type=item_type,
-        platform=platform,
-        external_id=external_id,
+        type=link.type,
+        platform=link.platform,
+        external_id=link.external_id,
         title=title.strip()[:MAX_TITLE_LENGTH] or None,
-        source_url=source_url,
+        source_url=link.source_url,
         sync_status="pending",
         created_by_id=account.id,
     )
@@ -219,32 +162,32 @@ async def bulk_add_items(
         return HTMLResponse("Assignment not found", status_code=404)
     _check_group_access(account, assignment.group_id, db)
 
-    parsed, errors = link_parser.parse_links(links)
-    if len(parsed) > link_parser.MAX_LINKS:
+    parsed, errors = problems.parse_links(links)
+    if len(parsed) > problems.MAX_LINKS:
         return _render_detail(
             request, assignment, account, db, status_code=422,
             bulk_text=links,
-            bulk_errors=[("", f"Too many links: {len(parsed)} found, the limit is {link_parser.MAX_LINKS} per submission.")],
+            bulk_errors=[("", f"Too many links: {len(parsed)} found, the limit is {problems.MAX_LINKS} per submission.")],
         )
 
     existing = {(i.platform, i.type, i.external_id) for i in assignment.items}
     added, duplicates, new_items = [], [], []
     for p in parsed:
-        if (p["platform"], p["type"], p["external_id"]) in existing:
-            duplicates.append(p["label"])
+        if (p.platform, p.type, p.external_id) in existing:
+            duplicates.append(p.label)
             continue
         item = AssignmentItem(
             assignment_id=assignment_id,
-            type=p["type"],
-            platform=p["platform"],
-            external_id=p["external_id"],
-            source_url=p.get("source_url"),
+            type=p.type,
+            platform=p.platform,
+            external_id=p.external_id,
+            source_url=p.source_url,
             sync_status="pending",
             created_by_id=account.id,
         )
         db.add(item)
         new_items.append(item)
-        added.append(p["label"])
+        added.append(p.label)
     db.commit()
 
     for item in new_items:
