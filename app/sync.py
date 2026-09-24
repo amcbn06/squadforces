@@ -11,7 +11,8 @@ An item's results are derived from the local submission store (app/submissions.p
 """
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
+from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -28,7 +29,8 @@ class PartialSyncError(Exception):
     """Some members' submissions couldn't be refreshed. Results were still derived from what is stored."""
 
 
-async def sync_item(item_id: int, db: Session) -> None:
+async def sync_item(item_id: int, db: Session, *, max_age: Optional[timedelta] = None) -> None:
+    """`max_age`: how old a member's stored submissions may be before they are refreshed (default: seconds)."""
     item = db.get(models.AssignmentItem, item_id)
     if not item:
         return
@@ -38,7 +40,7 @@ async def sync_item(item_id: int, db: Session) -> None:
     db.commit()
 
     try:
-        await asyncio.wait_for(_sync(item, db), timeout=SYNC_TIMEOUT_SECONDS)
+        await asyncio.wait_for(_sync(item, db, max_age), timeout=SYNC_TIMEOUT_SECONDS)
         item.last_synced_at = datetime.utcnow()
         item.sync_status = "done"
         item.sync_error = None
@@ -61,7 +63,7 @@ async def sync_item(item_id: int, db: Session) -> None:
     db.commit()
 
 
-async def _sync(item: models.AssignmentItem, db: Session) -> None:
+async def _sync(item: models.AssignmentItem, db: Session, max_age: Optional[timedelta]) -> None:
     platform = registry.for_item(item)
     if platform.manual_status(item):
         return  # nothing to fetch: solved marks and titles are entered by hand
@@ -69,7 +71,8 @@ async def _sync(item: models.AssignmentItem, db: Session) -> None:
     group = db.get(models.Assignment, item.assignment_id).group
     members = [m.user for m in group.memberships]
 
-    errors = await submissions.refresh_users(db, [u for u in members if platform.handle_of(u)], platform)
+    kwargs = {} if max_age is None else {"max_age": max_age}
+    errors = await submissions.refresh_users(db, [u for u in members if platform.handle_of(u)], platform, **kwargs)
     await platform.sync_item(item, members, db)
 
     if errors:

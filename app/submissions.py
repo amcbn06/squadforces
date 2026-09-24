@@ -99,6 +99,50 @@ def for_problems(db: Session, user_id: int, platform_key: str, problem_keys: Ite
     return out
 
 
+async def ensure_problem_names(db: Session, subs: Iterable[models.Submission]) -> None:
+    """Fill in missing problem titles for `subs` on judges whose submissions don't carry them. A title is stored on
+    every submission of that problem (any user's), so each problem is looked up at most once. Best effort."""
+    from app.platforms import registry  # deferred: the registry imports this module
+
+    missing: dict[str, set[str]] = {}
+    for s in subs:
+        if not s.problem_name:
+            missing.setdefault(s.platform, set()).add(s.problem_key)
+    for platform_key, keys in missing.items():
+        platform = registry.get(platform_key)
+        names: dict[str, str] = {}
+        for key in list(keys):  # a name another user's submission already carries needs no lookup
+            known = (
+                db.query(models.Submission.problem_name)
+                .filter(models.Submission.platform == platform_key, models.Submission.problem_key == key,
+                        models.Submission.problem_name.isnot(None))
+                .first()
+            )
+            if known:
+                names[key] = known[0]
+        todo = [k for k in keys if k not in names]
+        if todo:
+            try:
+                names.update(await platform.fetch_problem_names(todo))
+            except Exception:
+                logger.warning("Could not look up %s problem names", platform_key, exc_info=True)
+        for key, name in names.items():
+            db.query(models.Submission).filter_by(platform=platform_key, problem_key=key, problem_name=None).update(
+                {"problem_name": name[:300]})
+    db.commit()
+
+
+def recent(db: Session, user_id: int, limit: int = 20) -> list[models.Submission]:
+    """A user's newest submissions across every platform."""
+    return (
+        db.query(models.Submission)
+        .filter_by(user_id=user_id)
+        .order_by(models.Submission.submitted_at.desc(), models.Submission.submission_id.desc())
+        .limit(limit)
+        .all()
+    )
+
+
 def rating_entry(db: Session, user_id: int, platform_key: str, contest_key: str) -> Optional[models.RatingEntry]:
     return (
         db.query(models.RatingEntry)
@@ -155,6 +199,7 @@ def delete_user_data(db: Session, user_id: int) -> None:
         db.query(model).filter_by(user_id=user_id).delete()
 
 
+_KEEP_IF_MISSING = ("problem_name", "problem_rating")
 _UPDATABLE = ("verdict", "accepted", "final", "score", "max_score", "problem_name", "problem_rating")
 
 
@@ -181,7 +226,11 @@ def _store(db: Session, user_id: int, platform_key: str, rows: Iterable[Submissi
         if current is None:
             inserts.append({**asdict(data), "user_id": user_id, "platform": platform_key})
             continue
-        changed = {f: getattr(data, f) for f in _UPDATABLE if getattr(current, f) != getattr(data, f)}
+        changed = {
+            f: getattr(data, f) for f in _UPDATABLE
+            # a name filled in later (see ensure_problem_names) must not be blanked by a fetch that has none
+            if getattr(current, f) != getattr(data, f) and not (f in _KEEP_IF_MISSING and getattr(data, f) is None)
+        }
         if changed:
             updates.append({"id": current.id, **changed})
     if inserts:

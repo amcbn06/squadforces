@@ -89,6 +89,14 @@ class AtCoder(Platform):
     def default_title(self, item) -> str:
         return item.external_id
 
+    def submission_url(self, sub) -> str:
+        contest = sub.contest_key or sub.problem_key.rpartition("_")[0]
+        return f"https://atcoder.jp/contests/{contest}/submissions/{sub.submission_id}"
+
+    def submission_problem_url(self, sub) -> str:
+        contest = sub.contest_key or sub.problem_key.rpartition("_")[0]
+        return f"https://atcoder.jp/contests/{contest}/tasks/{sub.problem_key}"
+
     # ── fetching ─────────────────────────────────────────────────────────────
 
     async def fetch_submissions(self, handle: str, known: KnownState) -> list[SubmissionData]:

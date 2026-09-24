@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request, Form
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -6,7 +6,7 @@ from app.database import get_db
 from app.templating import make_templates
 from app.models import User, Group, GroupMembership
 from app.auth import require_admin, hash_password_async
-from app import submissions
+from app import histories, submissions
 from app.scraper import codeforces as cf
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -51,6 +51,7 @@ async def new_user_form(
 @router.post("/users/new")
 async def create_user(
     request: Request,
+    background_tasks: BackgroundTasks,
     username: str = Form(...),
     password: str = Form(...),
     user_type: str = Form("user"),
@@ -106,6 +107,7 @@ async def create_user(
         if db.get(Group, gid):
             db.add(GroupMembership(group_id=gid, user_id=new_user.id))
     db.commit()
+    background_tasks.add_task(histories.load_histories, new_user.id, histories.apply_handle_changes(db, new_user))
     return RedirectResponse("/admin/users", status_code=303)
 
 
@@ -134,6 +136,7 @@ async def edit_user_form(
 @router.post("/users/{user_id}/edit")
 async def edit_user(
     request: Request,
+    background_tasks: BackgroundTasks,
     user_id: int,
     username: str = Form(...),
     password: str = Form(""),
@@ -161,6 +164,7 @@ async def edit_user(
             "error": f"Username '{username}' is already taken.",
         }, status_code=422)
 
+    handles_before = histories.handles_of(edit_user)
     edit_user.username = username
     password_reset = bool(password.strip())
     if password_reset:
@@ -185,7 +189,9 @@ async def edit_user(
     for gid in group_ids:
         if db.get(Group, gid):
             db.add(GroupMembership(group_id=gid, user_id=user_id))
+    to_load = histories.apply_handle_changes(db, edit_user, handles_before)
     db.commit()
+    background_tasks.add_task(histories.load_histories, edit_user.id, to_load)
     if password_reset and edit_user.id == account.id:
         request.session["sv"] = edit_user.session_version   # the admin reset their own; keep this session
     return RedirectResponse("/admin/users", status_code=303)
