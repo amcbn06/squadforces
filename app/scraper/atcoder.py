@@ -71,38 +71,35 @@ async def get_problem_title(problem_id: str) -> Optional[str]:
 
 
 async def get_user_submissions(handle: str, from_epoch: int = 0) -> list[dict]:
-    """Return all submissions for a user. Paginates automatically (kenkoooo returns max 500/page)."""
+    """A user's submissions from `from_epoch` (inclusive) on, oldest first. Kenkoooo returns at most 500 per call,
+    so this pages on; each page resumes at the last second seen (inclusive: a page can end mid-second) and the
+    caller de-duplicates by submission id."""
     url = f"{AC_PROBLEMS_BASE}/atcoder-api/v3/user/submissions"
     all_subs: list[dict] = []
+    seen: set[int] = set()
     epoch = from_epoch
-    async with httpx.AsyncClient(timeout=20) as client:
+    async with httpx.AsyncClient(timeout=30) as client:
         while True:
             resp = await client.get(url, params={"user": handle, "from_second": epoch})
             resp.raise_for_status()
             batch = resp.json()
-            if not batch:
-                break
-            all_subs.extend(batch)
-            if len(batch) < 500:
-                break
-            epoch = max(s.get("epoch_second", 0) for s in batch) + 1
+            fresh = [s for s in batch if s["id"] not in seen]
+            for s in fresh:
+                seen.add(s["id"])
+            all_subs.extend(fresh)
+            if len(batch) < 500 or not fresh:
+                break  # short page = the end; a page with nothing new means 500+ sharing one second (can't advance)
+            epoch = max(s.get("epoch_second", 0) for s in batch)
     return all_subs
 
 
-async def get_contest_results(contest_id: str, handle: str) -> dict:
-    """
-    Return contest info for a user.
-    Uses the results API: /atcoder-api/v3/user/contest_history
-    """
-    url = f"{AC_PROBLEMS_BASE}/atcoder-api/v3/user/contest_history"
-    async with httpx.AsyncClient(timeout=20) as client:
-        resp = await client.get(url, params={"user": handle})
+async def get_rating_history(handle: str) -> list[dict]:
+    """Rated contests of a user, from AtCoder's own public history JSON (kenkoooo has no such endpoint).
+    Each entry has ContestScreenName ("abc300.contest.atcoder.jp"), Place, OldRating, NewRating, Performance, EndTime."""
+    async with httpx.AsyncClient(timeout=30, headers={"User-Agent": "Squadforces/1.0"}) as client:
+        resp = await client.get(f"https://atcoder.jp/users/{handle}/history/json")
     resp.raise_for_status()
-    history = resp.json()
-    for entry in history:
-        if entry.get("ContestScreenName") == contest_id or entry.get("ContestSlug") == contest_id:
-            return entry
-    return {}
+    return resp.json()
 
 
 async def get_contest_tasks(contest_id: str) -> list[dict]:
@@ -131,28 +128,23 @@ async def get_contest_tasks(contest_id: str) -> list[dict]:
     return tasks
 
 
+_contests: Optional[tuple[float, dict[str, dict]]] = None
+
+
 async def get_contest_timing(contest_id: str) -> dict | None:
-    """Return {start_epoch_second, duration_second} for a contest, or None if not found."""
-    async with httpx.AsyncClient(timeout=20) as client:
-        resp = await client.get(f"{AC_PROBLEMS_BASE}/resources/contests.json")
-    if resp.status_code != 200:
+    """Return {start_epoch_second, duration_second} for a contest, or None if not found.
+    contests.json is ~1 MB, so it is cached for all lookups."""
+    global _contests
+    if _contests is None or time.monotonic() - _contests[0] > _CATALOG_TTL:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(f"{AC_PROBLEMS_BASE}/resources/contests.json")
+        if resp.status_code != 200:
+            return None
+        _contests = (time.monotonic(), {c["id"]: c for c in resp.json()})
+    c = _contests[1].get(contest_id)
+    if not c:
         return None
-    for c in resp.json():
-        if c.get("id") == contest_id:
-            return {
-                "start_epoch_second": c["start_epoch_second"],
-                "duration_second": c["duration_second"],
-            }
-    return None
-
-
-async def check_problem_solved(handle: str, problem_id: str) -> bool:
-    """Return True if the user has an AC submission for problem_id."""
-    subs = await get_user_submissions(handle)
-    for sub in subs:
-        if sub.get("problem_id") == problem_id and sub.get("result") == "AC":
-            return True
-    return False
+    return {"start_epoch_second": c["start_epoch_second"], "duration_second": c["duration_second"]}
 
 
 async def validate_handle(handle: str) -> bool:

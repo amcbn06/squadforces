@@ -20,18 +20,24 @@ Initial admin password: set in `.env` as `ADMIN_PASSWORD` (default `squadforces2
 ### Request flow
 
 1. Browser hits a FastAPI route in `app/routers/groups.py` or `app/routers/assignments.py`
-2. Route checks auth via `Depends(require_auth)` → `app/auth.py` (cookie-based, single shared password)
+2. Route checks auth via `Depends(require_auth)` → `app/auth.py` (signed session cookie)
 3. Route renders a Jinja2 template from `app/templates/`
-4. On item add, a `BackgroundTasks` task calls `app/sync.py::sync_item()` (async scrape, writes Results to DB)
+4. On item add, a `BackgroundTasks` task calls `app/sync.py::sync_item()`, which refreshes the members' stored submissions and derives the item's results from them
 
-### Key data flow: scraping
+### Key data flow: the submission store
 
-`app/sync.py` is the core sync engine. `sync_item(item_id, db)` dispatches to `_sync_cf_item` or `_sync_ac_item` based on `AssignmentItem.platform`. Those call the scrapers in `app/scraper/`:
+Judges are only ever asked for *a user's submissions*, once, and every contest/problem status is then read from the database:
 
-- `codeforces.py` — wraps the official CF API (`contest.standings`, `user.rating`, `user.status`, `user.info`). Rate-limited to one request per 2.1s via `asyncio.sleep`. Supports optional API key/secret signing.
-- `atcoder.py` — uses the kenkoooo.com AtCoder Problems API (no official API exists). Never scrapes HTML.
+- `app/submissions.py` — the store. `refresh_user(db, user, platform)` mirrors a user's whole history on one platform into the `submissions` table and afterwards only fetches what is newer than the newest stored submission (plus anything the judge hadn't finished grading). `submission_syncs` records when each user/platform was last refreshed; changing a handle resets that user's copy; rating history lives in `rating_entries`. Reads: `for_contest`, `for_problem`, `for_problems`.
+- `app/sync.py` — `sync_item(item_id, db)`: refresh the members' stores (skipped if the copy is < 90 s old), then call the item's platform module to fill in titles / problem lists and derive `Result` / `ProblemResult` rows. `AssignmentItem.sync_status` tracks `pending → syncing → done | error | not_started`. Sync is idempotent.
+- The live / virtual / upsolved classification is `classify_contest()` in `app/platforms/cf.py` (participant type from the stored submissions) and `app/platforms/atc.py` (submission time vs the contest window). `tests/test_classify.py` checks both against the pre-store implementation (`tests/legacy_reference.py`).
 
-Sync is **idempotent** — it upserts `Result` and `ProblemResult` rows, so re-running is safe. `AssignmentItem.sync_status` tracks `pending → syncing → done | error`.
+### Platforms and problem detection
+
+- `app/problems.py` — the universal switch. `detect_source(token)` is a chain of `if`s (CF, CF EDU, CF gym, AtCoder, Kilonova, CSES, default = unknown link); `parse_link` / `parse_links` (bulk paste) / `parse_form` (the add-item form) turn input into a `ParsedLink`.
+- `app/platforms/<name>.py` — everything specific to one judge, as a `Platform` subclass (see `app/platforms/base.py`): its links (`parse_url`, `parse_bare`, `parse_form`), how it is displayed (`item_url`, `problem_url`, icon, `manual_status`, `default_title`), how its submissions are fetched (`fetch_submissions`, `fetch_rating_history`) and how an item's results are derived (`sync_item`). `registry.py` lists them; templates get `platform_of`, `item_url`, `problem_url` from `app/templating.py`, so there are no per-platform `if`s in templates.
+- `app/scraper/` — only the HTTP calls (`codeforces.py`, `atcoder.py` via kenkoooo + atcoder.jp rating history, `kilonova.py`). Codeforces requests are serialized and spaced 2.1 s apart.
+- Manual platforms have no API: `cses` and `other` (any http(s) link, shown with a "?" icon) — plus Codeforces EDU problems. Members mark these solved themselves.
 
 ### Database
 
@@ -40,8 +46,11 @@ SQLAlchemy ORM with SQLite (switchable to PostgreSQL by changing `DATABASE_URL` 
 Central entities:
 - `AssignmentItem` — one contest or standalone problem attached to an `Assignment`
 - `ContestProblem` — problems within a contest, auto-populated on sync
-- `Result` — one row per (user, item): contest rank/rating/score or problem solved/unsolved
-- `ProblemResult` — one row per (user, problem-within-contest): solved bool
+- `Submission` — one row per judge submission per user (a team submission is stored for each member); `SubmissionSync` — per user/platform refresh state; `RatingEntry` — rated-contest history
+- `Result` — one row per (user, item): contest rank/rating/score or problem solved/unsolved (derived from the store, or set by hand for manual platforms)
+- `ProblemResult` — one row per (user, problem-within-contest): solved bool, solve type, attempts
+
+Existing databases get new columns through `ensure_columns()` in `app/database.py` (additive `ALTER TABLE ADD COLUMN`); new tables come from `create_all`.
 
 ### Matrix view
 
@@ -58,8 +67,10 @@ Central entities:
 
 ## Extending
 
-**Add a new platform**: create `app/scraper/newplatform.py` with `validate_handle`, `get_contest_problems`, `get_contest_results_for_handles`, `get_problem_solved`, `parse_contest_id`, `parse_problem_external_id`. Wire it into `app/sync.py` and the platform dropdown in `assignments/detail.html`.
+**Add a new platform**: (1) create `app/platforms/<name>.py` with a `Platform` subclass (copy the closest existing one: `cses.py` for a manual platform, `kn.py` for one with an API) and a `PLATFORM = ...` instance; (2) register it in `app/platforms/registry.py`; (3) add one `if` for its links to `detect_source()` in `app/problems.py` and one line to `SOURCE_PLATFORM`; (4) if it has submissions, add its handle column to `User` (+ `ensure_columns`) and the HTTP calls to `app/scraper/`. The add-item form's platform dropdown and the matrix icons/links follow from the registry.
+
+**Tests**: `python -m unittest discover -s tests -t .` (standard library only; the network is always faked).
 
 **Switch to PostgreSQL**: set `DATABASE_URL=postgresql://...` and run Alembic migrations (needs `alembic init` + migration scripts — not yet set up).
 
-**Cron refresh**: the scraper is stateless; run `python -c "import asyncio; from app.sync import sync_item; ..."` from GitHub Actions or any scheduler targeting active assignments.
+**Cron refresh**: sync is idempotent; run `python -c "import asyncio; from app.sync import sync_item; ..."` from GitHub Actions or any scheduler targeting active assignments.

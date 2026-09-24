@@ -6,6 +6,7 @@ from app.database import get_db
 from app.templating import make_templates
 from app.models import User, Group, GroupMembership
 from app.auth import require_admin, hash_password_async
+from app import submissions
 from app.scraper import codeforces as cf
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -200,6 +201,7 @@ async def delete_user(
         return RedirectResponse("/admin/users?error=Cannot+delete+admin", status_code=303)
     user = db.query(User).filter(User.id == user_id).first()
     if user:
+        submissions.delete_user_data(db, user_id)  # SQLite doesn't cascade these on its own
         db.delete(user)
         db.commit()
     return RedirectResponse("/admin/users", status_code=303)

@@ -1,6 +1,6 @@
 from datetime import datetime
 from sqlalchemy import (
-    Column, Integer, String, Boolean, DateTime, Date,
+    BigInteger, Column, Float, Index, Integer, String, Boolean, DateTime, Date,
     Text, JSON, ForeignKey, UniqueConstraint
 )
 from sqlalchemy import false, text as sql_text
@@ -76,7 +76,7 @@ class AssignmentItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     assignment_id = Column(Integer, ForeignKey("assignments.id", ondelete="CASCADE"), nullable=False)
     type = Column(String(10), nullable=False)      # "contest" | "problem"
-    platform = Column(String(15), nullable=False)  # "codeforces" | "atcoder" | "kilonova"
+    platform = Column(String(15), nullable=False)  # a key of app/platforms/registry.py: codeforces | atcoder | kilonova | cses | other
     external_id = Column(String(100), nullable=False)
     title = Column(String(300), nullable=True)
     rating = Column(Integer, nullable=True)  # standalone Codeforces problems only
@@ -92,17 +92,18 @@ class AssignmentItem(Base):
     results = relationship("Result", back_populates="assignment_item", cascade="all, delete-orphan")
     hints = relationship("Hint", back_populates="assignment_item", cascade="all, delete-orphan")
 
+    # What differs per platform (manual marking, default title) is answered by the platform module.
     @property
     def manual_status(self) -> bool:
-        """True where solve status can't be fetched (CSES has no API; Codeforces EDU isn't exposed), so
-        members mark it themselves and the title is entered by hand."""
-        return self.platform == "cses" or (self.platform == "codeforces" and bool(self.source_url))
+        """True where solve status can't be fetched (CSES, Codeforces EDU, links to other sites), so members
+        mark it themselves and the title is entered by hand."""
+        from app.platforms import registry
+        return registry.for_item(self).manual_status(self)
 
     @property
     def display_title(self) -> str:
-        if self.title:
-            return self.title
-        return f"CSES {self.external_id}" if self.platform == "cses" else self.external_id
+        from app.platforms import registry
+        return self.title or registry.for_item(self).default_title(self)
 
 
 class ContestProblem(Base):
@@ -114,6 +115,7 @@ class ContestProblem(Base):
     index = Column(String(10), nullable=False)
     name = Column(String(300), nullable=False)
     rating = Column(Integer, nullable=True)
+    max_score = Column(Integer, nullable=True)  # points for a full solve, where the judge scores partially (Kilonova)
 
     assignment_item = relationship("AssignmentItem", back_populates="contest_problems")
     problem_results = relationship("ProblemResult", back_populates="contest_problem", cascade="all, delete-orphan")
@@ -160,6 +162,73 @@ class Result(Base):
 
     assignment_item = relationship("AssignmentItem", back_populates="results")
     user = relationship("User", back_populates="results")
+
+
+class Submission(Base):
+    """One submission a user ever sent to a judge, mirrored locally so any problem or contest status can be
+    answered from the database. Rows are only ever added or refreshed by app/submissions.py, never per item."""
+    __tablename__ = "submissions"
+    __table_args__ = (
+        UniqueConstraint("user_id", "platform", "submission_id"),
+        Index("ix_submissions_problem", "user_id", "platform", "problem_key"),
+        Index("ix_submissions_contest", "user_id", "platform", "contest_key"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    platform = Column(String(15), nullable=False)      # platform key: codeforces | atcoder | kilonova
+    submission_id = Column(BigInteger, nullable=False)  # the judge's own id; increases with time
+    problem_key = Column(String(120), nullable=False)   # platform-local problem id: "1234/A", "abc343_f", "4373"
+    contest_key = Column(String(100), nullable=True)    # contest the submission was sent in, if any
+    problem_index = Column(String(20), nullable=True)   # letter within the contest (Codeforces)
+    problem_name = Column(String(300), nullable=True)
+    problem_rating = Column(Integer, nullable=True)
+    verdict = Column(String(12), nullable=False, default="")  # short code shown in the UI: AC, WA, TLE, RE, PT ...
+    accepted = Column(Boolean, nullable=False, default=False)
+    final = Column(Boolean, nullable=False, default=True)     # False while the judge is still working on it
+    score = Column(Float, nullable=True)                # AtCoder points / Kilonova score
+    max_score = Column(Float, nullable=True)            # Kilonova score scale (a full solve reaches it)
+    submitted_at = Column(BigInteger, nullable=False)   # unix seconds
+    relative_seconds = Column(Integer, nullable=True)   # seconds since the contest started (Codeforces)
+    participant_type = Column(String(20), nullable=True)  # CONTESTANT | VIRTUAL | PRACTICE | OUT_OF_COMPETITION ...
+    team_id = Column(String(20), nullable=True)         # set when sent as part of a team
+    team_name = Column(String(120), nullable=True)
+    language = Column(String(60), nullable=True)
+
+
+class SubmissionSync(Base):
+    """When a user's submissions on one platform were last refreshed, and how far the local copy reaches."""
+    __tablename__ = "submission_syncs"
+    __table_args__ = (UniqueConstraint("user_id", "platform"),)
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    platform = Column(String(15), nullable=False)
+    handle = Column(String(50), nullable=True)           # handle the stored rows belong to; a change resets them
+    last_synced_at = Column(DateTime, nullable=True)     # last successful refresh
+    last_attempt_at = Column(DateTime, nullable=True)
+    full_sync_at = Column(DateTime, nullable=True)       # when the complete history was first loaded
+    newest_submission_id = Column(BigInteger, nullable=True)
+    newest_submitted_at = Column(BigInteger, nullable=True)
+    submission_count = Column(Integer, nullable=False, default=0)
+    last_error = Column(Text, nullable=True)
+
+
+class RatingEntry(Base):
+    """One rated contest in a user's history (Codeforces user.rating, AtCoder contest_history)."""
+    __tablename__ = "rating_entries"
+    __table_args__ = (UniqueConstraint("user_id", "platform", "contest_key"),)
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    platform = Column(String(15), nullable=False)
+    contest_key = Column(String(100), nullable=False)
+    contest_name = Column(String(300), nullable=True)
+    rank = Column(Integer, nullable=True)
+    old_rating = Column(Integer, nullable=True)
+    new_rating = Column(Integer, nullable=True)
+    performance = Column(Integer, nullable=True)
+    rated_at = Column(BigInteger, nullable=True)
 
 
 class CfContest(Base):

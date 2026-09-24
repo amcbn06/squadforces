@@ -3,6 +3,11 @@
 
 {% block content %}
 {% set is_admin = account and account.user_type == "admin" %}
+{% macro platform_icon(item) %}
+  {% set pf = platform_of(item) %}
+  {% if pf.icon %}<img src="/static/{{ pf.icon }}" class="picon" alt="{{ pf.label }}" title="{{ pf.label }}">
+  {% else %}<span class="picon picon-unknown" title="Link to another site">?</span>{% endif %}
+{% endmacro %}
 {% macro hint_btn(key, title) %}
   {% if group.hints_allowed %}
   {% set n = (hints_map.get(key) or []) | length %}
@@ -67,10 +72,9 @@
         <div class="form-col">
           <label>Platform</label>
           <select name="platform">
-            <option value="codeforces">Codeforces</option>
-            <option value="atcoder">AtCoder</option>
-            <option value="kilonova">Kilonova</option>
-            <option value="cses">CSES</option>
+            {% for pf in platform_options() %}
+            <option value="{{ pf.key }}">{{ pf.label }}{% if pf.key == 'other' %} (link only){% endif %}</option>
+            {% endfor %}
           </select>
         </div>
         <div class="form-col" style="flex:1; min-width:200px;">
@@ -88,12 +92,14 @@
         </div>
       </div>
       <p class="meta">
-        CF contest: ID (2085) or full URL. CF problem: 2085A or full URL (Codeforces EDU problem links work too).
+        CF contest: ID (2085) or full URL (gyms too). CF problem: 2085A or full URL (gym and Codeforces EDU problem
+        links work too).
         AtCoder: slug (abc400) or full URL.
         Kilonova: problem ID or URL, problem list ID or URL.
         CSES: task ID or URL (problems only).
-        CSES and Codeforces EDU problems can't be looked up automatically: give them a title here, and members tick
-        them off themselves.
+        Other: a full link to a problem on any other site (problems only).
+        CSES, Codeforces EDU and other-site problems can't be looked up automatically: give them a title here, and
+        members tick them off themselves.
       </p>
     </form>
   </div>
@@ -135,9 +141,9 @@
     <p class="meta" style="margin-top:6px;">
       Platform and contest/problem type are detected from each link. Supported: Codeforces contest and
       problem URLs (or IDs like 1234A, and Codeforces EDU problem links), AtCoder contest and task URLs
-      (or IDs like abc400_c), Kilonova problem and problem list URLs, CSES task URLs. Bare numbers are
-      ambiguous, so use the full URL. Up to 50 links per submission; duplicates are skipped.
-      CSES and EDU problems come in without a title: set one afterwards with the ✎ button on their row.
+      (or IDs like abc400_c), Kilonova problem and problem list URLs, CSES task URLs. Any other http(s) link is
+      kept as a plain link, marked solved by hand. Bare numbers are ambiguous, so use the full URL. Up to 50 links per submission; duplicates are skipped.
+      CSES, EDU and other-site problems come in without a title: set one afterwards with the ✎ button on their row.
     </p>
   </div>
 </div>
@@ -180,15 +186,7 @@
 
         <tr id="item-{{ item.id }}">
           <td class="l item-cell">
-            {% if item.platform == 'codeforces' %}
-            <img src="/static/cf.png" class="picon" alt="CF" title="Codeforces">
-            {% elif item.platform == 'atcoder' %}
-            <img src="/static/ac.png" class="picon" alt="AC" title="AtCoder">
-            {% elif item.platform == 'cses' %}
-            <img src="/static/cses-icon.png" class="picon" alt="CSES" title="CSES">
-            {% else %}
-            <img src="/static/kn.png" class="picon" alt="KN" title="Kilonova">
-            {% endif %}
+            {{ platform_icon(item) }}
 
             {% if has_sub %}
             <button class="toggle" id="tog-{{ item.id }}"
@@ -196,35 +194,11 @@
             {% endif %}
 
             {% if item.type == 'contest' %}
-              {% if item.platform == 'codeforces' %}
-                <a href="https://codeforces.com/contest/{{ item.external_id }}" target="_blank">
-                  {{ item.title or ('Contest ' ~ item.external_id) }}
-                </a>
-              {% elif item.platform == 'atcoder' %}
-                <a href="https://atcoder.jp/contests/{{ item.external_id }}" target="_blank">
-                  {{ item.title or item.external_id }}
-                </a>
-              {% else %}
-                <a href="https://kilonova.ro/problem_lists/{{ item.external_id }}" target="_blank">
-                  {{ item.title or ('List ' ~ item.external_id) }}
-                </a>
-              {% endif %}
+              <a href="{{ item_url(item) }}" target="_blank" rel="noopener">{{ item.display_title }}</a>
               <span class="meta">(contest{% if has_sub %}, {{ item.contest_problems | length }} problems{% endif %})</span>
             {% else %}
-              {% set parts = item.external_id.split('/') %}
-              {% if item.platform == 'codeforces' %}
-                <a href="{{ item.source_url or ('https://codeforces.com/problemset/problem/' ~ parts[0] ~ '/' ~ (parts[1] if parts|length > 1 else '')) }}"
-                   target="_blank">{{ item.display_title }}</a>
-              {% elif item.platform == 'atcoder' %}
-                <a href="https://atcoder.jp/contests/{{ item.external_id.rsplit('_', 1)[0] }}/tasks/{{ item.external_id }}"
-                   target="_blank">{{ item.display_title }}</a>
-              {% elif item.platform == 'cses' %}
-                <a href="https://cses.fi/problemset/task/{{ item.external_id }}" target="_blank">
-                  {{ item.display_title }}</a>
-              {% else %}
-                <a href="https://kilonova.ro/problems/{{ item.external_id }}" target="_blank">
-                  {{ item.display_title }}</a>
-              {% endif %}
+              {% if item_url(item) %}<a href="{{ item_url(item) }}" target="_blank" rel="noopener">{{ item.display_title }}</a>
+              {% else %}{{ item.display_title }}{% endif %}
               {% if item.rating %}<span class="meta prob-rating">[{{ item.rating }}]</span>{% endif %}
               {{ hint_btn('i' ~ item.id, item.display_title) }}
             {% endif %}
@@ -344,19 +318,8 @@
         {% for cp in item.contest_problems | sort(attribute='index') %}
         <tr class="sub" data-parent="{{ item.id }}" style="display:none;">
           <td class="l" style="padding-left:30px;">
-            {% if item.platform == 'codeforces' %}
-            <img src="/static/cf.png" class="picon" alt="CF">
-            <a href="https://codeforces.com/problemset/problem/{{ item.external_id }}/{{ cp.index }}"
-               target="_blank">{{ cp.index }}. {{ cp.name }}</a>
-            {% elif item.platform == 'atcoder' %}
-            <img src="/static/ac.png" class="picon" alt="AC">
-            <a href="https://atcoder.jp/contests/{{ item.external_id }}/tasks/{{ cp.platform_problem_id }}"
-               target="_blank">{{ cp.index }}. {{ cp.name }}</a>
-            {% else %}
-            <img src="/static/kn.png" class="picon" alt="KN">
-            <a href="https://kilonova.ro/problems/{{ cp.platform_problem_id }}"
-               target="_blank">{{ cp.index }}. {{ cp.name }}</a>
-            {% endif %}
+            {{ platform_icon(item) }}
+            <a href="{{ problem_url(item, cp) }}" target="_blank" rel="noopener">{{ cp.index }}. {{ cp.name }}</a>
             {% if cp.rating %}<span class="meta prob-rating">[{{ cp.rating }}]</span>{% endif %}
             {{ hint_btn('p' ~ cp.id, cp.index ~ '. ' ~ cp.name) }}
           </td>

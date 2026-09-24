@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, Request, Form, BackgroundTasks, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
@@ -8,8 +8,7 @@ from app.database import get_db
 from app.templating import make_templates
 from app.models import Group, User, GroupMembership, Assignment, AssignmentItem, Result
 from app.auth import require_auth, require_admin, can_edit_user
-from app.scraper import codeforces as cf
-from app.scraper import atcoder as ac
+from app import activity as activity_svc
 
 router = APIRouter(prefix="/groups", tags=["groups"])
 templates = make_templates()
@@ -233,37 +232,5 @@ async def member_activity(
     if not user:
         return JSONResponse({})
 
-    now = datetime.now(timezone.utc)
-    cutoff_ts = datetime(now.year - 2, 1, 1, tzinfo=timezone.utc).timestamp()
-    activity: dict[str, dict] = {}
-
-    def add(date_str: str, platform: str) -> None:
-        if date_str not in activity:
-            activity[date_str] = {"cf": 0, "atc": 0}
-        activity[date_str][platform] += 1
-
-    if user.codeforces_handle:
-        try:
-            subs = await cf.get_all_user_submissions(user.codeforces_handle, 3000)
-            for s in subs:
-                ts = s.get("creationTimeSeconds", 0)
-                if ts < cutoff_ts:
-                    continue
-                date = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
-                add(date, "cf")
-        except Exception:
-            pass
-
-    if user.atcoder_handle:
-        try:
-            subs = await ac.get_user_submissions(user.atcoder_handle)
-            for s in subs:
-                ts = s.get("epoch_second", 0)
-                if ts < cutoff_ts:
-                    continue
-                date = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
-                add(date, "atc")
-        except Exception:
-            pass
-
+    activity = await activity_svc.user_activity(db, user)
     return JSONResponse(activity)

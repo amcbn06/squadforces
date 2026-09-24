@@ -5,6 +5,8 @@ import time
 import hashlib
 import random
 import string
+import weakref
+from contextlib import asynccontextmanager
 from typing import Optional
 import httpx
 
@@ -18,37 +20,77 @@ class ContestNotStartedError(Exception):
 
 _last_request_time: float = 0.0
 _MIN_INTERVAL = 2.1  # seconds between requests (CF recommends ≤1 req/2s)
+_LIMIT_RETRIES = 2   # extra attempts when CF answers "call limit exceeded"
+
+# One lock per event loop: requests are made one at a time so concurrent sync tasks can't both slip through the
+# 2.1 s spacing. (A lock is bound to the loop it first waits on, hence the per-loop table.)
+_rate_locks: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock]" = weakref.WeakKeyDictionary()
 
 
-async def _call(method: str, params: dict, *, signed: bool = True) -> dict:
+@asynccontextmanager
+async def _throttle():
+    """Hold the request slot: wait out the spacing since the previous request, then stamp the time once done."""
     global _last_request_time
-    now = time.monotonic()
-    wait = _MIN_INTERVAL - (now - _last_request_time)
-    if wait > 0:
-        await asyncio.sleep(wait)
+    loop = asyncio.get_running_loop()
+    lock = _rate_locks.get(loop)
+    if lock is None:
+        lock = _rate_locks[loop] = asyncio.Lock()
+    async with lock:
+        wait = _MIN_INTERVAL - (time.monotonic() - _last_request_time)
+        if wait > 0:
+            await asyncio.sleep(wait)
+        try:
+            yield
+        finally:
+            _last_request_time = time.monotonic()
 
-    if signed and CF_KEY and CF_SECRET:
-        params["apiKey"] = CF_KEY
-        params["time"] = str(int(time.time()))
-        rand = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
-        param_str = "&".join(f"{k}={v}" for k, v in sorted(params.items()))
-        to_hash = f"{rand}/{method}?{param_str}#{CF_SECRET}"
-        params["apiSig"] = rand + hashlib.sha512(to_hash.encode()).hexdigest()
 
-    url = f"{CF_BASE}/{method}"
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.get(url, params=params)
-    _last_request_time = time.monotonic()
+async def _call(method: str, params: dict, *, signed: bool = True, timeout: float = 15) -> dict:
+    for attempt in range(_LIMIT_RETRIES + 1):
+        call_params = dict(params)
+        if signed and CF_KEY and CF_SECRET:
+            call_params["apiKey"] = CF_KEY
+            call_params["time"] = str(int(time.time()))
+            rand = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
+            param_str = "&".join(f"{k}={v}" for k, v in sorted(call_params.items()))
+            to_hash = f"{rand}/{method}?{param_str}#{CF_SECRET}"
+            call_params["apiSig"] = rand + hashlib.sha512(to_hash.encode()).hexdigest()
 
-    data = resp.json()
-    if data.get("status") != "OK":
-        raise ValueError(f"CF API error: {data.get('comment', data)}")
-    return data["result"]
+        url = f"{CF_BASE}/{method}"
+        async with _throttle():
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.get(url, params=call_params)
+
+        try:
+            data = resp.json()
+        except ValueError:
+            raise ValueError(f"CF API returned an unreadable response (HTTP {resp.status_code})") from None
+        if data.get("status") == "OK":
+            return data["result"]
+        comment = str(data.get("comment", data))
+        if "limit exceeded" in comment.lower() and attempt < _LIMIT_RETRIES:
+            await asyncio.sleep(3)
+            continue
+        raise ValueError(f"CF API error: {comment}")
 
 
 async def get_contest_list() -> list[dict]:
     """Return metadata for all CF contests (single call, no auth needed)."""
     return await _call("contest.list", {"gym": "false"}, signed=False)
+
+
+_GYM_LIST_TTL = 12 * 3600
+_gym_list: Optional[tuple[float, dict[int, dict]]] = None
+
+
+async def get_gym_metadata(contest_id: str) -> Optional[dict]:
+    """{id, name, durationSeconds, startTimeSeconds, ...} of a gym, or None if it isn't in the public gym list.
+    The list is ~2600 entries in one call, so it is cached for all lookups."""
+    global _gym_list
+    if _gym_list is None or time.monotonic() - _gym_list[0] > _GYM_LIST_TTL:
+        gyms = await _call("contest.list", {"gym": "true"}, signed=False, timeout=60)
+        _gym_list = (time.monotonic(), {g["id"]: g for g in gyms})
+    return _gym_list[1].get(int(contest_id))
 
 
 async def get_user_info(handles: list[str]) -> list[dict]:
@@ -64,18 +106,6 @@ async def validate_handle(handle: str) -> Optional[dict]:
         return users[0] if users else None
     except Exception:
         return None
-
-
-async def get_contest_standings(contest_id: str, handles: list[str]) -> dict:
-    """Return standings for specific handles in a contest."""
-    result = await _call("contest.standings", {
-        "contestId": contest_id,
-        "handles": ";".join(handles),
-        "showUnofficial": "true",
-        "from": "1",
-        "count": "5",  # just enough to get problems list
-    })
-    return result
 
 
 _PROBLEMSET_TTL = 12 * 3600
@@ -117,12 +147,6 @@ async def get_contest_info(contest_id: str) -> dict:
     import re as _re
     import json as _json
 
-    global _last_request_time
-    now = time.monotonic()
-    wait = _MIN_INTERVAL - (now - _last_request_time)
-    if wait > 0:
-        await asyncio.sleep(wait)
-
     title = ""
     problems: list[dict] = []
 
@@ -130,14 +154,14 @@ async def get_contest_info(contest_id: str) -> dict:
     buf = b""
     try:
         url = f"{CF_BASE}/contest.standings"
-        async with httpx.AsyncClient(timeout=15) as client:
-            async with client.stream("GET", url, params={"contestId": contest_id}) as resp:
-                async for chunk in resp.aiter_bytes(chunk_size=1024):
-                    buf += chunk
-                    # Stop once we've seen the start of "rows" — problems come before it
-                    if b'"rows"' in buf or len(buf) >= 16384:
-                        break
-        _last_request_time = time.monotonic()
+        async with _throttle():
+            async with httpx.AsyncClient(timeout=15) as client:
+                async with client.stream("GET", url, params={"contestId": contest_id}) as resp:
+                    async for chunk in resp.aiter_bytes(chunk_size=1024):
+                        buf += chunk
+                        # Stop once we've seen the start of "rows" — problems come before it
+                        if b'"rows"' in buf or len(buf) >= 16384:
+                            break
     except Exception as e:
         stream_err = e
         import logging as _log
@@ -236,27 +260,15 @@ async def get_contest_problems_from_status(contest_id: str) -> list[dict]:
     return sorted(seen.values(), key=lambda p: p["index"])
 
 
-async def get_contest_results_for_handles(contest_id: str, handles: list[str]) -> dict:
-    """
-    Returns full standings for given handles.
-    Result shape: {contest: {...}, problems: [...], rows: [...]}
-    """
-    result = await _call("contest.standings", {
-        "contestId": contest_id,
-        "handles": ";".join(handles),
-        "showUnofficial": "true",
-    })
-    return result
-
-
-async def get_all_user_submissions(handle: str, max_count: int = 3000) -> list[dict]:
-    """Return recent submissions for a user (unsigned, capped at max_count)."""
-    try:
-        return await _call("user.status", {
-            "handle": handle, "from": "1", "count": str(max_count),
-        }, signed=False)
-    except Exception:
-        return []
+async def get_user_status(handle: str, offset: int = 1, count: int = 100000) -> list[dict]:
+    """A page of a user's submissions, newest first (offset is 1-based). Includes gym and team submissions,
+    but not Codeforces EDU practice ones. Raises on failure, so callers can tell "nothing yet" from "no answer"."""
+    return await _call(
+        "user.status",
+        {"handle": handle, "from": str(offset), "count": str(count)},
+        signed=False,
+        timeout=60,
+    )
 
 
 async def get_user_rating_history(handle: str) -> list[dict]:
@@ -265,86 +277,16 @@ async def get_user_rating_history(handle: str) -> list[dict]:
     return result
 
 
-async def get_user_submissions_for_contest(handle: str, contest_id: str) -> list[dict]:
-    """Return submissions by handle in a specific contest using contest.status (fast path)."""
-    try:
-        return await _call("contest.status", {
-            "contestId": contest_id,
-            "handle": handle,
-            "from": "1",
-            "count": "500",
-        })
-    except Exception:
-        return []
-
-
-async def get_problem_status(handle: str, contest_id: str, problem_index: str) -> tuple[bool, Optional[str]]:
-    """(solved, problem name) for one problem, from the user's public submissions.
-
-    The name is None if the user never submitted to it; it's a title fallback when the contest lookup
-    returns nothing. Not usable for Codeforces EDU problems: their submissions aren't in this data.
-    """
-    try:
-        submissions = await _call("user.status", {
-            "handle": handle,
-            "from": "1",
-            "count": "10000",
-        })
-    except Exception:
-        return False, None
-
-    solved = False
-    name: Optional[str] = None
-    for sub in submissions:
-        p = sub.get("problem", {})
-        if str(p.get("contestId")) == str(contest_id) and p.get("index") == problem_index:
-            name = name or p.get("name")
-            if sub.get("verdict") == "OK":
-                solved = True
-    return solved, name
-
-
-def parse_problem_external_id(url_or_id: str) -> Optional[tuple[str, str]]:
-    """
-    Parse a Codeforces problem URL or ID into (contest_id, index).
-    Supports:
-      https://codeforces.com/problemset/problem/1234/A
-      https://codeforces.com/contest/1234/problem/A
-      1234A  or  1234/A
-    Returns None if not parseable.
-    """
-    import re
-    url_or_id = url_or_id.strip()
-
-    # URL patterns
-    m = re.search(r"(?:problemset/problem|contest)/(\d+)/(?:problem/)?([A-Z]\d*)", url_or_id, re.I)
-    if m:
-        return m.group(1), m.group(2).upper()
-
-    # Short forms: "1234A", "1234/A"
-    m = re.match(r"^(\d+)[/\s]*([A-Z]\d*)$", url_or_id, re.I)
-    if m:
-        return m.group(1), m.group(2).upper()
-
-    return None
-
-
-def parse_contest_id(url_or_id: str) -> Optional[str]:
-    """
-    Parse a Codeforces contest URL or raw ID.
-    Supports:
-      https://codeforces.com/contest/1234
-      https://codeforces.com/gym/102956
-      1234
-    """
-    import re
-    url_or_id = url_or_id.strip()
-
-    m = re.search(r"(?:contest|gym)/(\d+)", url_or_id)
-    if m:
-        return m.group(1)
-
-    if re.match(r"^\d+$", url_or_id):
-        return url_or_id
-
-    return None
+async def get_gym_problems(contest_id: str) -> list[dict]:
+    """Full problem list of a gym. Gym standings need a login, so the problems are collected from the contest's
+    whole submission list, which names every problem someone has attempted (one large call, made once per item)."""
+    subs = await _call(
+        "contest.status", {"contestId": contest_id, "from": "1", "count": "100000"}, signed=False, timeout=90
+    )
+    seen: dict[str, dict] = {}
+    for s in subs:
+        prob = s.get("problem", {})
+        idx = prob.get("index", "")
+        if idx and idx not in seen:
+            seen[idx] = {"index": idx, "name": prob.get("name", ""), "rating": prob.get("rating")}
+    return sorted(seen.values(), key=lambda p: (len(p["index"]), p["index"]))
