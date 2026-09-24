@@ -22,7 +22,7 @@ async def list_users(
     users = db.query(User).filter(User.user_type != "admin").order_by(User.created_at).all()
     all_groups = db.query(Group).order_by(Group.name).all()
     error = request.query_params.get("error", "")
-    return templates.TemplateResponse("admin/users.html", {
+    return templates.TemplateResponse(request, "admin/users.html", {
         "request": request,
         "account": account,
         "users": users,
@@ -38,7 +38,7 @@ async def new_user_form(
     account=Depends(require_admin),
 ):
     all_groups = db.query(Group).order_by(Group.name).all()
-    return templates.TemplateResponse("admin/user_form.html", {
+    return templates.TemplateResponse(request, "admin/user_form.html", {
         "request": request,
         "account": account,
         "edit_user": None,
@@ -76,7 +76,7 @@ async def create_user(
 
     if error:
         all_groups = db.query(Group).order_by(Group.name).all()
-        return templates.TemplateResponse("admin/user_form.html", {
+        return templates.TemplateResponse(request, "admin/user_form.html", {
             "request": request, "account": account, "edit_user": None,
             "all_groups": all_groups, "selected_group_ids": group_ids, "error": error,
         }, status_code=422)
@@ -108,6 +108,7 @@ async def create_user(
             db.add(GroupMembership(group_id=gid, user_id=new_user.id))
     db.commit()
     background_tasks.add_task(histories.load_histories, new_user.id, histories.apply_handle_changes(db, new_user))
+    db.close()  # end the request's transaction: a background task that writes must not wait on it (SQLite locks the file)
     return RedirectResponse("/admin/users", status_code=303)
 
 
@@ -123,7 +124,7 @@ async def edit_user_form(
         return HTMLResponse("User not found", status_code=404)
     all_groups = db.query(Group).order_by(Group.name).all()
     selected_ids = [m.group_id for m in edit_user.memberships]
-    return templates.TemplateResponse("admin/user_form.html", {
+    return templates.TemplateResponse(request, "admin/user_form.html", {
         "request": request,
         "account": account,
         "edit_user": edit_user,
@@ -158,7 +159,7 @@ async def edit_user(
     duplicate = db.query(User).filter(User.username == username, User.id != user_id).first()
     if duplicate:
         all_groups = db.query(Group).order_by(Group.name).all()
-        return templates.TemplateResponse("admin/user_form.html", {
+        return templates.TemplateResponse(request, "admin/user_form.html", {
             "request": request, "account": account, "edit_user": edit_user,
             "all_groups": all_groups, "selected_group_ids": group_ids,
             "error": f"Username '{username}' is already taken.",
@@ -170,7 +171,7 @@ async def edit_user(
     if password_reset:
         edit_user.password_hash = await hash_password_async(password.strip())
         edit_user.session_version += 1   # signs that user out on every device
-    if user_type in ("user", "student"):
+    if user_type in ("user", "student") and edit_user.id != 0:  # the built-in admin account stays an admin
         edit_user.user_type = user_type
     edit_user.full_name = full_name.strip() or None
     edit_user.atcoder_handle = atcoder_handle.strip() or None
@@ -194,6 +195,7 @@ async def edit_user(
     background_tasks.add_task(histories.load_histories, edit_user.id, to_load)
     if password_reset and edit_user.id == account.id:
         request.session["sv"] = edit_user.session_version   # the admin reset their own; keep this session
+    db.close()  # end the request's transaction: a background task that writes must not wait on it (SQLite locks the file)
     return RedirectResponse("/admin/users", status_code=303)
 
 

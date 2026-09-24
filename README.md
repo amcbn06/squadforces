@@ -110,6 +110,16 @@ python run.py             # http://localhost:8000
 
 Then sign in as `admin`, create a group, add members with their handles (their histories load straight away), and start an assignment.
 
+## Security
+
+- Passwords are hashed with PBKDF2-HMAC-SHA256 (600,000 iterations, per-user salt); minimum length 8. Logins are throttled per username (5 failures, then 60 s, doubling), for unknown usernames too.
+- Sessions are signed cookies (`HttpOnly`, `SameSite=Lax`, `Secure` when deployed) that end on every device when a password changes. A deployment refuses to start without `SECRET_KEY`, and without `ADMIN_PASSWORD` when it creates the admin account.
+- Every route is behind sign-in except the login and register pages; group data needs membership, and admin actions need the admin account. `tests/test_security.py` checks the outsider, member and admin cases.
+- The post-login redirect only accepts paths on this site, and handles are URL-encoded before they reach a judge.
+- Dependencies are pinned and audited with `pip-audit`.
+
+Found something? Open an issue, or email the address on the GitHub profile for anything sensitive.
+
 ## Deploying on Railway
 
 The repo ships with `railway.toml`.

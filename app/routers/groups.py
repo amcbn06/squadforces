@@ -37,14 +37,14 @@ async def list_groups(request: Request, db: Session = Depends(get_db), account=D
             .order_by(Group.created_at.desc())
             .all()
         ) if accessible_ids else []
-    return templates.TemplateResponse("groups/list.html", {
+    return templates.TemplateResponse(request, "groups/list.html", {
         "request": request, "groups": groups, "account": account,
     })
 
 
 @router.get("/new", response_class=HTMLResponse)
 async def new_group_form(request: Request, account=Depends(require_admin)):
-    return templates.TemplateResponse("groups/form.html", {
+    return templates.TemplateResponse(request, "groups/form.html", {
         "request": request, "group": None, "error": None, "account": account,
     })
 
@@ -60,7 +60,7 @@ async def create_group(
 ):
     name = name.strip()
     if not name:
-        return templates.TemplateResponse(
+        return templates.TemplateResponse(request,
             "groups/form.html",
             {"request": request, "group": None, "error": "Group name is required.", "account": account},
             status_code=422,
@@ -115,7 +115,7 @@ async def group_detail(
         })
     leaderboard.sort(key=lambda x: (-x["problems_solved"], -x["contests_done"]))
 
-    return templates.TemplateResponse(
+    return templates.TemplateResponse(request,
         "groups/detail.html",
         {
             "request": request,
@@ -134,7 +134,7 @@ async def edit_group_page(
     group = db.get(Group, group_id)
     if not group:
         return HTMLResponse("Group not found", status_code=404)
-    return templates.TemplateResponse("groups/form.html", {
+    return templates.TemplateResponse(request, "groups/form.html", {
         "request": request, "group": group, "error": None, "account": account,
     })
 
@@ -200,7 +200,7 @@ async def add_member(
             return RedirectResponse(f"/groups/{group_id}", status_code=303)
 
     members = [m.user for m in group.memberships]
-    return templates.TemplateResponse(
+    return templates.TemplateResponse(request,
         "groups/detail.html",
         {
             "request": request, "group": group, "members": members,

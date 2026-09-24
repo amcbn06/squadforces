@@ -117,7 +117,7 @@ async def recommend_page(
     progress = rec.get_cache_progress(db)
     recommendations = rec.get_recommendations(db, selected_divs, rating) if total > 0 else []
 
-    return templates.TemplateResponse("recommend.html", {
+    response = templates.TemplateResponse(request, "recommend.html", {
         "request": request,
         "recommendations": recommendations,
         "progress": progress,
@@ -129,3 +129,5 @@ async def recommend_page(
         "bootstrapping": total == 0,
         "account": account,
     })
+    db.close()  # rendered; release the transaction before a background cache build starts
+    return response

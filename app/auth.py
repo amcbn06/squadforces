@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import secrets
+import time
 from functools import lru_cache
 
 from fastapi import Request, Depends, HTTPException
@@ -10,7 +11,60 @@ from starlette.concurrency import run_in_threadpool
 from app.database import get_db
 
 
-MIN_PASSWORD_LENGTH = 6
+MIN_PASSWORD_LENGTH = 8
+
+
+def safe_next(next_url: str | None) -> str:
+    """Where to send someone after login: `next_url` if it is a path on this site, else "/".
+    Refuses anything that could leave the site ("//evil.com", a path starting with a backslash, "https://...", control characters)."""
+    if not next_url or not next_url.startswith("/") or next_url.startswith(("//", "/\\")):
+        return "/"
+    if any(ord(c) < 32 or c == "\\" for c in next_url):
+        return "/"
+    return next_url
+
+
+class LoginThrottle:
+    """Slows password guessing. After `max_failures` wrong passwords for one username within `window` seconds, further
+    attempts for it are refused for a while (60 s, doubling with every further `max_failures` failures, capped at an
+    hour); a refused attempt is not counted. A successful sign-in clears the record. Unknown usernames are treated
+    the same, so it doesn't reveal which names exist. In memory, per process."""
+
+    def __init__(self, max_failures: int = 5, window: float = 600, base_lock: float = 60, max_lock: float = 3600):
+        self.max_failures, self.window, self.base_lock, self.max_lock = max_failures, window, base_lock, max_lock
+        self._failures: dict[str, list[float]] = {}
+
+    def _recent(self, key: str, now: float) -> list[float]:
+        recent = [t for t in self._failures.get(key, []) if now - t < max(self.window, self.max_lock)]
+        if recent:
+            self._failures[key] = recent
+        else:
+            self._failures.pop(key, None)
+        return recent
+
+    def blocked_for(self, key: str, now: float | None = None) -> int:
+        """Seconds left before `key` may try again (0 = may try now)."""
+        now = time.time() if now is None else now
+        recent = self._recent(key, now)
+        count = len([t for t in recent if now - t < self.window])
+        if count < self.max_failures:
+            return 0
+        lock = min(self.max_lock, self.base_lock * 2 ** (count // self.max_failures - 1))
+        return max(0, int(recent[-1] + lock - now + 0.999))
+
+    def record_failure(self, key: str, now: float | None = None) -> None:
+        now = time.time() if now is None else now
+        self._recent(key, now)
+        self._failures.setdefault(key, []).append(now)
+
+    def reset(self, key: str) -> None:
+        self._failures.pop(key, None)
+
+    def clear(self) -> None:
+        self._failures.clear()
+
+
+login_throttle = LoginThrottle()
 
 # PBKDF2-HMAC-SHA256 at the OWASP-recommended work factor. Stored as
 #   pbkdf2_sha256$<iterations>$<salt hex>$<hash hex>
