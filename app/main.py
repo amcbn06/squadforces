@@ -273,6 +273,7 @@ async def user_profile(
         "account": account,
         "can_edit": can_edit_user(account, user),
         "history_status": histories.history_status(db, user),
+        "recent_submissions": histories.recent_submissions(db, user),
     })
 
 

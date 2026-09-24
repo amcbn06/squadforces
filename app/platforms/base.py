@@ -100,6 +100,18 @@ class Platform:
         """Link for one problem inside a contest item."""
         return self.item_url(item)
 
+    def submission_url(self, sub) -> str:
+        """Link to one stored submission on the judge ("" if it can't be built)."""
+        return ""
+
+    def submission_problem_url(self, sub) -> str:
+        """Link to the problem a stored submission was sent to."""
+        return ""
+
+    def submission_problem_label(self, sub) -> str:
+        """Readable name of the submission's problem."""
+        return sub.problem_name or sub.problem_key
+
     def manual_status(self, item) -> bool:
         """True where solve status can't be fetched, so members mark it themselves and enter the title."""
         return False

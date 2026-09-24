@@ -5,6 +5,7 @@ the background, so the first item that needs it doesn't have to wait, and a wron
 profile page instead of surfacing later on some assignment. Clearing a handle drops the stored copy.
 """
 import logging
+from datetime import datetime, timezone
 from typing import Iterable, Optional
 
 from sqlalchemy.orm import Session
@@ -63,6 +64,29 @@ async def load_histories(user_id: int, platform_keys: Iterable[str], *, force: b
         logger.warning("Loading histories for user %s failed", user_id, exc_info=True)
     finally:
         db.close()
+
+
+def recent_submissions(db: Session, user, limit: int = 20) -> list[dict]:
+    """The user's newest submissions on any platform, ready for display (times are UTC)."""
+    rows = []
+    for sub in submissions.recent(db, user.id, limit):
+        platform = registry.get(sub.platform)
+        verdict = sub.verdict or "…"
+        if sub.verdict == "PT" and sub.score is not None and sub.max_score:
+            verdict = f"PT {sub.score:g}/{sub.max_score:g}"
+        rows.append({
+            "at": datetime.fromtimestamp(sub.submitted_at, timezone.utc),
+            "platform": platform,
+            "problem": platform.submission_problem_label(sub),
+            "problem_url": platform.submission_problem_url(sub),
+            "url": platform.submission_url(sub),
+            "verdict": verdict,
+            "accepted": sub.accepted,
+            "pending": not sub.final,
+            "mode": {"VIRTUAL": "virtual", "CONTESTANT": "live"}.get(sub.participant_type or ""),
+            "team": sub.team_name,
+        })
+    return rows
 
 
 def history_status(db: Session, user) -> list[dict]:

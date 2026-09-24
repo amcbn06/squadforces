@@ -106,6 +106,40 @@
 </div>
 {% endif %}
 
+<details class="box" style="margin-bottom:16px;">
+  <summary class="box-header" style="cursor:pointer;">Recent submissions
+    <span style="font-weight:normal; font-size:11px; color:#666;">(last {{ recent_submissions | length }}, all platforms &mdash; click to expand)</span>
+  </summary>
+  {% if recent_submissions %}
+  <div style="overflow-x:auto;">
+    <table class="t" style="width:100%;">
+      <thead><tr><th class="l">Time (UTC)</th><th></th><th class="l">Problem</th><th>Verdict</th><th></th></tr></thead>
+      <tbody>
+        {% for s in recent_submissions %}
+        <tr>
+          <td class="l" style="white-space:nowrap;">{{ s.at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td>{% if s.platform.icon %}<img src="/static/{{ s.platform.icon }}" class="picon" alt="{{ s.platform.label }}" title="{{ s.platform.label }}">{% else %}{{ s.platform.label }}{% endif %}</td>
+          <td class="l">
+            {% if s.problem_url %}<a href="{{ s.problem_url }}" target="_blank" rel="noopener">{{ s.problem }}</a>{% else %}{{ s.problem }}{% endif %}
+            {% if s.mode %}<span class="meta">({{ s.mode }})</span>{% endif %}
+            {% if s.team %}<span class="meta" title="Sent as part of a team">team: {{ s.team }}</span>{% endif %}
+          </td>
+          <td>
+            {% if s.accepted %}<span class="solved">{{ s.verdict }}</span>
+            {% elif s.pending %}<span class="meta">judging&hellip;</span>
+            {% else %}<span class="wv">{{ s.verdict }}</span>{% endif %}
+          </td>
+          <td>{% if s.url %}<a href="{{ s.url }}" target="_blank" rel="noopener" title="Open the submission on {{ s.platform.label }}">view &#8599;</a>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="meta" style="padding:10px 14px;">No submissions stored yet.</p>
+  {% endif %}
+</details>
+
 <!-- Streaks -->
 <div style="display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap;">
   <div class="card" style="padding:12px 20px; min-width:120px; text-align:center;">

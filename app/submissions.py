@@ -99,6 +99,17 @@ def for_problems(db: Session, user_id: int, platform_key: str, problem_keys: Ite
     return out
 
 
+def recent(db: Session, user_id: int, limit: int = 20) -> list[models.Submission]:
+    """A user's newest submissions across every platform."""
+    return (
+        db.query(models.Submission)
+        .filter_by(user_id=user_id)
+        .order_by(models.Submission.submitted_at.desc(), models.Submission.submission_id.desc())
+        .limit(limit)
+        .all()
+    )
+
+
 def rating_entry(db: Session, user_id: int, platform_key: str, contest_key: str) -> Optional[models.RatingEntry]:
     return (
         db.query(models.RatingEntry)

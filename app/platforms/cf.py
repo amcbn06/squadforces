@@ -174,6 +174,19 @@ class Codeforces(Platform):
             return f"https://codeforces.com/gym/{item.external_id}/problem/{contest_problem.index}"
         return f"https://codeforces.com/problemset/problem/{item.external_id}/{contest_problem.index}"
 
+    def submission_url(self, sub) -> str:
+        contest = sub.contest_key or sub.problem_key.partition("/")[0]
+        return f"https://codeforces.com/{'gym' if is_gym_id(contest) else 'contest'}/{contest}/submission/{sub.submission_id}"
+
+    def submission_problem_url(self, sub) -> str:
+        contest, _, index = sub.problem_key.partition("/")
+        if is_gym_id(contest):
+            return f"https://codeforces.com/gym/{contest}/problem/{index}"
+        return f"https://codeforces.com/problemset/problem/{contest}/{index}"
+
+    def submission_problem_label(self, sub) -> str:
+        return f"{sub.problem_key.replace('/', '')}. {sub.problem_name}" if sub.problem_name else sub.problem_key
+
     def manual_status(self, item) -> bool:
         return bool(item.source_url)  # EDU practice problems: not exposed by the API
 

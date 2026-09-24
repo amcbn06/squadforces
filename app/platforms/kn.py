@@ -126,6 +126,15 @@ class Kilonova(Platform):
     def default_title(self, item) -> str:
         return f"List {item.external_id}" if item.type == "contest" else item.external_id
 
+    def submission_url(self, sub) -> str:
+        return f"https://kilonova.ro/submissions/{sub.submission_id}"
+
+    def submission_problem_url(self, sub) -> str:
+        return f"https://kilonova.ro/problems/{sub.problem_key}"
+
+    def submission_problem_label(self, sub) -> str:
+        return f"Problem {sub.problem_key}"
+
     # ── fetching ─────────────────────────────────────────────────────────────
 
     async def fetch_submissions(self, handle: str, known: KnownState) -> list[SubmissionData]:
