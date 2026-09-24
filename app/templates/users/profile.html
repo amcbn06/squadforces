@@ -82,6 +82,30 @@
   {% endif %}
 </div>
 
+{% if history_status %}
+<div class="card" style="padding:10px 14px; margin-bottom:16px; font-size:13px;">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+    <strong>Submission history</strong>
+    {% if can_edit %}
+    <form method="post" action="/users/{{ user.username }}/reload-history" style="display:inline;">
+      <button class="btn" style="font-size:11px; padding:2px 8px;" title="Fetch the latest submissions now">↻ Reload</button>
+    </form>
+    {% endif %}
+  </div>
+  {% for h in history_status %}
+  <div style="margin-top:2px;">
+    {{ h.label }} <span class="meta">({{ h.handle }})</span>:
+    {% if h.synced_at %}
+      {{ '{:,}'.format(h.count) }} submissions, updated {{ h.synced_at.strftime('%Y-%m-%d %H:%M') }} UTC
+    {% elif not h.error %}
+      <span class="meta">loading&hellip; (reload the page in a moment)</span>
+    {% endif %}
+    {% if h.error %}<span style="color:#c00;">&#9888; {{ h.error }}</span>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
 <!-- Streaks -->
 <div style="display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap;">
   <div class="card" style="padding:12px 20px; min-width:120px; text-align:center;">

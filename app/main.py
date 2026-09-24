@@ -2,7 +2,7 @@ import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, Form, Depends
+from fastapi import BackgroundTasks, FastAPI, Request, Form, Depends
 from fastapi.exceptions import HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -23,6 +23,7 @@ from app.routers import admin as admin_router
 from app import scheduler
 from app.scraper import codeforces as cf
 from app import activity as activity_svc
+from app import histories
 
 
 @asynccontextmanager
@@ -147,6 +148,7 @@ async def register_page(request: Request):
 @app.post("/register")
 async def register(
     request: Request,
+    background_tasks: BackgroundTasks,
     username: str = Form(...),
     password: str = Form(...),
     password2: str = Form(...),
@@ -202,6 +204,7 @@ async def register(
     )
     db.add(user)
     db.commit()
+    background_tasks.add_task(histories.load_histories, user.id, histories.apply_handle_changes(db, user))
     request.session["user_id"] = user.id
     request.session["sv"] = user.session_version
     return RedirectResponse("/", status_code=303)
@@ -269,12 +272,14 @@ async def user_profile(
         "user": user,
         "account": account,
         "can_edit": can_edit_user(account, user),
+        "history_status": histories.history_status(db, user),
     })
 
 
 @app.post("/users/{username}/edit")
 async def edit_user_profile(
     request: Request,
+    background_tasks: BackgroundTasks,
     username: str,
     full_name: str = Form(""),
     cf_handle: str = Form(""),
@@ -289,6 +294,7 @@ async def edit_user_profile(
     if not can_edit_user(account, user):
         raise HTTPException(status_code=403)
 
+    handles_before = histories.handles_of(user)
     user.full_name = full_name.strip() or None
     user.atcoder_handle = atcoder_handle.strip() or None
     user.kilonova_handle = kilonova_handle.strip() or None
@@ -301,7 +307,26 @@ async def edit_user_profile(
             user.cf_rating = user_info.get("rating")
             user.cf_rank = user_info.get("rank")
 
+    to_load = histories.apply_handle_changes(db, user, handles_before)
     db.commit()
+    background_tasks.add_task(histories.load_histories, user.id, to_load)
+    return RedirectResponse(f"/users/{username}", status_code=303)
+
+
+@app.post("/users/{username}/reload-history")
+async def reload_history(
+    username: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    account=Depends(require_auth),
+):
+    """Re-fetch a user's submissions now (e.g. after fixing a handle that failed to load)."""
+    user = db.query(models.User).filter_by(username=username).first()
+    if not user:
+        return HTMLResponse("User not found", status_code=404)
+    if not can_edit_user(account, user):
+        raise HTTPException(status_code=403)
+    background_tasks.add_task(histories.load_histories, user.id, histories.HISTORY_PLATFORMS, force=True)
     return RedirectResponse(f"/users/{username}", status_code=303)
 
 
