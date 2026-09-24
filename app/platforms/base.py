@@ -131,6 +131,10 @@ class Platform:
         """Every submission newer than `known` (older ones may come along; storing them is idempotent)."""
         return []
 
+    async def fetch_problem_names(self, keys: list[str]) -> dict[str, str]:
+        """Titles for problem keys the submissions didn't name (only for judges whose submissions lack them)."""
+        return {}
+
     async def fetch_rating_history(self, handle: str) -> Optional[list[RatingData]]:
         """The user's rated-contest history, or None if this platform has none."""
         return None

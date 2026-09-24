@@ -66,10 +66,12 @@ async def load_histories(user_id: int, platform_keys: Iterable[str], *, force: b
         db.close()
 
 
-def recent_submissions(db: Session, user, limit: int = 20) -> list[dict]:
+async def recent_submissions(db: Session, user, limit: int = 20) -> list[dict]:
     """The user's newest submissions on any platform, ready for display (times are UTC)."""
+    recent = submissions.recent(db, user.id, limit)
+    await submissions.ensure_problem_names(db, recent)  # Kilonova submissions come without problem titles
     rows = []
-    for sub in submissions.recent(db, user.id, limit):
+    for sub in recent:
         platform = registry.get(sub.platform)
         verdict = sub.verdict or "…"
         if sub.verdict == "PT" and sub.score is not None and sub.max_score:

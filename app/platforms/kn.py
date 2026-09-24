@@ -1,6 +1,7 @@
 """Kilonova (kilonova.ro): problems and problem lists ("contests" here)."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from datetime import datetime, timezone
@@ -133,7 +134,7 @@ class Kilonova(Platform):
         return f"https://kilonova.ro/problems/{sub.problem_key}"
 
     def submission_problem_label(self, sub) -> str:
-        return f"Problem {sub.problem_key}"
+        return f"Problem {sub.problem_key}: {sub.problem_name}" if sub.problem_name else f"Problem {sub.problem_key}"
 
     # ── fetching ─────────────────────────────────────────────────────────────
 
@@ -154,6 +155,18 @@ class Kilonova(Platform):
             if known.stop_id is not None and min(s["id"] for s in page) <= known.stop_id:
                 break  # reached what the store already has
         return out
+
+    async def fetch_problem_names(self, keys: list[str]) -> dict[str, str]:
+        gate = asyncio.Semaphore(5)
+
+        async def one(key: str):
+            async with gate:
+                try:
+                    return key, (await api.get_problem(int(key))).get("name")
+                except Exception:
+                    return key, None  # leave it unnamed; the next look tries again
+
+        return {k: n for k, n in await asyncio.gather(*(one(k) for k in keys)) if n}
 
     # ── item sync ────────────────────────────────────────────────────────────
 
