@@ -1,0 +1,262 @@
+{
+ "cf_contests": {
+  "1998": {
+   "title": "Codeforces Round 965 (Div. 2)",
+   "problems": [
+    {
+     "index": "A",
+     "name": "Find K Distinct Points with Fixed Center",
+     "rating": 800
+    },
+    {
+     "index": "B",
+     "name": "Minimize Equal Sum Subarrays",
+     "rating": 1000
+    },
+    {
+     "index": "C",
+     "name": "Perform Operations to Maximize Score",
+     "rating": 1900
+    },
+    {
+     "index": "D",
+     "name": "Determine Winning Islands in Race",
+     "rating": 2100
+    },
+    {
+     "index": "E1",
+     "name": "Eliminating Balls With Merging (Easy Version)",
+     "rating": 2200
+    },
+    {
+     "index": "E2",
+     "name": "Eliminating Balls With Merging (Hard Version)",
+     "rating": 2500
+    }
+   ]
+  },
+  "2000": {
+   "title": "Codeforces Round 966 (Div. 3)",
+   "problems": [
+    {
+     "index": "A",
+     "name": "Primary Task",
+     "rating": 800
+    },
+    {
+     "index": "B",
+     "name": "Seating in a Bus",
+     "rating": 800
+    },
+    {
+     "index": "C",
+     "name": "Numeric String Template",
+     "rating": 1000
+    },
+    {
+     "index": "D",
+     "name": "Right Left Wrong",
+     "rating": 1200
+    },
+    {
+     "index": "E",
+     "name": "Photoshoot for Gorillas",
+     "rating": 1400
+    },
+    {
+     "index": "F",
+     "name": "Color Rows and Columns",
+     "rating": 1900
+    },
+    {
+     "index": "G",
+     "name": "Call During the Journey",
+     "rating": 2100
+    },
+    {
+     "index": "H",
+     "name": "Ksyusha and the Loaded Set",
+     "rating": 2200
+    }
+   ]
+  },
+  "1985": {
+   "title": "Codeforces Round 952 (Div. 4)",
+   "problems": [
+    {
+     "index": "A",
+     "name": "Creating Words",
+     "rating": 800
+    },
+    {
+     "index": "B",
+     "name": "Maximum Multiple Sum",
+     "rating": 800
+    },
+    {
+     "index": "C",
+     "name": "Good Prefixes",
+     "rating": 1000
+    },
+    {
+     "index": "D",
+     "name": "Manhattan Circle",
+     "rating": 900
+    },
+    {
+     "index": "E",
+     "name": "Secret Box",
+     "rating": 1200
+    },
+    {
+     "index": "F",
+     "name": "Final Boss",
+     "rating": 1500
+    },
+    {
+     "index": "G",
+     "name": "D-Function",
+     "rating": 1600
+    },
+    {
+     "index": "H1",
+     "name": "Maximize the Largest Component (Easy Version)",
+     "rating": 1700
+    },
+    {
+     "index": "H2",
+     "name": "Maximize the Largest Component (Hard Version)",
+     "rating": 2200
+    }
+   ]
+  }
+ },
+ "gym": {
+  "105427": {
+   "title": "2023-2024 ACM-ICPC Nordic Collegiate Programming Contest (NCPC 2023)",
+   "duration": 18000,
+   "problems": [
+    {
+     "index": "A",
+     "name": "Aperiodic Appointments"
+    },
+    {
+     "index": "B",
+     "name": "Berry Battle 2"
+    },
+    {
+     "index": "C",
+     "name": "Converting Romans"
+    },
+    {
+     "index": "D",
+     "name": "Die Hard"
+    },
+    {
+     "index": "E",
+     "name": "Electronic Components"
+    },
+    {
+     "index": "F",
+     "name": "Factor-Full Tree"
+    },
+    {
+     "index": "G",
+     "name": "Groups of Strangers"
+    },
+    {
+     "index": "H",
+     "name": "Heroes of Velmar"
+    },
+    {
+     "index": "I",
+     "name": "Intertwined"
+    },
+    {
+     "index": "J",
+     "name": "Jamboree"
+    },
+    {
+     "index": "K",
+     "name": "Karl Coder"
+    }
+   ]
+  }
+ },
+ "atcoder": {
+  "abc343": {
+   "timing": {
+    "start_epoch_second": 1709380800,
+    "duration_second": 6000
+   },
+   "tasks": [
+    {
+     "id": "abc343_a",
+     "title": "B. Wrong Answer",
+     "difficulty": 13,
+     "contest_index": "A"
+    },
+    {
+     "id": "abc343_b",
+     "title": "C. Adjacency Matrix",
+     "difficulty": 53,
+     "contest_index": "B"
+    },
+    {
+     "id": "abc343_c",
+     "title": "E. 343",
+     "difficulty": 220,
+     "contest_index": "C"
+    },
+    {
+     "id": "abc343_d",
+     "title": "G. Diversity of Scores",
+     "difficulty": 422,
+     "contest_index": "D"
+    },
+    {
+     "id": "abc343_e",
+     "title": "H. 7x7x7",
+     "difficulty": 1802,
+     "contest_index": "E"
+    },
+    {
+     "id": "abc343_f",
+     "title": "I. Second Largest Query",
+     "difficulty": 1370,
+     "contest_index": "F"
+    },
+    {
+     "id": "abc343_g",
+     "title": "G. Compress Strings",
+     "difficulty": 2114,
+     "contest_index": "G"
+    }
+   ]
+  }
+ },
+ "kilonova": {
+  "4373": {
+   "name": "Bine-i șade mesei mele",
+   "score_scale": 100
+  },
+  "4378": {
+   "name": "La umbra nucului bătrân",
+   "score_scale": 100
+  },
+  "4379": {
+   "name": "Lucru mare-i omenia",
+   "score_scale": 100
+  },
+  "2460": {
+   "name": "Gregor and maximum length",
+   "score_scale": 100
+  }
+ },
+ "cf_problem": {
+  "1/A": {
+   "name": "Theatre Square",
+   "rating": 1000
+  }
+ }
+}

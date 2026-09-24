@@ -61,7 +61,8 @@ Existing databases get new columns through `ensure_columns()` in `app/database.p
 | Variable | Purpose |
 |---|---|
 | `ADMIN_PASSWORD` | Initial admin password, used only when the admin account is first created |
-| `SECRET_KEY` | Unused currently; reserved for future session signing |
+| `SECRET_KEY` | Signs the session cookies; set a long random value in production |
+| `SYNC_INTERVAL_HOURS` | How often stored submissions and stale items refresh (default 2) |
 | `DATABASE_URL` | SQLAlchemy URL, defaults to `sqlite:///./squadforces.db` |
 | `CF_API_KEY` / `CF_API_SECRET` | Optional; enables signed CF API requests for higher rate limits |
 

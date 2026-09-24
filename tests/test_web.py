@@ -186,6 +186,10 @@ class MatrixPage(WebTestCase):
         self.assertIn('class="picon picon-unknown"', html)  # the link to another site gets the "?" placeholder
         self.assertNotIn("/static/None", html)
 
+    def test_the_dark_theme_lightens_the_atcoder_logo(self):
+        css = open("static/style.css", encoding="utf-8").read()
+        self.assertRegex(css, r'\[data-theme="dark"\] img\[src\$="/ac\.png"\]\s*\{[^}]*invert')
+
     def test_other_link_shows_its_url_as_the_title(self):
         self.assertIn(">https://leetcode.com/problems/two-sum/</a>", self.page())
 

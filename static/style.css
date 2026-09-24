@@ -380,3 +380,6 @@ input:focus, textarea:focus, select:focus { outline: 1px solid var(--border-focu
 
 /* placeholder icon for links to sites we don't have a logo for */
 .picon-unknown { display: inline-block; width: 14px; height: 14px; line-height: 14px; text-align: center; font-size: 11px; font-weight: 700; color: #777; border: 1px solid #bbb; border-radius: 3px; }
+
+/* the AtCoder logo is dark on transparent; lighten it on the dark theme */
+[data-theme="dark"] img[src$="/ac.png"] { filter: invert(1) brightness(1.15); }

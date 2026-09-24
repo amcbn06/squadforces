@@ -1,96 +1,149 @@
 <div align="center">
   <img src="static/logo.svg" width="90" alt="Squadforces logo"><br><br>
   <h1>Squadforces</h1>
-  <p>Competitive programming tracker for teams and mentors.</p>
+  <p><strong>See what your whole competitive-programming team has solved — across Codeforces, AtCoder, Kilonova and CSES — and how: live, virtually, or upsolved.</strong></p>
 
   <p>
-    <img src="https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white" alt="Python">
+    <img src="https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white" alt="Python">
     <img src="https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white" alt="FastAPI">
+    <img src="https://img.shields.io/badge/SQLAlchemy-2.0-D71F00" alt="SQLAlchemy">
     <img src="https://img.shields.io/badge/SQLite-003B57?logo=sqlite&logoColor=white" alt="SQLite">
     <img src="https://img.shields.io/badge/Railway-deployed-0B0D0E?logo=railway&logoColor=white" alt="Railway">
-    <img src="https://img.shields.io/github/stars/amcbn06/squadforces?style=social&cacheSeconds=1" alt="GitHub stars">
     <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License">
   </p>
 
   <p>
-    <a href="https://squadforces.up.railway.app"><strong>Live demo →</strong></a>
+    <a href="https://squadforces.up.railway.app"><strong>Live app</strong></a> ·
+    <a href="#try-it-in-two-minutes-no-accounts-no-network">Try the demo</a> ·
+    <a href="#how-it-works">How it works</a> ·
+    <a href="https://github.com/amcbn06/squadforces/issues">Roadmap</a>
   </p>
 </div>
 
----
+<p align="center">
+  <img src="assets/screenshots/matrix.png" alt="Problem matrix: a team's gym virtual contest expanded per problem, next to Codeforces and AtCoder rounds" width="900">
+</p>
+<p align="center"><sub>One assignment, four members. A gym contest solved as a <b>team</b> (7/11 for each member), Codeforces rounds split into live ✓, virtual ✓ and upsolved ▲, rating changes, and an AtCoder round. Demo data.</sub></p>
 
-Squadforces helps coaches track competitive programming progress across their entire squad. Create a group, assign Codeforces and AtCoder contests or standalone problems, and get a unified view of who solved what — live, virtually, or as upsolving.
+## Why
+
+Coaches and ICPC-style teams practise across several judges, and no single site shows the picture: who has solved this week's problems, who only did it after the editorial, who virtual-participated as a team. Squadforces watches the judges for you. You assign contests and problems, and it shows one matrix of *members × problems* with how each was solved.
+
+It never runs code or hosts problems. It is an **observer** of Codeforces, AtCoder, Kilonova and CSES, so it works with the practice people already do on those sites.
 
 ## Features
 
-- **Multi-platform** — Codeforces and AtCoder contests and standalone problems in a single assignment
-- **Smart solve classification** — live, virtual, upsolving, and standalone; the most recent AC determines the type, so re-doing a contest virtually correctly updates its status
-- **Assignment matrix** — per-assignment table with every member × every problem; contest rows expand to show per-problem results
-- **Difficulty ratings** — CF rating shown per problem; AtCoder difficulty from kenkoooo's display formula
-- **30-day leaderboard** — problems solved and contests completed per member per group, updated on every sync
-- **Member management** — add members with Codeforces and AtCoder handles; CF handle is validated against the API; handles editable at any time
-- **Persistent preferences** — ratings hidden by default, toggle saved per browser
+- **Four judges and plain links.** Codeforces (regular contests, **gyms**, EDU problems), AtCoder, Kilonova problem lists, CSES. Anything else can be added as a link and ticked off by hand.
+- **Solve classification that respects how you solved it.** Live, virtual, upsolved (solved after taking part) or standalone practice; the most recent accepted submission decides, so re-doing a contest virtually updates it correctly.
+- **Team virtuals.** Codeforces team submissions in gyms count for every member, exactly as Codeforces shows them.
+- **Paste links, get items.** A bulk box detects the judge, contest-or-problem and gym/EDU variant from each URL; unknown links are kept, not rejected.
+- **Hints and notes per problem.** Admins add hints and solutions; members leave notes with a self-reported time-to-solve.
+- **Profiles.** Every member's submission history across judges, a last-20 list with links to the judge, streaks and a multi-year activity heatmap.
+- **Stays current by itself.** Histories load when a handle is saved and refresh every two hours; only new submissions are fetched.
+- **Contest recommendations.** A page that picks recent Codeforces rounds suited to a rating and division, graded by problem difficulty.
+- **Accounts done properly.** Admin creates groups, members self-register; PBKDF2 password hashing, signed sessions that end everywhere when a password changes.
 
-## How syncing works
+<table>
+  <tr>
+    <td width="50%"><img src="assets/screenshots/hints.png" alt="Hints and notes dialog"><br><sub>Hints from the coach, notes with time-to-solve from members</sub></td>
+    <td width="50%"><img src="assets/screenshots/profile-dark.png" alt="Profile page, dark theme"><br><sub>Profile: history status, recent submissions across judges, heatmap (dark theme)</sub></td>
+  </tr>
+</table>
 
-When a contest or problem is added to an assignment, a background task fetches every group member's submission history and classifies each result. Syncs are **idempotent** — re-running is safe and updates existing records. Sync status per item is tracked (`pending → syncing → done / error`).
+## How it works
 
-Solve types:
+```mermaid
+graph LR
+    subgraph Judges
+        CF["Codeforces API"]
+        AC["AtCoder Problems + history"]
+        KN["Kilonova API"]
+    end
+    Store[("Submission store<br/>every submission, per user")]
+    Results["Results per item<br/>(what the matrix shows)"]
+    UI["Server-rendered UI<br/>FastAPI + Jinja2"]
 
-| Symbol | Meaning |
-|---|---|
-| ✓ green | Solved live during the contest |
-| ✓ blue | Solved in virtual participation |
-| ▲ orange | Upsolved after the contest ended |
-| ✓ grey | Solved standalone (no associated contest) |
+    CF -->|"only what's new"| Store
+    AC --> Store
+    KN --> Store
+    Store -->|"platform module<br/>derives results"| Results
+    Results --> UI
+    Store --> UI
+```
 
-## Tech stack
+**A local copy of every submission.** Judges are only asked for a user's *submissions*, once. They are mirrored into a table and afterwards refreshed incrementally: everything newer than the newest stored submission, plus anything still being judged. Every contest and problem status is then a database query, so adding the tenth assignment that mentions a contest costs no judge calls. A 15,000-submission history loads in seconds and refreshes in about one.
 
-| Layer | Choice |
-|---|---|
-| Backend | FastAPI + Python 3.11, async throughout |
-| Templates | Jinja2, server-rendered — no JS build step |
-| Interactivity | Inline JS for expand/collapse and rating toggle |
-| Database | SQLite via SQLAlchemy ORM (drop-in PostgreSQL support) |
-| CF data | Official Codeforces API — anonymous streaming for problem lists, signed requests for user data |
-| AtCoder data | [kenkoooo.com](https://kenkoooo.com/atcoder/) AtCoder Problems API, paginated submission fetch |
-| Deployment | Railway with persistent SQLite volume at `/data` |
+**One module per judge.** Everything specific to a judge (its links, how to fetch, how to display, how to derive results) lives in `app/platforms/<judge>.py` behind one `Platform` interface. Recognising where a link comes from is a single switch in `app/problems.py`. Supporting a new judge means one new file, one registry line and one `if`; templates never branch on the platform.
 
-## Setup
+**Correctness you can check.** The live/virtual/upsolved logic is tested against the implementation it replaced: identical answers on thousands of random submission histories, and on real Codeforces contests compared against live API calls. The suite (150+ tests, standard-library `unittest`) never touches the network.
+
+**Careful with other people's servers.** Codeforces requests are serialised and spaced 2.1 s apart, concurrent syncs of one user share a single refresh, and a failed judge call leaves stored data untouched and is reported on the item instead of showing false "not solved" cells.
+
+**Safe to deploy over live data.** No migration framework needed for additive changes: new tables come from `create_all`, new columns from an idempotent `ensure_columns()`. The last deploy was rehearsed on a copy of the production database first.
+
+## Try it in two minutes (no accounts, no network)
 
 ```bash
 git clone https://github.com/amcbn06/squadforces
 cd squadforces
 pip install -r requirements.txt
+python scripts/demo.py
 ```
 
-Create `.env`:
+Open <http://localhost:8000>. Sign in as `admin` / `demo` (admin), or as a fictional member (`ioana`, `matei`, `sofia`, `radu`) with `demo-pass`. The demo seeds a fictional team with synthetic submissions; contest and problem names are real public data. Every judge API is replaced by an in-memory fake, so the refresh buttons work offline too.
 
-```env
-ADMIN_PASSWORD=your_password
-SECRET_KEY=your_secret_key
-DATABASE_URL=sqlite:///./squadforces.db
-
-# Optional — enables signed CF API requests (higher rate limits)
-CF_API_KEY=
-CF_API_SECRET=
-SYNC_INTERVAL_HOURS=6          # auto-sync cadence (default 6h)
-```
+## Run it for real
 
 ```bash
-python run.py
-# → http://localhost:8000
+pip install -r requirements.txt
+cp .env.example .env      # then edit it
+python run.py             # http://localhost:8000
 ```
 
----
+| Variable | Purpose |
+|---|---|
+| `ADMIN_PASSWORD` | Password of the admin account, used only when the database is first created; change it later from the **Password** link |
+| `SECRET_KEY` | Signs session cookies. Set a long random value in production |
+| `DATABASE_URL` | SQLAlchemy URL, default `sqlite:///./squadforces.db` |
+| `SYNC_INTERVAL_HOURS` | How often histories and stale items refresh (default `2`) |
+| `CF_API_KEY` / `CF_API_SECRET` | Optional: signed Codeforces requests |
 
-> Built with [Claude Code](https://claude.ai/code)
+Then sign in as `admin`, create a group, add members with their handles (their histories load straight away), and start an assignment.
 
-## Deployment on Railway
+## Deploying on Railway
 
-The repo ships with `railway.toml`. Steps:
+The repo ships with `railway.toml`.
 
-1. Push to GitHub and connect the repo to Railway
-2. Add a volume mounted at `/data`
-3. Set `DATABASE_URL=sqlite:////data/squadforces.db`, `ADMIN_PASSWORD`, and `SECRET_KEY` as environment variables
-4. Deploy — Railway picks up the start command from `railway.toml` automatically
+1. Connect the repo to Railway and add a **volume** mounted at `/data`.
+2. Set `DATABASE_URL=sqlite:////data/squadforces.db`, `ADMIN_PASSWORD` and `SECRET_KEY`.
+3. Deploy. The start command and health check come from `railway.toml`.
+
+## Project layout
+
+```
+app/
+  main.py, routers/     routes: groups, assignments, accounts, profiles
+  problems.py           the source-detection switch (which judge is this link?)
+  platforms/            one module per judge: cf, atc, kn, cses, other  (+ registry)
+  submissions.py        the submission store: incremental refresh, queries
+  sync.py               refresh members' submissions, then derive an item's results
+  scraper/              the HTTP calls to each judge, nothing else
+  scheduler.py          periodic refresh
+  templates/, static/   server-rendered UI, no JS build step
+tests/                  150+ offline tests, incl. the differential classifier tests
+scripts/                the offline demo and the screenshot generator
+```
+
+## Tests
+
+```bash
+python -m unittest discover -s tests -t .
+```
+
+## Roadmap
+
+Tracked as [GitHub issues](https://github.com/amcbn06/squadforces/issues): team gym contests with ICPC-style scoring, a curated ICPC contest database with a per-team "which SEERCs did we solve" table, and more profile views.
+
+## License
+
+[MIT](LICENSE). Built with [Claude Code](https://claude.ai/code).
