@@ -3,7 +3,7 @@
     python scripts/demo.py            # seed demo.db and serve it on http://localhost:8000
     python scripts/demo.py --seed     # only (re)create demo.db
 
-Sign in as `demo` / `demo` (admin) or as any of the fictional members (`ioana`, `matei`, `sofia`, `radu`) with
+Sign in as `admin` / `demo` (admin) or as any of the fictional members (`ioana`, `matei`, `sofia`, `radu`) with
 password `demo-pass`. Contest and problem names are real public data (scripts/demo_data.json); every submission,
 rating change and solve is generated. All judge APIs are replaced by in-memory fakes, so nothing here touches
 Codeforces, AtCoder or Kilonova, and the refresh buttons keep working without a network.
@@ -353,7 +353,7 @@ def main() -> None:
         print(f"Seeded {db_path}")
         return
     import uvicorn
-    print("\nDemo running on http://localhost:8000  (admin: demo / demo, members: ioana, matei, sofia, radu / demo-pass)\n")
+    print("\nDemo running on http://localhost:8000  (admin: admin / demo, members: ioana, matei, sofia, radu / demo-pass)\n")
     with ExitStack() as stack:
         install_fakes(World(), stack)  # keep the fakes on so refresh buttons work offline
         uvicorn.run(app, host="127.0.0.1", port=8000, log_level="warning")

@@ -90,7 +90,7 @@ pip install -r requirements.txt
 python scripts/demo.py
 ```
 
-Open <http://localhost:8000>. Sign in as `demo` / `demo` (admin), or as a fictional member (`ioana`, `matei`, `sofia`, `radu`) with `demo-pass`. The demo seeds a fictional team with synthetic submissions; contest and problem names are real public data. Every judge API is replaced by an in-memory fake, so the refresh buttons work offline too.
+Open <http://localhost:8000>. Sign in as `admin` / `demo` (admin), or as a fictional member (`ioana`, `matei`, `sofia`, `radu`) with `demo-pass`. The demo seeds a fictional team with synthetic submissions; contest and problem names are real public data. Every judge API is replaced by an in-memory fake, so the refresh buttons work offline too.
 
 ## Run it for real
 
