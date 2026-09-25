@@ -24,7 +24,7 @@ def ensure_columns():
     Only ever adds a missing column; never drops or rewrites anything."""
     from sqlalchemy import inspect, text
     additions = {
-        "groups": {"hints_allowed": "BOOLEAN NOT NULL DEFAULT {false}", "owner_id": "INTEGER", "max_members": "INTEGER"},
+        "groups": {"hints_allowed": "BOOLEAN NOT NULL DEFAULT {false}", "notes_allowed": "BOOLEAN NOT NULL DEFAULT {false}", "owner_id": "INTEGER", "max_members": "INTEGER"},
         "assignment_items": {"rating": "INTEGER", "source_url": "VARCHAR(500)"},
         "contest_problems": {"max_score": "INTEGER"},
         "users": {"session_version": "INTEGER NOT NULL DEFAULT 0", "last_login_at": "DATETIME"},
@@ -46,6 +46,9 @@ def ensure_columns():
             for name, ddl in columns.items():
                 if name not in existing:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl.format(false=false)}"))
+                    if (table, name) == ("groups", "notes_allowed") and "hints_allowed" in existing:
+                        # Notes used to be switched on together with hints: a group keeps what it had.
+                        conn.execute(text("UPDATE groups SET notes_allowed = hints_allowed"))
         # Older deploys stored solution/hint as a boolean on a since-removed column; fold it into kind.
         if "is_solution" in existing_by_table.get("hints", set()):
             conn.execute(text("UPDATE hints SET kind = 'solution' WHERE is_solution = 1"))

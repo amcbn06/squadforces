@@ -169,7 +169,7 @@ class GroupMigration(DbTestCase):
                                      hints_allowed BOOLEAN NOT NULL DEFAULT 0, created_at DATETIME);
                 CREATE TABLE group_memberships (id INTEGER PRIMARY KEY, group_id INTEGER, user_id INTEGER, joined_at DATETIME);
                 INSERT INTO users VALUES (0, 'admin', 'x'), (1, 'a', 'y'), (2, 'b', 'z');
-                INSERT INTO groups (id, name) VALUES (1, 'Old group');
+                INSERT INTO groups (id, name, hints_allowed) VALUES (1, 'Old group', 0), (2, 'Hinting group', 1);
                 INSERT INTO group_memberships (group_id, user_id) VALUES (1, 1), (1, 2);
             """)
             con.commit()
@@ -178,13 +178,14 @@ class GroupMigration(DbTestCase):
                     "from sqlalchemy import text\n"
                     "ensure_columns(); migrate_groups(); ensure_columns(); migrate_groups()\n"
                     "with engine.connect() as c:\n"
-                    "    print(c.execute(text('SELECT id, name, owner_id, max_members FROM groups')).all())\n"
+                    "    print(c.execute(text('SELECT id, name, owner_id, max_members, hints_allowed, notes_allowed FROM groups')).all())\n"
                     "    print(c.execute(text('SELECT COUNT(*) FROM group_memberships')).scalar())\n")
             out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
                                  env={**os.environ, "DATABASE_URL": "sqlite:///" + path}, cwd=os.getcwd())
             self.assertEqual(out.returncode, 0, out.stderr[-500:])
             lines = out.stdout.strip().splitlines()
-            self.assertEqual(lines[0], "[(1, 'Old group', 0, 10)]")
+            # a group that had hints on keeps notes on; one that had neither still has neither
+            self.assertEqual(lines[0], "[(1, 'Old group', 0, 10, 0, 0), (2, 'Hinting group', 0, 10, 1, 1)]")
             self.assertEqual(lines[1], "2")
 
 
@@ -223,10 +224,12 @@ class SiteTestCase(unittest.TestCase):
         self.assertEqual(r.status_code, 303, name)
         return c
 
-    def new_group(self, client, name="G", max_members=10, hints=False):
+    def new_group(self, client, name="G", max_members=10, hints=False, notes=None):
         data = {"name": name, "max_members": max_members}
         if hints:
             data["hints_allowed"] = "1"
+        if hints if notes is None else notes:
+            data["notes_allowed"] = "1"
         r = client.post("/groups/new", data=data)
         m = re.search(r"/groups/(\d+)", r.headers.get("location", ""))
         return (int(m.group(1)) if m else None), r
@@ -569,6 +572,50 @@ class Ownership(SiteTestCase):
             ("solution", None, None, "older form, ticked"),
         ])
 
+    def switch(self, hints, notes):
+        data = {"name": "Team", "max_members": 10}
+        if hints:
+            data["hints_allowed"] = "1"
+        if notes:
+            data["notes_allowed"] = "1"
+        self.assertEqual(self.owner.post(f"/groups/{self.gid}/edit", data=data).status_code, 303)
+
+    def test_hints_and_notes_are_switched_on_and_off_separately(self):
+        i, aid = self.item_id, self.aid
+        post = lambda client, **d: client.post(f"/assignments/{aid}/hints/add", data={"target": f"i{i}", "text": "t", **d}).status_code
+        self.assertEqual(post(self.owner, kind="hint"), 303)
+        self.assertEqual(post(self.member, time_minutes="5"), 303)
+        # hints off, notes on: the note stays visible and can be added, hints can't be
+        self.switch(hints=False, notes=True)
+        page = self.member.get(f"/assignments/{aid}").text
+        self.assertIn("var NOTES_ON = true;", page)
+        self.assertIn("var HINTS_ON = false;", page)
+        self.assertRegex(page, r'"kind": ?"note"')
+        self.assertNotRegex(page, r'"kind": ?"hint"')                # the existing hint is hidden, not deleted
+        self.assertEqual(post(self.owner, kind="hint"), 400)
+        self.assertEqual(post(self.owner, kind="note"), 303)
+        self.assertEqual(post(self.member), 303)
+        # notes off, hints on
+        self.switch(hints=True, notes=False)
+        page = self.member.get(f"/assignments/{aid}").text
+        self.assertRegex(page, r'"kind": ?"hint"')
+        self.assertNotRegex(page, r'"kind": ?"note"')
+        self.assertEqual(post(self.member), 400)
+        self.assertEqual(post(self.owner, kind="note"), 400)
+        self.assertEqual(post(self.owner, kind="hint"), 303)
+        # both off: no button, nothing accepted
+        self.switch(hints=False, notes=False)
+        self.assertNotIn("openHints(this)", self.member.get(f"/assignments/{aid}").text)
+        self.assertEqual(post(self.owner, kind="hint"), 400)
+        self.assertEqual(post(self.member), 400)
+        self.assertEqual(len(self.hints()), 5)                        # switching things off never deletes anything
+
+    def test_the_group_form_has_both_switches(self):
+        self.switch(hints=False, notes=True)
+        page = self.owner.get(f"/groups/{self.gid}/edit-page").text
+        self.assertRegex(page, r'name="notes_allowed" value="1"\s*checked')
+        self.assertNotRegex(page, r'name="hints_allowed" value="1"\s*checked')
+
     def test_a_managers_note_needs_a_valid_time_like_anyone_elses(self):
         r = self.owner.post(f"/assignments/{self.aid}/hints/add", data={"target": f"i{self.item_id}", "text": "n", "kind": "note", "time_minutes": "soon"})
         self.assertEqual(r.status_code, 400)
@@ -595,7 +642,7 @@ class Ownership(SiteTestCase):
             self.assertEqual("var HINT_ADMIN = true;" in page, add_hint)
             self.assertIn("'+ Add note'", page)                                               # everyone can leave a note
             self.assertIn("'+ Add hint'", page)                                               # (only offered when HINT_ADMIN)
-        self.assertRegex(page, r"if \(HINT_ADMIN\) row\.appendChild\(addButton\(wrap, 'hint', '\+ Add hint'\)\)")
+        self.assertRegex(page, r"if \(HINT_ADMIN && HINTS_ON\) row\.appendChild\(addButton\(wrap, 'hint', '\+ Add hint'\)\)")
 
     def test_notes_by_managers_show_their_author_and_can_be_edited_by_them(self):
         i = self.item_id

@@ -93,7 +93,7 @@ class ProfileSite(unittest.TestCase):
         self.assertIn("1 submission ", text)                                      # singular
         self.assertIn("1,234 submissions", text)
         self.assertIn("3 minutes ago", text)
-        for href in ("https://codeforces.com/profile/ana_cf", "https://atcoder.jp/users/ana_ac", "https://kilonova.ro/user/ana_kn"):
+        for href in ("https://codeforces.com/profile/ana_cf", "https://atcoder.jp/users/ana_ac", "https://kilonova.ro/profile/ana_kn"):
             self.assertIn(f'href="{href}"', page)
 
     def test_a_failed_load_shows_next_to_its_judge(self):

@@ -9,7 +9,7 @@
   {% else %}<span class="picon picon-unknown" title="Link to another site">?</span>{% endif %}
 {% endmacro %}
 {% macro hint_btn(key, title) %}
-  {% if group.hints_allowed %}
+  {% if group.hints_allowed or group.notes_allowed %}
   {% set n = (hints_map.get(key) or []) | length %}
   <button type="button"
           class="hint-btn{{ ' has-hints' if n }}"
@@ -463,7 +463,7 @@
 
 {% endif %}
 
-{% if group.hints_allowed %}
+{% if group.hints_allowed or group.notes_allowed %}
 <div id="hint-overlay" class="modal-overlay" hidden>
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="hint-title">
     <div class="modal-head">
@@ -479,6 +479,8 @@
 <script>
 var HINTS = {{ hints_map | tojson }};
 var HINT_ADMIN = {{ 'true' if is_admin else 'false' }};
+var HINTS_ON = {{ 'true' if group.hints_allowed else 'false' }};
+var NOTES_ON = {{ 'true' if group.notes_allowed else 'false' }};
 var HINT_URL = "/assignments/{{ assignment.id }}/hints/";
 var hintKey = null;
 
@@ -692,8 +694,8 @@ function addButton(wrap, kind, label) {
 
 function showAddButton(wrap) {
   var row = el('div', 'hint-add-row');
-  if (HINT_ADMIN) row.appendChild(addButton(wrap, 'hint', '+ Add hint'));
-  row.appendChild(addButton(wrap, 'note', '+ Add note'));
+  if (HINT_ADMIN && HINTS_ON) row.appendChild(addButton(wrap, 'hint', '+ Add hint'));
+  if (NOTES_ON) row.appendChild(addButton(wrap, 'note', '+ Add note'));
   wrap.replaceChildren(row);
 }
 

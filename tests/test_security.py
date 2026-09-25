@@ -114,7 +114,7 @@ class WebSecurity(unittest.TestCase):
         self.admin = ctx.__enter__()
         self.addCleanup(ctx.__exit__, None, None, None)
         self.admin.post("/login", data={"username": "admin", "password": "test-admin-pw"})
-        r = self.admin.post("/groups/new", data={"name": "Team", "hints_allowed": "1"})
+        r = self.admin.post("/groups/new", data={"name": "Team", "hints_allowed": "1", "notes_allowed": "1"})
         self.gid = int(re.search(r"/groups/(\d+)", r.headers["location"]).group(1))
         r = self.admin.post("/groups/new", data={"name": "Other team"})
         self.gid2 = int(re.search(r"/groups/(\d+)", r.headers["location"]).group(1))

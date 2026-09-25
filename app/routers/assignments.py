@@ -280,8 +280,9 @@ async def add_hint(
     if not assignment:
         return HTMLResponse("Assignment not found", status_code=404)
     _check_group_access(account, assignment.group_id, db)
-    if not assignment.group.hints_allowed:
-        raise HTTPException(status_code=400, detail="Hints are not enabled for this group.")
+    group = assignment.group
+    if not (group.hints_allowed or group.notes_allowed):
+        raise HTTPException(status_code=400, detail="Hints and notes are not enabled for this group.")
 
     kind, raw_id = target[:1], target[1:]
     if kind not in ("i", "p") or not raw_id.isdigit():
@@ -298,6 +299,10 @@ async def add_hint(
     # A form that names no kind is the older one: a hint, or a solution if it was ticked. Everyone else can only
     # ever leave a note, whatever they post.
     wants_note = entry == "note" or not can_manage_group(account, assignment.group)
+    if wants_note and not group.notes_allowed:
+        raise HTTPException(status_code=400, detail="Notes are not enabled for this group.")
+    if not wants_note and not group.hints_allowed:
+        raise HTTPException(status_code=400, detail="Hints are not enabled for this group.")
     if wants_note:
         entry_kind = "note"
         author_id = account.id  # a note carries its author and how long it took
@@ -498,7 +503,7 @@ async def sync_item(
 _HINT_KIND_ORDER = {"hint": 0, "note": 1, "solution": 2}
 
 
-def _hints_map(assignment, db: Session, account) -> dict[str, list[dict]]:
+def _hints_map(assignment, db: Session, account, group) -> dict[str, list[dict]]:
     """Hints keyed by 'i<item id>' (standalone problem) or 'p<contest problem id>'."""
     item_ids = [i.id for i in assignment.items if i.type == "problem"]
     cp_ids = [cp.id for i in assignment.items for cp in i.contest_problems]
@@ -512,6 +517,8 @@ def _hints_map(assignment, db: Session, account) -> dict[str, list[dict]]:
     )
     result: dict[str, list[dict]] = {}
     for h in hints:
+        if not (group.notes_allowed if h.kind == "note" else group.hints_allowed):
+            continue  # hints and notes are switched on and off separately
         result.setdefault(_hint_target(h), []).append({
             "id": h.id,
             "text": h.text,
@@ -537,7 +544,7 @@ def _render_detail(request: Request, assignment, account, db: Session, status_co
             "members": members,
             "items": assignment.items,
             "matrix": _build_matrix(assignment.items, members, db),
-            "hints_map": _hints_map(assignment, db, account) if group.hints_allowed else {},
+            "hints_map": _hints_map(assignment, db, account, group) if (group.hints_allowed or group.notes_allowed) else {},
             "account": account,
             "can_manage": can_manage_group(account, group),
             **extra,

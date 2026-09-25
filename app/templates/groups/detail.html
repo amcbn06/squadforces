@@ -61,7 +61,7 @@
                      class="meta">AC: {{ user.atcoder_handle }}</a>
                 {% endif %}
                 {% if user.kilonova_handle %}
-                · <a href="https://kilonova.ro/user/{{ user.kilonova_handle }}" target="_blank"
+                · <a href="https://kilonova.ro/profile/{{ user.kilonova_handle }}" target="_blank"
                      class="meta">KN: {{ user.kilonova_handle }}</a>
                 {% endif %}
               </div>
@@ -133,8 +133,8 @@
 </div>
 
 {% if can_manage %}
-<div class="box" style="margin-top:12px;">
-  <div class="box-header" style="cursor:default;">Invite links</div>
+<details class="box" {% if new_link %}open{% endif %} style="margin-top:12px;">
+  <summary class="box-header" style="cursor:pointer;">Invite links <span style="font-weight:normal; font-size:11px; color:#666;">(click to expand)</span></summary>
   <div class="box-body" style="padding:10px 12px;">
     {{ new_link_box(new_link) }}
     <form method="post" action="/groups/{{ group.id }}/invites"
@@ -156,11 +156,11 @@
     </p>
     {{ invite_table(invites, invite_status, '/groups/' ~ group.id ~ '/invites/') }}
   </div>
-</div>
+</details>
 {% endif %}
 
 {% if can_manage %}
-<details class="box" {% if changes %}open{% endif %} style="margin-top:12px;">
+<details class="box" style="margin-top:12px;">
   <summary class="box-header" style="cursor:pointer;">Recent changes <span style="font-weight:normal; font-size:11px; color:#666;">(who did what in this group &mdash; click to expand)</span></summary>
   {% if not changes %}
   <p class="meta" style="padding:10px 14px;">No changes recorded for this group yet. Adding or removing members, invite links, joins, ownership changes and assignment changes will show up here from now on.</p>
