@@ -1,5 +1,6 @@
 import os
 from contextlib import asynccontextmanager
+from urllib.parse import urlencode
 
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, Request, Form, Depends
@@ -16,7 +17,7 @@ from app.templating import make_templates
 from app import models
 from app.auth import (
     hash_password, hash_password_async, verify_password_async, needs_rehash, dummy_hash,
-    require_auth, can_edit_user, MIN_PASSWORD_LENGTH,
+    require_auth, can_edit_user, MIN_PASSWORD_LENGTH, safe_next, login_throttle,
 )
 from app.routers import groups, assignments, recommend
 from app.routers import admin as admin_router
@@ -36,7 +37,7 @@ async def lifespan(app: FastAPI):
     try:
         # Seed admin with id=0 on first run
         if not db.query(models.User).filter(models.User.id == 0).first():
-            admin_password = os.getenv("ADMIN_PASSWORD", "squadforces2024")
+            admin_password = _admin_password()
             db.add(models.User(
                 id=0,
                 username="admin",
@@ -54,9 +55,45 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Squadforces", lifespan=lifespan)
 
+DEV_SECRET_KEY = "squadforces-dev-secret-change-me"
+DEV_ADMIN_PASSWORD = "squadforces2024"
+
+
+def _deployed() -> bool:
+    return bool(os.getenv("RAILWAY_ENVIRONMENT"))
+
+
+def _secret_key() -> str:
+    """The session-signing key. The built-in development key is public (it is in this repository), so a deployment
+    without SECRET_KEY refuses to start instead of running with forgeable sessions."""
+    key = os.getenv("SECRET_KEY")
+    if key:
+        return key
+    if _deployed():
+        raise RuntimeError("SECRET_KEY must be set when deployed: sessions would be signed with a public key")
+    return DEV_SECRET_KEY
+
+
+def _admin_password() -> str:
+    """Password for the admin account created on a fresh database. Same rule: no public default when deployed."""
+    password = os.getenv("ADMIN_PASSWORD")
+    if password:
+        return password
+    if _deployed():
+        raise RuntimeError("ADMIN_PASSWORD must be set when creating the admin account on a deployed database")
+    return DEV_ADMIN_PASSWORD
+
+
+def _cookie_secure() -> bool:
+    """Mark the session cookie Secure (HTTPS only) when deployed. Railway serves the app over HTTPS."""
+    return os.getenv("COOKIE_SECURE", "").lower() in ("1", "true", "yes") or bool(os.getenv("RAILWAY_ENVIRONMENT"))
+
+
 app.add_middleware(
     SessionMiddleware,
-    secret_key=os.getenv("SECRET_KEY", "squadforces-dev-secret-change-me"),
+    secret_key=_secret_key(),
+    same_site="lax",  # not sent on cross-site POSTs, which is what blocks cross-site form forgery
+    https_only=_cookie_secure(),
 )
 class RevalidatingStaticFiles(StaticFiles):
     """Force browsers to revalidate (ETag -> 304) so CSS/JS edits show up right after a deploy."""
@@ -80,7 +117,7 @@ app.include_router(admin_router.router)
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
     if exc.status_code == 401:
-        return RedirectResponse(url=f"/login?next={request.url.path}", status_code=303)
+        return RedirectResponse(url="/login?" + urlencode({"next": request.url.path}), status_code=303)
     if exc.status_code == 403:
         return HTMLResponse(
             "<h1>403 Forbidden</h1><p>You don't have permission to access this page.</p>",
@@ -102,7 +139,7 @@ async def root(request: Request):
 async def login_page(request: Request, next: str = "/"):
     if request.session.get("user_id") is not None:
         return RedirectResponse("/", status_code=303)
-    return templates.TemplateResponse("login.html", {"request": request, "error": "", "next": next})
+    return templates.TemplateResponse(request, "login.html", {"request": request, "error": "", "next": safe_next(next)})
 
 
 @app.post("/login")
@@ -113,18 +150,29 @@ async def login(
     next: str = Form("/"),
     db: Session = Depends(get_db),
 ):
+    next = safe_next(next)
+    throttle_key = username.strip().lower()
+    wait = login_throttle.blocked_for(throttle_key)
+    if wait:
+        return templates.TemplateResponse(request,
+            "login.html",
+            {"request": request, "error": f"Too many failed attempts. Try again in {wait} seconds.", "next": next},
+            status_code=429,
+        )
     user = db.query(models.User).filter_by(username=username.strip()).first()
     # Always do a full hash, even for an unknown username, so response time doesn't reveal which names exist.
     verified = await verify_password_async(password, user.password_hash if user else dummy_hash())
     if user and verified:
+        login_throttle.reset(throttle_key)
         if needs_rehash(user.password_hash):
             # Legacy SHA-256 hash (or fewer iterations than now): upgrade it while we hold the plaintext.
             user.password_hash = await hash_password_async(password)
             db.commit()
         request.session["user_id"] = user.id
         request.session["sv"] = user.session_version
-        return RedirectResponse(url=next or "/", status_code=303)
-    return templates.TemplateResponse(
+        return RedirectResponse(url=next, status_code=303)
+    login_throttle.record_failure(throttle_key)
+    return templates.TemplateResponse(request,
         "login.html",
         {"request": request, "error": "Incorrect username or password.", "next": next},
         status_code=401,
@@ -142,7 +190,7 @@ async def logout(request: Request):
 async def register_page(request: Request):
     if request.session.get("user_id") is not None:
         return RedirectResponse("/", status_code=303)
-    return templates.TemplateResponse("register.html", {"request": request, "error": ""})
+    return templates.TemplateResponse(request, "register.html", {"request": request, "error": ""})
 
 
 @app.post("/register")
@@ -174,7 +222,7 @@ async def register(
         error = f"Codeforces handle '{cf_handle}' is already linked to another account."
 
     if error:
-        return templates.TemplateResponse(
+        return templates.TemplateResponse(request,
             "register.html", {"request": request, "error": error}, status_code=422
         )
 
@@ -183,7 +231,7 @@ async def register(
     if cf_handle:
         user_info = await cf.validate_handle(cf_handle)
         if not user_info:
-            return templates.TemplateResponse(
+            return templates.TemplateResponse(request,
                 "register.html",
                 {"request": request, "error": f"Codeforces handle '{cf_handle}' does not exist."},
                 status_code=422,
@@ -204,15 +252,17 @@ async def register(
     )
     db.add(user)
     db.commit()
-    background_tasks.add_task(histories.load_histories, user.id, histories.apply_handle_changes(db, user))
-    request.session["user_id"] = user.id
-    request.session["sv"] = user.session_version
+    user_id, session_version = user.id, user.session_version
+    background_tasks.add_task(histories.load_histories, user_id, histories.apply_handle_changes(db, user))
+    request.session["user_id"] = user_id
+    request.session["sv"] = session_version
+    db.close()  # end the request's transaction: a background task that writes must not wait on it (SQLite locks the file)
     return RedirectResponse("/", status_code=303)
 
 
 # --- Change password ---
 def _password_page(request: Request, account, error: str = "", changed: bool = False, status_code: int = 200):
-    return templates.TemplateResponse(
+    return templates.TemplateResponse(request,
         "account/password.html",
         {"request": request, "account": account, "error": error, "changed": changed,
          "min_length": MIN_PASSWORD_LENGTH},
@@ -267,7 +317,7 @@ async def user_profile(
     user = db.query(models.User).filter_by(username=username).first()
     if not user:
         return HTMLResponse("User not found", status_code=404)
-    return templates.TemplateResponse("users/profile.html", {
+    return templates.TemplateResponse(request, "users/profile.html", {
         "request": request,
         "user": user,
         "account": account,
@@ -311,6 +361,7 @@ async def edit_user_profile(
     to_load = histories.apply_handle_changes(db, user, handles_before)
     db.commit()
     background_tasks.add_task(histories.load_histories, user.id, to_load)
+    db.close()  # end the request's transaction: a background task that writes must not wait on it (SQLite locks the file)
     return RedirectResponse(f"/users/{username}", status_code=303)
 
 
@@ -328,6 +379,7 @@ async def reload_history(
     if not can_edit_user(account, user):
         raise HTTPException(status_code=403)
     background_tasks.add_task(histories.load_histories, user.id, histories.HISTORY_PLATFORMS, force=True)
+    db.close()  # end the request's transaction: a background task that writes must not wait on it (SQLite locks the file)
     return RedirectResponse(f"/users/{username}", status_code=303)
 
 
@@ -348,4 +400,4 @@ async def user_activity(
 # --- Help ---
 @app.get("/help", response_class=HTMLResponse)
 async def help_page(request: Request, account=Depends(require_auth)):
-    return templates.TemplateResponse("help.html", {"request": request, "account": account})
+    return templates.TemplateResponse(request, "help.html", {"request": request, "account": account})

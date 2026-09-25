@@ -40,7 +40,7 @@ async def new_assignment_form(
     if not group:
         return HTMLResponse("Group not found", status_code=404)
     _check_group_access(account, group_id, db)
-    return templates.TemplateResponse(
+    return templates.TemplateResponse(request,
         "assignments/form.html", {"request": request, "group": group, "error": None, "account": account}
     )
 
@@ -144,6 +144,7 @@ async def add_item(
     db.refresh(item)
 
     background_tasks.add_task(_run_sync, item.id)
+    db.close()  # end the request's transaction: a background task that writes must not wait on it (SQLite locks the file)
 
     return RedirectResponse(f"/assignments/{assignment_id}", status_code=303)
 
@@ -194,16 +195,19 @@ async def bulk_add_items(
         background_tasks.add_task(_run_sync, item.id)
 
     if not errors and not duplicates:
+        db.close()  # end the request's transaction: a background task that writes must not wait on it (SQLite locks the file)
         return RedirectResponse(f"/assignments/{assignment_id}", status_code=303)
 
     db.refresh(assignment)
-    return _render_detail(
+    response = _render_detail(
         request, assignment, account, db,
         bulk_added=added,
         bulk_duplicates=duplicates,
         bulk_errors=errors,
         bulk_text="\n".join(token for token, _ in errors),
     )
+    db.close()  # the page is rendered; release the transaction before the background syncs start
+    return response
 
 
 MAX_HINT_LENGTH = 5000
@@ -446,6 +450,7 @@ async def sync_assignment(
     _check_group_access(account, assignment.group_id, db)
     for item in assignment.items:
         background_tasks.add_task(_run_sync, item.id)
+    db.close()  # end the request's transaction: a background task that writes must not wait on it (SQLite locks the file)
     return RedirectResponse(f"/assignments/{assignment_id}", status_code=303)
 
 
@@ -461,6 +466,7 @@ async def sync_item(
     if item and item.assignment_id == assignment_id:
         _check_group_access(account, item.assignment.group_id, db)
         background_tasks.add_task(_run_sync, item.id)
+    db.close()  # end the request's transaction: a background task that writes must not wait on it (SQLite locks the file)
     return RedirectResponse(f"/assignments/{assignment_id}", status_code=303)
 
 
@@ -499,7 +505,7 @@ def _hints_map(assignment, db: Session, account) -> dict[str, list[dict]]:
 def _render_detail(request: Request, assignment, account, db: Session, status_code: int = 200, **extra):
     group = assignment.group
     members = [m.user for m in group.memberships]
-    return templates.TemplateResponse(
+    return templates.TemplateResponse(request,
         "assignments/detail.html",
         {
             "request": request,

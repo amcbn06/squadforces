@@ -11,7 +11,7 @@ python run.py
 
 App runs at `http://localhost:8000`. The SQLite database (`squadforces.db`) is created automatically on first startup via SQLAlchemy's `create_all`. To reset the DB, delete the file and restart.
 
-Initial admin password: set in `.env` as `ADMIN_PASSWORD` (default `squadforces2024`). It only seeds the admin account when the database is first created; after that, change it from the **Password** link in the nav (`/account/password`), and editing `ADMIN_PASSWORD` has no effect.
+Initial admin password: set in `.env` as `ADMIN_PASSWORD` (default `squadforces2024` locally; a deployed instance, i.e. with `RAILWAY_ENVIRONMENT` set, refuses to start without it, and without `SECRET_KEY`). It only seeds the admin account when the database is first created; after that, change it from the **Password** link in the nav (`/account/password`), and editing `ADMIN_PASSWORD` has no effect.
 
 ## Architecture
 
@@ -62,6 +62,7 @@ Existing databases get new columns through `ensure_columns()` in `app/database.p
 |---|---|
 | `ADMIN_PASSWORD` | Initial admin password, used only when the admin account is first created |
 | `SECRET_KEY` | Signs the session cookies; set a long random value in production |
+| `COOKIE_SECURE` | `1` to mark the session cookie Secure outside Railway (it is on automatically when `RAILWAY_ENVIRONMENT` is set) |
 | `SYNC_INTERVAL_HOURS` | How often stored submissions and stale items refresh (default 2) |
 | `DATABASE_URL` | SQLAlchemy URL, defaults to `sqlite:///./squadforces.db` |
 | `CF_API_KEY` / `CF_API_SECRET` | Optional; enables signed CF API requests for higher rate limits |

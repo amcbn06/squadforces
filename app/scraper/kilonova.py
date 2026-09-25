@@ -1,4 +1,6 @@
 """Kilonova scraper — uses the public Kilonova REST API (kilonova.ro/api/...)."""
+from urllib.parse import quote
+
 import httpx
 
 BASE = "https://kilonova.ro/api"
@@ -48,7 +50,7 @@ def parse_contest_id(raw: str) -> int | None:
 async def validate_handle(username: str) -> dict | None:
     """Return user info dict if handle exists, None otherwise."""
     try:
-        return await _get(f"/user/byName/{username}")
+        return await _get(f"/user/byName/{quote(username, safe='')}")
     except Exception:
         return None
 

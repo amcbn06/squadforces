@@ -1,6 +1,7 @@
 """AtCoder adapter — uses the AtCoder Problems API (kenkoooo.com)."""
 import asyncio
 import re
+from urllib.parse import quote
 import time
 from collections import defaultdict
 from typing import Optional
@@ -97,7 +98,7 @@ async def get_rating_history(handle: str) -> list[dict]:
     """Rated contests of a user, from AtCoder's own public history JSON (kenkoooo has no such endpoint).
     Each entry has ContestScreenName ("abc300.contest.atcoder.jp"), Place, OldRating, NewRating, Performance, EndTime."""
     async with httpx.AsyncClient(timeout=30, headers={"User-Agent": "Squadforces/1.0"}) as client:
-        resp = await client.get(f"https://atcoder.jp/users/{handle}/history/json")
+        resp = await client.get(f"https://atcoder.jp/users/{quote(handle, safe='')}/history/json")
     resp.raise_for_status()
     return resp.json()
 
