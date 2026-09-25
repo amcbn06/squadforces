@@ -362,6 +362,8 @@ input:focus, textarea:focus, select:focus { outline: 1px solid var(--border-focu
 .hint-icon-btn.danger:hover { color: var(--text-err); }
 .hint-link { color: var(--text-link); text-decoration: underline; word-break: break-all; }
 .hint-add { margin-top: 4px; }
+.hint-add-row { display: flex; gap: 8px; }
+.hint-add-row .hint-add-btn { flex: 1; }
 .hint-add-btn {
   width: 100%; padding: 9px 12px; background: none; border: 1px dashed var(--border); border-radius: 4px;
   color: var(--text-meta); font: inherit; cursor: pointer;

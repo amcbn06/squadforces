@@ -581,6 +581,13 @@ function hintForm(o) {
     hidden.value = o.target;
     form.appendChild(hidden);
   }
+  if (o.kind) {
+    var kindField = document.createElement('input');
+    kindField.type = 'hidden';
+    kindField.name = 'kind';
+    kindField.value = o.kind;
+    form.appendChild(kindField);
+  }
   var ta = el('textarea');
   ta.name = 'text';
   ta.rows = 4;
@@ -674,21 +681,32 @@ function buildHint(h, label, expanded) {
   return item;
 }
 
-function showAddButton(wrap) {
-  var b = el('button', 'hint-add-btn', HINT_ADMIN ? '+ Add hint' : '+ Add note');
+// A manager gets one button per kind of entry; a member only ever leaves notes.
+function addButton(wrap, kind, label) {
+  var b = el('button', 'hint-add-btn', label);
   b.type = 'button';
-  b.onclick = function () { showAddForm(wrap); };
-  wrap.replaceChildren(b);
+  b.dataset.kind = kind;
+  b.onclick = function () { showAddForm(wrap, kind); };
+  return b;
 }
 
-function showAddForm(wrap) {
+function showAddButton(wrap) {
+  var row = el('div', 'hint-add-row');
+  if (HINT_ADMIN) row.appendChild(addButton(wrap, 'hint', '+ Add hint'));
+  row.appendChild(addButton(wrap, 'note', '+ Add note'));
+  wrap.replaceChildren(row);
+}
+
+function showAddForm(wrap, kind) {
+  var isNote = kind === 'note';
   var form = hintForm({
     action: HINT_URL + 'add',
     target: hintKey,
-    submitLabel: HINT_ADMIN ? 'Add hint' : 'Add note',
-    placeholder: HINT_ADMIN ? 'Write the hint here…' : 'Write your note here…',
-    showSolutionCheckbox: HINT_ADMIN,
-    isNote: !HINT_ADMIN,
+    kind: kind,
+    submitLabel: isNote ? 'Add note' : 'Add hint',
+    placeholder: isNote ? 'Write your note here…' : 'Write the hint here…',
+    showSolutionCheckbox: !isNote,
+    isNote: isNote,
     onCancel: function () { showAddButton(wrap); }
   });
   wrap.replaceChildren(form);
