@@ -148,8 +148,8 @@ class HandleSaveFlows(unittest.TestCase):
         self.assertEqual(self.counts("u"), {"codeforces": 1, "atcoder": 1, "kilonova": 1})
         self.assertEqual(len(self.ac_calls), ac_before)  # atcoder handle unchanged: not reloaded
         page = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", self.admin.get("/users/u").text))
-        self.assertIn("Submission history", page)
-        self.assertIn("Kilonova (andrei): 1 submissions", page)
+        self.assertIn("KN andrei", page)                            # the judge chip: handle ...
+        self.assertIn("1 submission ", page)                         # ... how much is stored
 
     def test_a_wrong_handle_shows_its_error_on_the_profile(self):
         self.admin.post("/admin/users/new", data={"username": "u", "password": "secret123", "user_type": "user"})

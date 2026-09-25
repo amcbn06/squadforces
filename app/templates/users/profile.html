@@ -2,14 +2,11 @@
 {% block title %}{{ user.username }} — Squadforces{% endblock %}
 
 {% block content %}
-<div style="display:flex; align-items:baseline; gap:12px; margin-bottom:16px;">
-  <h1>{{ user.username }}</h1>
-  {% if user.full_name %}
-  <span class="meta" style="font-size:15px;">{{ user.full_name }}</span>
-  {% endif %}
-  {% if user.cf_rating %}
-  <span class="meta" style="font-size:15px;">({{ user.cf_rating }})</span>
-  {% endif %}
+{# Header: name, rating, last sign-in and the actions, in one row #}
+<div style="display:flex; align-items:baseline; flex-wrap:wrap; gap:6px 12px; margin-bottom:8px;">
+  <h1 style="margin:0;">{{ user.username }}</h1>
+  {% if user.full_name %}<span class="meta" style="font-size:15px;">{{ user.full_name }}</span>{% endif %}
+  {% if user.cf_rating %}<span class="meta" style="font-size:15px;">({{ user.cf_rating }})</span>{% endif %}
   {% if account and (account.user_type == "admin" or account.id == user.id) %}
   <span class="meta" title="{{ user.last_login_at.strftime('%Y-%m-%d %H:%M') ~ ' UTC' if user.last_login_at else 'No sign-in recorded yet' }}">
     {% if user.last_login_at %}last sign-in {{ time_ago(user.last_login_at) }}{% else %}no sign-in recorded yet{% endif %}
@@ -21,7 +18,7 @@
     <a href="/account/password" class="btn" style="padding:2px 9px; font-size:12px;">Change password</a>
     {% endif %}
     <button class="btn" style="padding:2px 9px; font-size:12px;"
-            onclick="document.getElementById('edit-handles').style.display = document.getElementById('edit-handles').style.display === 'none' ? 'block' : 'none';">
+            onclick="var e = document.getElementById('edit-handles'); e.style.display = e.style.display === 'none' ? 'block' : 'none';">
       ✎ Edit
     </button>
   </span>
@@ -29,12 +26,12 @@
 </div>
 
 {% if can_edit %}
-<div id="edit-handles" style="display:none; margin-bottom:16px;">
+<div id="edit-handles" style="display:none; margin-bottom:10px;">
   <div class="box">
     <div class="box-header" style="cursor:default;">Edit profile</div>
     <div class="box-body" style="padding:12px;">
       <form method="post" action="/users/{{ user.username }}/edit"
-            style="display:flex; flex-direction:column; gap:8px; max-width:340px;">
+            style="display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end;">
         <div class="form-col">
           <label style="font-size:12px;">Full name <span class="meta">(optional)</span></label>
           <input type="text" name="full_name" value="{{ user.full_name or '' }}" style="font-size:13px;" />
@@ -55,63 +52,63 @@
           <label style="font-size:12px;">Kilonova handle <span class="meta">(optional)</span></label>
           <input type="text" name="kilonova_handle" value="{{ user.kilonova_handle or '' }}" style="font-size:13px;" />
         </div>
-        <button type="submit" class="btn btn-green" style="align-self:flex-start; margin-top:2px;">Save</button>
+        <button type="submit" class="btn btn-green">Save</button>
       </form>
     </div>
   </div>
 </div>
 {% endif %}
 
-<div style="display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap;">
-  {% if user.codeforces_handle %}
-  <a href="https://codeforces.com/profile/{{ user.codeforces_handle }}" target="_blank"
-     class="card" style="padding:8px 14px; display:inline-flex; align-items:center; gap:6px;">
-    <span style="color:#1565C0; font-weight:bold;">CF</span>
-    <span>{{ user.codeforces_handle }}</span>
-    {% if user.cf_rank %}<span class="meta">{{ user.cf_rank }}</span>{% endif %}
-  </a>
-  {% endif %}
-  {% if user.atcoder_handle %}
-  <a href="https://atcoder.jp/users/{{ user.atcoder_handle }}" target="_blank"
-     class="card" style="padding:8px 14px; display:inline-flex; align-items:center; gap:6px;">
-    <span style="color:#E09000; font-weight:bold;">AC</span>
-    <span>{{ user.atcoder_handle }}</span>
-  </a>
-  {% endif %}
-  {% if user.kilonova_handle %}
-  <a href="https://kilonova.ro/user/{{ user.kilonova_handle }}" target="_blank"
-     class="card" style="padding:8px 14px; display:inline-flex; align-items:center; gap:6px;">
-    <span style="color:#e8c84a; font-weight:bold;">KN</span>
-    <span>{{ user.kilonova_handle }}</span>
-  </a>
-  {% endif %}
-</div>
-
+{# One chip per judge: handle link, how much is stored, when it was updated, and any error #}
 {% if history_status %}
-<div class="card" style="padding:10px 14px; margin-bottom:16px; font-size:13px;">
-  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-    <strong>Submission history</strong>
-    {% if can_edit %}
-    <form method="post" action="/users/{{ user.username }}/reload-history" style="display:inline;">
-      <button class="btn" style="font-size:11px; padding:2px 8px;" title="Fetch the latest submissions now">↻ Reload</button>
-    </form>
-    {% endif %}
-  </div>
+<div class="chips">
   {% for h in history_status %}
-  <div style="margin-top:2px;">
-    {{ h.label }} <span class="meta">({{ h.handle }})</span>:
+  <span class="chip chip-{{ h.key }}">
+    <strong>{{ {'codeforces': 'CF', 'atcoder': 'AC', 'kilonova': 'KN'}[h.key] }}</strong>
+    <a href="{{ h.url }}" target="_blank" rel="noopener">{{ h.handle }}</a>
+    {% if h.key == 'codeforces' and user.cf_rank %}<span class="meta">{{ user.cf_rank }}</span>{% endif %}
     {% if h.synced_at %}
-      {{ '{:,}'.format(h.count) }} submissions, updated {{ h.synced_at.strftime('%Y-%m-%d %H:%M') }} UTC
+    <span class="meta" title="Updated {{ h.synced_at.strftime('%Y-%m-%d %H:%M') }} UTC">&middot; {{ '{:,}'.format(h.count) }} submission{{ 's' if h.count != 1 }} &middot; {{ time_ago(h.synced_at) }}</span>
     {% elif not h.error %}
-      <span class="meta">loading&hellip; (reload the page in a moment)</span>
+    <span class="meta">&middot; loading&hellip;</span>
     {% endif %}
-    {% if h.error %}<span style="color:#c00;">&#9888; {{ h.error }}</span>{% endif %}
-  </div>
+    {% if h.error %}<span style="color:#c00;" title="{{ h.error }}">&#9888; {{ h.error }}</span>{% endif %}
+  </span>
   {% endfor %}
+  {% if can_edit %}
+  <form method="post" action="/users/{{ user.username }}/reload-history" style="display:inline; margin:0;">
+    <button class="btn" style="font-size:11px; padding:2px 8px;" title="Fetch the latest submissions now">&#8635; Reload</button>
+  </form>
+  {% endif %}
 </div>
 {% endif %}
 
-<details class="box" style="margin-bottom:16px;">
+{# Activity: the stats and the legend in the header, the last year below, older years on demand #}
+<div class="box" style="margin-bottom:10px;">
+  <div class="box-header" style="cursor:default; display:flex; align-items:center; flex-wrap:wrap; gap:6px 16px;">
+    <span>Activity</span>
+    <span class="stats">
+      <span title="Days in a row with a submission, up to today"><b id="streak-current">&mdash;</b> current streak</span>
+      <span><b id="streak-longest">&mdash;</b> longest</span>
+      <span><b id="streak-total">&mdash;</b> active days</span>
+    </span>
+    <span class="legend" style="margin-left:auto;">
+      <span><i style="background:#1565C0;"></i>Codeforces</span>
+      <span><i style="background:#E09000;"></i>AtCoder</span>
+      <span><i style="background:#26a69a;"></i>Kilonova</span>
+    </span>
+  </div>
+  <div class="box-body" style="padding:10px 14px; overflow-x:auto;">
+    <div id="heatmap-container"><div class="meta" style="padding:14px 0;">Loading activity&hellip;</div></div>
+    <details id="older-years" style="display:none; margin-top:6px;">
+      <summary class="meta" style="cursor:pointer;">Earlier years</summary>
+      <div id="heatmap-older" style="margin-top:6px;"></div>
+    </details>
+  </div>
+</div>
+
+{# The last 20 submissions, across judges. Closed until asked for. #}
+<details class="box" id="recent-submissions" style="margin-bottom:10px;">
   <summary class="box-header" style="cursor:pointer;">Recent submissions
     <span style="font-weight:normal; font-size:11px; color:#666;">(last {{ recent_submissions | length }}, all platforms &mdash; click to expand)</span>
   </summary>
@@ -145,144 +142,109 @@
   {% endif %}
 </details>
 
-<!-- Streaks -->
-<div style="display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap;">
-  <div class="card" style="padding:12px 20px; min-width:120px; text-align:center;">
-    <div id="streak-current" style="font-size:28px; font-weight:700; line-height:1;">—</div>
-    <div class="meta" style="margin-top:4px;">Current streak</div>
-  </div>
-  <div class="card" style="padding:12px 20px; min-width:120px; text-align:center;">
-    <div id="streak-longest" style="font-size:28px; font-weight:700; line-height:1;">—</div>
-    <div class="meta" style="margin-top:4px;">Longest streak</div>
-  </div>
-  <div class="card" style="padding:12px 20px; min-width:120px; text-align:center;">
-    <div id="streak-total" style="font-size:28px; font-weight:700; line-height:1;">—</div>
-    <div class="meta" style="margin-top:4px;">Active days</div>
-  </div>
-</div>
-
-<!-- Heatmap -->
-<div class="box">
-  <div class="box-header" style="cursor:default; display:flex; align-items:center; justify-content:space-between;">
-    Submission activity
-    <span style="display:flex; align-items:center; gap:12px; font-size:11px; font-weight:normal;">
-      <span><span style="display:inline-block;width:10px;height:10px;background:#1565C0;border-radius:2px;vertical-align:middle;margin-right:3px;"></span>Codeforces</span>
-      <span><span style="display:inline-block;width:10px;height:10px;background:#E09000;border-radius:2px;vertical-align:middle;margin-right:3px;"></span>AtCoder</span>
-    </span>
-  </div>
-  <div class="box-body" style="padding:14px; overflow-x:auto;">
-    <div id="heatmap-container">
-      <div style="color:#888; font-size:12px; padding:20px 0;">Loading activity…</div>
-    </div>
-  </div>
-</div>
-
 <script>
 (function() {
-  const CELL = 11, GAP = 2, STEP = CELL + GAP;
-  const CF_COLOR  = [21, 101, 192];
-  const ATC_COLOR = [224, 144, 0];
-  const MONTHS    = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const CELL = 13, GAP = 2, STEP = CELL + GAP, DAY = 86400000;
+  // Colour per judge; a day's colour is the average of these weighted by that day's submissions.
+  const COLORS = { cf: [21, 101, 192], atc: [224, 144, 0], kn: [38, 166, 154] };
+  const KEYS = Object.keys(COLORS);
+  const NAMES = { cf: 'CF', atc: 'AtC', kn: 'KN' };
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-  function lerp(a, b, t) { return Math.round(a + (b - a) * t); }
+  // Days are UTC days throughout, matching how the server counts them.
+  const utc = (y, m, d) => new Date(Date.UTC(y, m, d));
+  const key = t => t.toISOString().slice(0, 10);
+  const todayUtc = () => { const n = new Date(); return utc(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate()); };
+  const count = c => KEYS.reduce((n, k) => n + ((c && c[k]) || 0), 0);
+  const lerp = (a, b, t) => Math.round(a + (b - a) * t);
 
-  function getThemeVars() {
+  function themeVars() {
     const s = getComputedStyle(document.documentElement);
-    const bgRgb = s.getPropertyValue('--heatmap-bg-rgb').trim().split(',').map(Number);
-    const empty = s.getPropertyValue('--heatmap-empty').trim();
-    return { bg: bgRgb, empty };
+    return { bg: s.getPropertyValue('--heatmap-bg-rgb').trim().split(',').map(Number),
+             empty: s.getPropertyValue('--heatmap-empty').trim() };
   }
 
-  function cellColor(cf, atc, bg, empty) {
-    const total = cf + atc;
+  function cellColor(c, bg, empty) {
+    const total = count(c);
     if (!total) return empty;
     const intensity = Math.min(1, 0.25 + Math.log(total + 1) / 3.5);
-    const cfRatio = cf / total;
-    const base = [
-      lerp(ATC_COLOR[0], CF_COLOR[0], cfRatio),
-      lerp(ATC_COLOR[1], CF_COLOR[1], cfRatio),
-      lerp(ATC_COLOR[2], CF_COLOR[2], cfRatio),
-    ];
-    return `rgb(${lerp(bg[0],base[0],intensity)},${lerp(bg[1],base[1],intensity)},${lerp(bg[2],base[2],intensity)})`;
+    const base = [0, 1, 2].map(i => KEYS.reduce((sum, k) => sum + COLORS[k][i] * ((c[k] || 0) / total), 0));
+    return `rgb(${[0, 1, 2].map(i => lerp(bg[i], base[i], intensity)).join(',')})`;
   }
 
-  function buildYear(year, data, bg, empty) {
-    const jan1 = new Date(year, 0, 1);
-    const dec31 = new Date(year, 11, 31);
-    const totalDays = Math.round((dec31 - jan1) / 86400000) + 1;
-    const startDow = (jan1.getDay() + 6) % 7;
-    const cols = Math.ceil((startDow + totalDays) / 7);
-    const W = cols * STEP + 4;
-    const H = 7 * STEP + 22;
-    let rects = '', monthLabels = '', lastMonth = -1;
-    for (let d = 0; d < totalDays; d++) {
-      const col = Math.floor((startDow + d) / 7);
-      const row = (startDow + d) % 7;
-      const date = new Date(year, 0, d + 1);
-      const mm = date.getMonth();
-      const ds = `${year}-${String(mm+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
-      const cf  = data[ds]?.cf  || 0;
-      const atc = data[ds]?.atc || 0;
-      const fill = cellColor(cf, atc, bg, empty);
-      const x = col * STEP, y = row * STEP;
-      const tip = cf || atc ? `${ds}: CF ${cf}, AtC ${atc}` : ds;
-      rects += `<rect x="${x}" y="${y}" width="${CELL}" height="${CELL}" fill="${fill}" rx="2"><title>${tip}</title></rect>`;
-      if (mm !== lastMonth) {
-        monthLabels += `<text x="${x}" y="${H - 4}" fill="#888" font-size="10" font-family="Arial,sans-serif">${MONTHS[mm]}</text>`;
-        lastMonth = mm;
+  // A grid of weeks (columns) x weekdays (rows, Monday first) for the days from `start` to `end`, inclusive.
+  function buildRange(start, end, data, theme) {
+    const days = Math.round((end - start) / DAY) + 1;
+    const startDow = (start.getUTCDay() + 6) % 7;
+    const cols = Math.ceil((startDow + days) / 7);
+    const W = cols * STEP + 4, H = 7 * STEP + 16;
+    let rects = '', labels = '', lastMonth = -1;
+    for (let i = 0; i < days; i++) {
+      const day = new Date(start.getTime() + i * DAY);
+      const x = Math.floor((startDow + i) / 7) * STEP, y = ((startDow + i) % 7) * STEP;
+      const ds = key(day), c = data[ds];
+      const tip = count(c) ? `${ds}: ` + KEYS.filter(k => c[k]).map(k => `${NAMES[k]} ${c[k]}`).join(', ') : ds;
+      rects += `<rect x="${x}" y="${y}" width="${CELL}" height="${CELL}" fill="${cellColor(c, theme.bg, theme.empty)}" rx="2"><title>${tip}</title></rect>`;
+      if (day.getUTCMonth() !== lastMonth && day.getUTCDate() <= 7) {
+        labels += `<text x="${x}" y="${H - 3}" fill="#888" font-size="10" font-family="Arial,sans-serif">${MONTHS[day.getUTCMonth()]}</text>`;
+        lastMonth = day.getUTCMonth();
       }
     }
-    return `<div style="margin-bottom:18px;">
-      <div style="font-size:12px;font-weight:600;color:#aaa;margin-bottom:6px;">${year}</div>
-      <svg width="${W}" height="${H}" style="display:block;">${rects}${monthLabels}</svg>
-    </div>`;
+    return `<svg width="${W}" height="${H}" style="display:block;">${rects}${labels}</svg>`;
   }
 
-  function computeStreaks(data) {
-    const active = d => (data[d]?.cf || 0) + (data[d]?.atc || 0) > 0;
-    const toKey = d => d.toISOString().slice(0, 10);
+  function streaks(data) {
+    const active = k => count(data[k]) > 0;
     let current = 0;
-    const today = new Date(); today.setHours(0,0,0,0);
-    const d = new Date(today);
-    while (active(toKey(d))) { current++; d.setDate(d.getDate() - 1); }
+    for (let d = todayUtc(); active(key(d)); d = new Date(d.getTime() - DAY)) current++;
+    if (current === 0) {  // nothing yet today doesn't end a streak that reaches yesterday
+      for (let d = new Date(todayUtc().getTime() - DAY); active(key(d)); d = new Date(d.getTime() - DAY)) current++;
+    }
     const days = Object.keys(data).filter(active).sort();
     let longest = 0, run = 0;
-    for (let i = 0; i < days.length; i++) {
-      if (i === 0) { run = 1; }
-      else {
-        const prev = new Date(days[i-1]), cur2 = new Date(days[i]);
-        run = (cur2 - prev) / 86400000 === 1 ? run + 1 : 1;
-      }
-      if (run > longest) longest = run;
-    }
+    days.forEach((k, i) => {
+      run = i > 0 && (new Date(k) - new Date(days[i - 1])) / DAY === 1 ? run + 1 : 1;
+      longest = Math.max(longest, run);
+    });
     return { current, longest, total: days.length };
   }
 
-  let _activityData = null;
+  let activity = null;
 
-  function renderHeatmap() {
-    if (!_activityData) return;
-    const { bg, empty } = getThemeVars();
-    const cur = new Date().getFullYear();
-    const html = [cur, cur - 1, cur - 2].map(y => buildYear(y, _activityData, bg, empty)).join('');
-    document.getElementById('heatmap-container').innerHTML = html || '<p style="color:#888;font-size:12px;">No activity found.</p>';
+  function render() {
+    if (!activity) return;
+    const theme = themeVars(), today = todayUtc();
+    // the last 12 months up to today
+    document.getElementById('heatmap-container').innerHTML =
+      buildRange(new Date(today.getTime() - 364 * DAY), today, activity, theme);
+    // earlier calendar years, only those with something in them
+    const firstYear = Math.min(today.getUTCFullYear(), ...Object.keys(activity).map(k => +k.slice(0, 4)));
+    const olderStart = new Date(today.getTime() - 364 * DAY);
+    let older = '';
+    for (let y = olderStart.getUTCFullYear(); y >= firstYear; y--) {
+      const start = utc(y, 0, 1), end = y === olderStart.getUTCFullYear() ? new Date(olderStart.getTime() - DAY) : utc(y, 11, 31);
+      if (end < start) continue;
+      if (!Object.keys(activity).some(k => k >= key(start) && k <= key(end))) continue;
+      older += `<div class="meta" style="font-weight:600; margin:6px 0 3px;">${y}</div>` + buildRange(start, end, activity, theme);
+    }
+    document.getElementById('heatmap-older').innerHTML = older;
+    document.getElementById('older-years').style.display = older ? 'block' : 'none';
   }
 
-  new MutationObserver(renderHeatmap)
-    .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
   fetch('/users/{{ user.username }}/activity.json')
     .then(r => r.json())
     .then(data => {
-      _activityData = data;
-      const { current, longest, total } = computeStreaks(data);
-      document.getElementById('streak-current').textContent = current;
-      document.getElementById('streak-longest').textContent = longest;
-      document.getElementById('streak-total').textContent = total;
-      renderHeatmap();
+      activity = data;
+      const s = streaks(data);
+      document.getElementById('streak-current').textContent = s.current;
+      document.getElementById('streak-longest').textContent = s.longest;
+      document.getElementById('streak-total').textContent = s.total;
+      render();
     })
     .catch(() => {
-      document.getElementById('heatmap-container').innerHTML = '<p style="color:#888;font-size:12px;">Could not load activity.</p>';
+      document.getElementById('heatmap-container').innerHTML = '<p class="meta">Could not load activity.</p>';
     });
 })();
 </script>

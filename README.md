@@ -40,7 +40,7 @@ It never runs code or hosts problems. It is an **observer** of Codeforces, AtCod
 - **Groups anyone can run.** Users create their own groups (up to 5 each, with a member limit of their choice, up to 10) and manage them: assignments, hints, members. The admin can manage every group.
 - **Invite links, not open sign-up.** Registration needs a link. The admin makes *platform* links (create an account, optionally straight into a group); group owners make *group* links (an existing user joins). Links expire, have a use limit, can be revoked, and are stored only as a hash. Nobody is added to a group without accepting a link (the admin can always add anyone).
 - **Hints and notes per problem.** A group's owner (or the admin) adds hints and solutions; members leave notes with a self-reported time-to-solve.
-- **Profiles.** Every member's submission history across judges, a last-20 list with links to the judge, streaks and a multi-year activity heatmap.
+- **Profiles.** A compact page: a chip per judge (handle, stored submissions, freshness), streaks and a heatmap of the last year across Codeforces, AtCoder and Kilonova (earlier years on demand), and the last 20 submissions in a dropdown with links to the judge.
 - **Stays current by itself.** Histories load when a handle is saved and refresh every two hours; only new submissions are fetched.
 - **Contest recommendations.** A page that picks recent Codeforces rounds suited to a rating and division, graded by problem difficulty.
 - **Accounts done properly.** PBKDF2 password hashing, login throttling, signed sessions that end everywhere when a password changes.
@@ -48,7 +48,7 @@ It never runs code or hosts problems. It is an **observer** of Codeforces, AtCod
 <table>
   <tr>
     <td width="50%"><img src="assets/screenshots/hints.png" alt="Hints and notes dialog"><br><sub>Hints from the coach, notes with time-to-solve from members</sub></td>
-    <td width="50%"><img src="assets/screenshots/profile-dark.png" alt="Profile page, dark theme"><br><sub>Profile: history status, recent submissions across judges, heatmap (dark theme)</sub></td>
+    <td width="50%"><img src="assets/screenshots/profile-dark.png" alt="Profile page, dark theme"><br><sub>Profile: one chip per judge, a year of activity across all three judges, and recent submissions in a dropdown (dark theme)</sub></td>
   </tr>
 </table>
 

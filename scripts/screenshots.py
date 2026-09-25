@@ -78,16 +78,12 @@ def main() -> None:
 
             # 3. a member's profile: heatmap + recent submissions (light and dark)
             page.goto(f"{base}/users/ioana")
-            page.locator("details.box summary").click()
             page.wait_for_selector("#heatmap-container svg")
-            drop_old_years = "[...document.querySelectorAll('#heatmap-container > div')].slice(2).forEach(e => e.remove())"
-            page.evaluate(drop_old_years)  # the oldest year is mostly empty in the demo
+            page.locator("#recent-submissions summary").click()
             page.wait_for_timeout(500)
             shot("profile", full_page=True)
             page.evaluate("document.documentElement.setAttribute('data-theme','dark')")
             page.wait_for_timeout(600)  # switching theme redraws the heatmap
-            page.evaluate(drop_old_years)
-            page.wait_for_timeout(300)
             shot("profile-dark", full_page=True)
             browser.close()
     finally:

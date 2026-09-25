@@ -10,12 +10,12 @@ from app.platforms import registry
 logger = logging.getLogger(__name__)
 
 # Platform key -> the short name the heatmap script uses for it
-HEATMAP_PLATFORMS = {"codeforces": "cf", "atcoder": "atc"}
+HEATMAP_PLATFORMS = {"codeforces": "cf", "atcoder": "atc", "kilonova": "kn"}
 ACTIVITY_MAX_AGE = timedelta(hours=1)  # how stale a stored copy may be before a page view refreshes it
 
 
 async def user_activity(db: Session, user) -> dict[str, dict[str, int]]:
-    """{"YYYY-MM-DD": {"cf": n, "atc": n}} for the last two calendar years."""
+    """{"YYYY-MM-DD": {"cf": n, "atc": n, "kn": n}} for the last two calendar years."""
     now = datetime.now(timezone.utc)
     since = datetime(now.year - 2, 1, 1, tzinfo=timezone.utc).timestamp()
     activity: dict[str, dict[str, int]] = {}
@@ -29,5 +29,5 @@ async def user_activity(db: Session, user) -> dict[str, dict[str, int]]:
         except Exception:
             logger.warning("Could not refresh %s submissions of %s for the heatmap", key, user.username, exc_info=True)
         for day, count in submissions.daily_counts(db, user.id, key, since).items():
-            activity.setdefault(day, {"cf": 0, "atc": 0})[short] += count
+            activity.setdefault(day, {short_name: 0 for short_name in HEATMAP_PLATFORMS.values()})[short] += count
     return activity

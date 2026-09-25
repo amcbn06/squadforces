@@ -101,7 +101,9 @@ def history_status(db: Session, user) -> list[dict]:
             continue
         state = submissions.sync_state(db, user.id, key)
         rows.append({
+            "key": key,
             "label": platform.label,
+            "url": platform.profile_link(handle),
             "handle": handle,
             "count": state.submission_count if state else 0,
             "synced_at": state.last_synced_at if state else None,
