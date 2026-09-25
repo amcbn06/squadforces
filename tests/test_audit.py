@@ -489,6 +489,23 @@ class AuditWeb(base.SiteTestCase):
         self.assertNotIn("Elsewhere", flat)                                         # nothing from other groups
         self.assertNotIn("Recent changes", member.get(f"/groups/{gid}").text)      # members don't get the panel
 
+    def test_the_panel_is_always_there_for_managers_even_when_empty(self):
+        owner, member = self.make_user("owner"), self.make_user("member")
+        gid, _ = self.new_group(owner, "Team")
+        db = SessionLocal()
+        db.query(models.AuditEvent).delete()          # a group whose history predates the log: nothing recorded
+        db.commit()
+        db.close()
+        for who in (owner, self.admin):
+            flat = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", who.get(f"/groups/{gid}").text))
+            self.assertIn("Recent changes", flat)
+            self.assertIn("No changes recorded for this group yet", flat)
+        self.admin.post(f"/groups/{gid}/members/add", data={"member_username": "member"})
+        flat = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", owner.get(f"/groups/{gid}").text))
+        self.assertNotIn("No changes recorded", flat)
+        self.assertIn("Admin added a member: member", flat)
+        self.assertNotIn("Recent changes", member.get(f"/groups/{gid}").text)   # still not for plain members
+
 
 def invites_hash(token):
     from app import invites
