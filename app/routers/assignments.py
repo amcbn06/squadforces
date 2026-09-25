@@ -272,6 +272,7 @@ async def add_hint(
     text: str = Form(...),
     is_solution: str = Form(""),
     time_minutes: str = Form(""),
+    entry: str = Form("", alias="kind"),
     db: Session = Depends(get_db),
     account=Depends(require_auth),
 ):
@@ -293,17 +294,20 @@ async def add_hint(
     if len(text) > MAX_HINT_LENGTH:
         raise HTTPException(status_code=400, detail=f"Hint is too long (max {MAX_HINT_LENGTH} characters).")
 
-    if can_manage_group(account, assignment.group):
-        entry_kind = "solution" if is_solution else "hint"
-        author_id = None
-        minutes = None
-    else:
-        # Non-admin group members can only leave notes, never hints or solutions.
+    # The group's owner (or the admin) chooses what to add: a hint, a solution or a note, each with its own button.
+    # A form that names no kind is the older one: a hint, or a solution if it was ticked. Everyone else can only
+    # ever leave a note, whatever they post.
+    wants_note = entry == "note" or not can_manage_group(account, assignment.group)
+    if wants_note:
         entry_kind = "note"
-        author_id = account.id
+        author_id = account.id  # a note carries its author and how long it took
         minutes, minutes_ok = _parse_time_minutes(time_minutes)
         if not minutes_ok:
             raise HTTPException(status_code=400, detail="Time to solve must be a whole number of minutes.")
+    else:
+        entry_kind = "solution" if (is_solution or entry == "solution") else "hint"
+        author_id = None
+        minutes = None
 
     if kind == "i":
         item = db.get(AssignmentItem, target_id)

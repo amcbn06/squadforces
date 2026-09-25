@@ -1,5 +1,6 @@
 """Invite links, closed registration, group ownership, quotas and member limits, and the migration of old groups."""
 import html
+import json
 import os
 import re
 import sqlite3
@@ -542,6 +543,71 @@ class Ownership(SiteTestCase):
         # another group's owner has no say here
         r = self.other.post(f"/assignments/{self.aid}/hints/add", data={"target": f"i{i}", "text": "x"})
         self.assertEqual(r.status_code, 403)
+
+    def hints(self):
+        db = SessionLocal()
+        try:
+            return [(h.kind, h.author_id, h.time_minutes, h.text) for h in db.query(models.Hint).order_by(models.Hint.id)]
+        finally:
+            db.close()
+
+    def test_an_owner_can_leave_a_note_a_hint_or_a_solution_each_on_purpose(self):
+        i, owner_id = self.item_id, self.uid("owner")
+        add = lambda **data: self.owner.post(f"/assignments/{self.aid}/hints/add", data={"target": f"i{i}", **data})
+        self.assertEqual(add(text="my note", kind="note", time_minutes="25").status_code, 303)
+        self.assertEqual(add(text="a hint", kind="hint").status_code, 303)
+        self.assertEqual(add(text="the answer", kind="hint", is_solution="1").status_code, 303)
+        self.assertEqual(add(text="solution via kind", kind="solution").status_code, 303)
+        self.assertEqual(add(text="older form, plain").status_code, 303)                       # no kind: a hint, as before
+        self.assertEqual(add(text="older form, ticked", is_solution="1").status_code, 303)     # no kind: a solution, as before
+        self.assertEqual(self.hints(), [
+            ("note", owner_id, 25, "my note"),                    # a note has its author and the time it took
+            ("hint", None, None, "a hint"),
+            ("solution", None, None, "the answer"),
+            ("solution", None, None, "solution via kind"),
+            ("hint", None, None, "older form, plain"),
+            ("solution", None, None, "older form, ticked"),
+        ])
+
+    def test_a_managers_note_needs_a_valid_time_like_anyone_elses(self):
+        r = self.owner.post(f"/assignments/{self.aid}/hints/add", data={"target": f"i{self.item_id}", "text": "n", "kind": "note", "time_minutes": "soon"})
+        self.assertEqual(r.status_code, 400)
+        r = self.owner.post(f"/assignments/{self.aid}/hints/add", data={"target": f"i{self.item_id}", "text": "n", "kind": "note"})
+        self.assertEqual(r.status_code, 303)                                                    # the time is optional
+        self.assertEqual(self.hints(), [("note", self.uid("owner"), None, "n")])
+
+    def test_the_admin_can_leave_notes_too(self):
+        r = self.admin.post(f"/assignments/{self.aid}/hints/add", data={"target": f"i{self.item_id}", "text": "from admin", "kind": "note", "time_minutes": "5"})
+        self.assertEqual(r.status_code, 303)
+        self.assertEqual(self.hints(), [("note", 0, 5, "from admin")])
+
+    def test_a_member_can_only_ever_leave_notes_whatever_they_post(self):
+        for data in ({"kind": "hint"}, {"kind": "solution"}, {"is_solution": "1"}, {"kind": "hint", "is_solution": "1"}, {}):
+            r = self.member.post(f"/assignments/{self.aid}/hints/add", data={"target": f"i{self.item_id}", "text": "sneaky", **data})
+            self.assertEqual(r.status_code, 303)
+        kinds = {h[0] for h in self.hints()}
+        authors = {h[1] for h in self.hints()}
+        self.assertEqual((kinds, authors), ({"note"}, {self.uid("member")}))
+
+    def test_the_page_offers_managers_two_buttons_and_members_one(self):
+        for client, add_hint in ((self.owner, True), (self.admin, True), (self.member, False)):
+            page = client.get(f"/assignments/{self.aid}").text
+            self.assertEqual("var HINT_ADMIN = true;" in page, add_hint)
+            self.assertIn("'+ Add note'", page)                                               # everyone can leave a note
+            self.assertIn("'+ Add hint'", page)                                               # (only offered when HINT_ADMIN)
+        self.assertRegex(page, r"if \(HINT_ADMIN\) row\.appendChild\(addButton\(wrap, 'hint', '\+ Add hint'\)\)")
+
+    def test_notes_by_managers_show_their_author_and_can_be_edited_by_them(self):
+        i = self.item_id
+        self.owner.post(f"/assignments/{self.aid}/hints/add", data={"target": f"i{i}", "text": "mine", "kind": "note", "time_minutes": "30"})
+        page = self.owner.get(f"/assignments/{self.aid}").text
+        m = re.search(r"var HINTS = (\{.*?\});\n", page, re.S)
+        entries = json.loads(m.group(1))[f"i{i}"]
+        self.assertEqual([(e["kind"], e["author"], e["time_minutes"], e["can_edit"]) for e in entries], [("note", "owner", 30, True)])
+        note_id = entries[0]["id"]
+        self.assertEqual(self.owner.post(f"/assignments/{self.aid}/hints/{note_id}/edit", data={"text": "mine, edited", "time_minutes": "45"}).status_code, 303)
+        self.assertEqual(self.hints(), [("note", self.uid("owner"), 45, "mine, edited")])
+        self.assertEqual(self.member.post(f"/assignments/{self.aid}/hints/{note_id}/edit", data={"text": "hijack"}).status_code, 403)
 
     def test_the_owner_can_delete_an_assignment_and_mark_progress_for_members(self):
         r = self.owner.post(f"/assignments/{self.aid}/items/{self.item_id}/solved", data={"user_id": self.uid("member"), "solved": "1"})
