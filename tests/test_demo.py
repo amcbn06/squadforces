@@ -17,6 +17,8 @@ class DemoSeed(DbTestCase):
         self.assertEqual(len(items), 13)
         self.assertEqual({i.sync_status for i in items}, {"done"})  # nothing errors or stays pending
 
+        group = self.db.query(models.Group).one()
+        self.assertEqual((group.owner.username, group.max_members), ("ioana", 10))
         gym = next(i for i in items if i.external_id == "105427")
         by_user = {r.user.username: r for r in self.db.query(models.Result).filter_by(assignment_item_id=gym.id)}
         for name in demo.GYM_TEAM_MEMBERS:  # the team's virtual counts for every member

@@ -210,6 +210,7 @@ async def delete_user(
     user = db.query(User).filter(User.id == user_id).first()
     if user:
         submissions.delete_user_data(db, user_id)  # SQLite doesn't cascade these on its own
+        db.query(Group).filter(Group.owner_id == user_id).update({"owner_id": 0})  # their groups go back to the admin
         db.delete(user)
         db.commit()
     return RedirectResponse("/admin/users", status_code=303)

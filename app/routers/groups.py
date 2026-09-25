@@ -1,17 +1,24 @@
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, Request, Form, BackgroundTasks, HTTPException
+from fastapi import APIRouter, Depends, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.templating import make_templates
-from app.models import Group, User, GroupMembership, Assignment, AssignmentItem, Result
-from app.auth import require_auth, require_admin, can_edit_user
+from app.models import Group, Invite, User, GroupMembership, Assignment, AssignmentItem, Result
+from app.auth import require_auth, require_admin, can_manage_group, can_create_group
+from app.limits import (
+    MAX_GROUPS_PER_USER, MAX_GROUP_MEMBERS, DEFAULT_GROUP_MEMBERS,
+    INVITE_DEFAULT_DAYS, INVITE_MAX_DAYS, INVITE_MAX_USES,
+)
 from app import activity as activity_svc
+from app import invites as invite_svc
 
 router = APIRouter(prefix="/groups", tags=["groups"])
 templates = make_templates()
+
+ADMIN_MEMBER_CEILING = 1000  # the admin isn't held to MAX_GROUP_MEMBERS, but a limit still has to be a sane number
 
 
 def _check_group_access(account, group_id: int, db: Session):
@@ -20,6 +27,26 @@ def _check_group_access(account, group_id: int, db: Session):
     if db.query(GroupMembership).filter_by(group_id=group_id, user_id=account.id).first():
         return
     raise HTTPException(status_code=403)
+
+
+def _get_managed_group(db: Session, group_id: int, account) -> Group:
+    """The group, provided `account` may manage it (its owner or the admin); 404 / 403 otherwise."""
+    group = db.get(Group, group_id)
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    if not can_manage_group(account, group):
+        raise HTTPException(status_code=403)
+    return group
+
+
+def _member_limit_error(account, raw: int, current_members: int) -> str:
+    """Why `raw` isn't an acceptable member limit for this group ("" if it is)."""
+    ceiling = ADMIN_MEMBER_CEILING if account.user_type == "admin" else MAX_GROUP_MEMBERS
+    if raw < 1 or raw > ceiling:
+        return f"The member limit must be between 1 and {ceiling}."
+    if raw < current_members:
+        return f"The group already has {current_members} members; the limit can't be lower than that."
+    return ""
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -37,16 +64,29 @@ async def list_groups(request: Request, db: Session = Depends(get_db), account=D
             .order_by(Group.created_at.desc())
             .all()
         ) if accessible_ids else []
+    allowed, reason = can_create_group(account, db)
+    owned = db.query(Group).filter(Group.owner_id == account.id).count()
     return templates.TemplateResponse(request, "groups/list.html", {
         "request": request, "groups": groups, "account": account,
+        "can_create": allowed, "create_reason": reason, "owned": owned, "max_groups": MAX_GROUPS_PER_USER,
     })
+
+
+def _form(request: Request, account, group=None, error=None, status_code=200):
+    return templates.TemplateResponse(request, "groups/form.html", {
+        "request": request, "group": group, "error": error, "account": account,
+        "member_ceiling": ADMIN_MEMBER_CEILING if account.user_type == "admin" else MAX_GROUP_MEMBERS,
+        "default_members": DEFAULT_GROUP_MEMBERS,
+    }, status_code=status_code)
 
 
 @router.get("/new", response_class=HTMLResponse)
-async def new_group_form(request: Request, account=Depends(require_admin)):
-    return templates.TemplateResponse(request, "groups/form.html", {
-        "request": request, "group": None, "error": None, "account": account,
-    })
+async def new_group_form(request: Request, db: Session = Depends(get_db), account=Depends(require_auth)):
+    allowed, reason = can_create_group(account, db)
+    if not allowed:
+        request.session["notice"] = reason
+        return RedirectResponse("/groups/", status_code=303)
+    return _form(request, account)
 
 
 @router.post("/new")
@@ -55,18 +95,25 @@ async def create_group(
     name: str = Form(...),
     description: str = Form(""),
     hints_allowed: str = Form(""),
+    max_members: int = Form(DEFAULT_GROUP_MEMBERS),
     db: Session = Depends(get_db),
-    account=Depends(require_admin),
+    account=Depends(require_auth),
 ):
+    allowed, reason = can_create_group(account, db)
+    if not allowed:
+        raise HTTPException(status_code=403, detail=reason)
     name = name.strip()
     if not name:
-        return templates.TemplateResponse(request,
-            "groups/form.html",
-            {"request": request, "group": None, "error": "Group name is required.", "account": account},
-            status_code=422,
-        )
-    group = Group(name=name, description=description.strip() or None, hints_allowed=bool(hints_allowed))
+        return _form(request, account, error="Group name is required.", status_code=422)
+    error = _member_limit_error(account, max_members, 0)
+    if error:
+        return _form(request, account, error=error, status_code=422)
+    group = Group(name=name, description=description.strip() or None, hints_allowed=bool(hints_allowed),
+                  owner_id=account.id, max_members=max_members)
     db.add(group)
+    db.flush()
+    if account.user_type != "admin":  # the owner is the group's first member (the admin can't be a member)
+        db.add(GroupMembership(group_id=group.id, user_id=account.id))
     db.commit()
     return RedirectResponse(f"/groups/{group.id}", status_code=303)
 
@@ -79,8 +126,12 @@ async def group_detail(
     if not group:
         return HTMLResponse("Group not found", status_code=404)
     _check_group_access(account, group_id, db)
+    return _render_group(request, group, account, db)
 
+
+def _render_group(request: Request, group: Group, account, db: Session, error=None, status_code=200):
     members = [m.user for m in group.memberships]
+    manage = can_manage_group(account, group)
 
     # 30-day leaderboard
     cutoff = datetime.utcnow() - timedelta(days=30)
@@ -88,7 +139,7 @@ async def group_detail(
         db.query(AssignmentItem)
         .join(Assignment)
         .filter(
-            Assignment.group_id == group_id,
+            Assignment.group_id == group.id,
             AssignmentItem.added_at >= cutoff,
         )
         .all()
@@ -115,6 +166,12 @@ async def group_detail(
         })
     leaderboard.sort(key=lambda x: (-x["problems_solved"], -x["contests_done"]))
 
+    flash = request.session.get("new_invite")
+    new_link = None
+    if manage and flash and flash.get("group") == group.id:
+        request.session.pop("new_invite")
+        new_link = invite_svc.absolute_url(request, "/invite/" + flash["token"])
+
     return templates.TemplateResponse(request,
         "groups/detail.html",
         {
@@ -123,20 +180,25 @@ async def group_detail(
             "members": members,
             "leaderboard": leaderboard,
             "account": account,
+            "error": error,
+            "can_manage": manage,
+            "is_member": any(u.id == account.id for u in members),
+            "invites": sorted(group.invites, key=lambda i: i.created_at, reverse=True) if manage else [],
+            "invite_status": invite_svc.status,
+            "new_link": new_link,
+            "invite_defaults": {"days": INVITE_DEFAULT_DAYS, "max_days": INVITE_MAX_DAYS, "max_uses": INVITE_MAX_USES},
+            "owner_name": group.owner.username if group.owner else "the administrator",
         },
+        status_code=status_code,
     )
 
 
 @router.get("/{group_id}/edit-page", response_class=HTMLResponse)
 async def edit_group_page(
-    request: Request, group_id: int, db: Session = Depends(get_db), account=Depends(require_admin)
+    request: Request, group_id: int, db: Session = Depends(get_db), account=Depends(require_auth)
 ):
-    group = db.get(Group, group_id)
-    if not group:
-        return HTMLResponse("Group not found", status_code=404)
-    return templates.TemplateResponse(request, "groups/form.html", {
-        "request": request, "group": group, "error": None, "account": account,
-    })
+    group = _get_managed_group(db, group_id, account)
+    return _form(request, account, group=group)
 
 
 @router.post("/{group_id}/edit")
@@ -146,27 +208,31 @@ async def edit_group(
     name: str = Form(...),
     description: str = Form(""),
     hints_allowed: str = Form(""),
+    max_members: int = Form(DEFAULT_GROUP_MEMBERS),
     db: Session = Depends(get_db),
-    account=Depends(require_admin),
+    account=Depends(require_auth),
 ):
-    group = db.get(Group, group_id)
-    if not group:
-        return HTMLResponse("Group not found", status_code=404)
+    group = _get_managed_group(db, group_id, account)
+    if not name.strip():
+        return _form(request, account, group=group, error="Group name is required.", status_code=422)
+    error = _member_limit_error(account, max_members, len(group.memberships))
+    if error:
+        return _form(request, account, group=group, error=error, status_code=422)
     group.name = name.strip()
     group.description = description.strip() or None
     group.hints_allowed = bool(hints_allowed)
+    group.max_members = max_members
     db.commit()
     return RedirectResponse(f"/groups/{group_id}", status_code=303)
 
 
 @router.post("/{group_id}/delete")
 async def delete_group(
-    group_id: int, db: Session = Depends(get_db), account=Depends(require_admin)
+    group_id: int, db: Session = Depends(get_db), account=Depends(require_auth)
 ):
-    group = db.get(Group, group_id)
-    if group:
-        db.delete(group)
-        db.commit()
+    group = _get_managed_group(db, group_id, account)
+    db.delete(group)
+    db.commit()
     return RedirectResponse("/groups/", status_code=303)
 
 
@@ -178,6 +244,8 @@ async def add_member(
     db: Session = Depends(get_db),
     account=Depends(require_admin),
 ):
+    """Admin only, and it ignores the member limit: the admin can always add anyone. Everyone else brings people
+    in through an invite link, which the invitee has to accept."""
     group = db.get(Group, group_id)
     if not group:
         return HTMLResponse("Group not found", status_code=404)
@@ -199,25 +267,102 @@ async def add_member(
             db.commit()
             return RedirectResponse(f"/groups/{group_id}", status_code=303)
 
-    members = [m.user for m in group.memberships]
-    return templates.TemplateResponse(request,
-        "groups/detail.html",
-        {
-            "request": request, "group": group, "members": members,
-            "error": error, "account": account, "leaderboard": [],
-        },
-        status_code=422,
-    )
+    return _render_group(request, group, account, db, error=error, status_code=422)
 
 
 @router.post("/{group_id}/members/{user_id}/remove")
 async def remove_member(
-    group_id: int, user_id: int, db: Session = Depends(get_db), account=Depends(require_admin)
+    group_id: int, user_id: int, db: Session = Depends(get_db), account=Depends(require_auth)
 ):
+    group = _get_managed_group(db, group_id, account)
+    if user_id == group.owner_id:
+        raise HTTPException(status_code=400, detail="The owner can't be removed; transfer or delete the group instead.")
     membership = db.query(GroupMembership).filter_by(group_id=group_id, user_id=user_id).first()
     if membership:
         db.delete(membership)
         db.commit()
+    return RedirectResponse(f"/groups/{group_id}", status_code=303)
+
+
+@router.post("/{group_id}/leave")
+async def leave_group(group_id: int, request: Request, db: Session = Depends(get_db), account=Depends(require_auth)):
+    group = db.get(Group, group_id)
+    if not group:
+        return HTMLResponse("Group not found", status_code=404)
+    if group.owner_id == account.id:
+        request.session["notice"] = "You own this group, so you can't leave it. Delete it, or ask the admin to transfer it."
+        return RedirectResponse(f"/groups/{group_id}", status_code=303)
+    membership = db.query(GroupMembership).filter_by(group_id=group_id, user_id=account.id).first()
+    if membership:
+        db.delete(membership)
+        db.commit()
+    return RedirectResponse("/groups/", status_code=303)
+
+
+@router.post("/{group_id}/owner")
+async def transfer_ownership(
+    request: Request,
+    group_id: int,
+    new_owner: str = Form(...),
+    db: Session = Depends(get_db),
+    account=Depends(require_admin),
+):
+    """Admin only: hand a group to one of its members, or back to the admin."""
+    group = db.get(Group, group_id)
+    if not group:
+        return HTMLResponse("Group not found", status_code=404)
+    name = new_owner.strip()
+    if name == "admin":
+        group.owner_id = 0
+        db.commit()
+        return RedirectResponse(f"/groups/{group_id}", status_code=303)
+    user = db.query(User).filter_by(username=name).first()
+    error = None
+    if not user:
+        error = f"No user found with username '{name}'."
+    elif user.user_type != "user":
+        error = "Only accounts of type 'user' can own groups."
+    elif not any(m.user_id == user.id for m in group.memberships):
+        error = f"'{name}' isn't a member of this group; add them first."
+    elif user.id != group.owner_id and db.query(Group).filter(Group.owner_id == user.id).count() >= MAX_GROUPS_PER_USER:
+        error = f"'{name}' already owns {MAX_GROUPS_PER_USER} groups."
+    if error:
+        return _render_group(request, group, account, db, error=error, status_code=422)
+    group.owner_id = user.id
+    db.commit()
+    return RedirectResponse(f"/groups/{group_id}", status_code=303)
+
+
+# ── invite links for this group ──────────────────────────────────────────────────────────────────
+
+@router.post("/{group_id}/invites")
+async def create_group_invite(
+    request: Request,
+    group_id: int,
+    label: str = Form(""),
+    days: int = Form(INVITE_DEFAULT_DAYS),
+    max_uses: int = Form(1),
+    allows_signup: str = Form(""),
+    db: Session = Depends(get_db),
+    account=Depends(require_auth),
+):
+    group = _get_managed_group(db, group_id, account)
+    _, token = invite_svc.create(
+        db, created_by=account, group=group, label=label, days=days, max_uses=max_uses,
+        allows_signup=bool(allows_signup) and account.user_type == "admin",  # only the admin can bring in new accounts
+    )
+    request.session["new_invite"] = {"token": token, "group": group.id}
+    return RedirectResponse(f"/groups/{group_id}", status_code=303)
+
+
+@router.post("/{group_id}/invites/{invite_id}/revoke")
+async def revoke_group_invite(
+    group_id: int, invite_id: int, db: Session = Depends(get_db), account=Depends(require_auth)
+):
+    _get_managed_group(db, group_id, account)
+    invite = db.get(Invite, invite_id)
+    if invite and invite.group_id == group_id:
+        invite_svc.revoke(db, invite)
     return RedirectResponse(f"/groups/{group_id}", status_code=303)
 
 

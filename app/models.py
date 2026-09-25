@@ -37,10 +37,39 @@ class Group(Base):
     name = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
     hints_allowed = Column(Boolean, nullable=False, default=False, server_default=false())
+    # Who manages the group (remove members, write hints, invite, delete). The admin (id 0) for groups made before
+    # ownership existed; NULL is treated the same way. Admin can always manage any group.
+    owner_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    max_members = Column(Integer, nullable=True)  # joining through an invite stops at this size; admin can exceed it
     created_at = Column(DateTime, default=datetime.utcnow)
 
     memberships = relationship("GroupMembership", back_populates="group", cascade="all, delete-orphan")
+    owner = relationship("User", foreign_keys=[owner_id])
+    invites = relationship("Invite", back_populates="group", cascade="all, delete-orphan")
     assignments = relationship("Assignment", back_populates="group", cascade="all, delete-orphan")
+
+
+class Invite(Base):
+    """A link that lets someone in: create an account (platform invite, from the admin) and/or join a group.
+    Only the SHA-256 of the token is stored; the link is shown once when it is created."""
+    __tablename__ = "invites"
+
+    id = Column(Integer, primary_key=True)
+    token_hash = Column(String(64), nullable=False, unique=True, index=True)
+    token_hint = Column(String(8), nullable=False, default="")  # last characters of the token, to tell links apart
+    label = Column(String(100), nullable=True)
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=True, index=True)  # None = platform
+    created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    user_type = Column(String(20), nullable=False, default="user")  # type of an account created through it
+    allows_signup = Column(Boolean, nullable=False, default=False)  # may create an account (else: existing users only)
+    max_uses = Column(Integer, nullable=False, default=1)
+    uses = Column(Integer, nullable=False, default=0)
+    expires_at = Column(DateTime, nullable=False)
+    revoked_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    group = relationship("Group", back_populates="invites")
+    created_by = relationship("User", foreign_keys=[created_by_id])
 
 
 class GroupMembership(Base):

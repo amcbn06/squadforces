@@ -137,10 +137,38 @@ def require_auth(request: Request, db: Session = Depends(get_db)):
     return user
 
 
+def optional_user(request: Request, db: Session = Depends(get_db)):
+    """The signed-in user, or None (for pages that work with or without an account)."""
+    try:
+        return require_auth(request, db)
+    except HTTPException:
+        return None
+
+
 def require_admin(user=Depends(require_auth)):
     if user.user_type != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
+
+
+def can_manage_group(account, group) -> bool:
+    """Admin, or the group's owner, may remove members, write hints, invite people and change or delete the group."""
+    return account.user_type == "admin" or (group.owner_id is not None and group.owner_id == account.id)
+
+
+def can_create_group(account, db) -> tuple[bool, str]:
+    """(allowed, reason if not). Admin: always. A "user" account: until it owns MAX_GROUPS_PER_USER groups.
+    Students can't create groups."""
+    from app.limits import MAX_GROUPS_PER_USER
+    from app.models import Group
+    if account.user_type == "admin":
+        return True, ""
+    if account.user_type != "user":
+        return False, "Student accounts can't create groups yet."
+    owned = db.query(Group).filter(Group.owner_id == account.id).count()
+    if owned >= MAX_GROUPS_PER_USER:
+        return False, f"You already own {MAX_GROUPS_PER_USER} groups, the most one account can create."
+    return True, ""
 
 
 def can_edit_user(current_user, target_user) -> bool:

@@ -18,6 +18,7 @@ PORT = 8765
 def start_demo_server():
     os.environ["DATABASE_URL"] = "sqlite:///" + (ROOT / "demo.db").as_posix()
     os.environ["ADMIN_PASSWORD"] = "demo"
+    os.environ["ALLOW_OPEN_REGISTRATION"] = "1"
     sys.path.insert(0, str(ROOT))
     os.chdir(ROOT)
     from app.main import app

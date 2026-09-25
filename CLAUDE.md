@@ -50,7 +50,13 @@ Central entities:
 - `Result` — one row per (user, item): contest rank/rating/score or problem solved/unsolved (derived from the store, or set by hand for manual platforms)
 - `ProblemResult` — one row per (user, problem-within-contest): solved bool, solve type, attempts
 
-Existing databases get new columns through `ensure_columns()` in `app/database.py` (additive `ALTER TABLE ADD COLUMN`); new tables come from `create_all`.
+Existing databases get new columns through `ensure_columns()` in `app/database.py` (additive `ALTER TABLE ADD COLUMN`); new tables come from `create_all`; one-time data steps go in idempotent functions called right after it (`migrate_groups()`).
+
+### Groups, ownership and invites
+
+- A `Group` has an `owner_id` (the admin, id 0, for groups made before ownership existed) and a `max_members`. `can_manage_group(account, group)` in `app/auth.py` (owner or admin) gates removing members, writing hints/solutions, deleting assignments, editing/deleting the group and making invite links. Any signed-in `user`-type account may create groups until it owns `MAX_GROUPS_PER_USER` (5); students may not; the admin is exempt. Limits live in `app/limits.py`.
+- Only the admin can add someone by username (`/groups/<id>/members/add`, ignoring the member limit); everyone else joins by accepting an invite link. Members can leave; an owner can't (the admin can transfer ownership).
+- `app/invites.py` + `app/routers/invites.py`: one `Invite` shape for platform invites (admin; create an account, optionally joining a group) and group invites (owner or admin; an existing account joins; an admin-made one can also allow sign-up). Only the token's SHA-256 is stored; the link is shown once (session flash). `redeem()` is atomic. Registration (`/register`) needs a valid invite unless `ALLOW_OPEN_REGISTRATION` is set.
 
 ### Matrix view
 
@@ -63,6 +69,8 @@ Existing databases get new columns through `ensure_columns()` in `app/database.p
 | `ADMIN_PASSWORD` | Initial admin password, used only when the admin account is first created |
 | `SECRET_KEY` | Signs the session cookies; set a long random value in production |
 | `COOKIE_SECURE` | `1` to mark the session cookie Secure outside Railway (it is on automatically when `RAILWAY_ENVIRONMENT` is set) |
+| `ALLOW_OPEN_REGISTRATION` | `1` = registration without an invite (development / demo). Off by default; read on every request |
+| `PUBLIC_URL` | Base URL for invite links (else `RAILWAY_PUBLIC_DOMAIN`, else the request's address) |
 | `SYNC_INTERVAL_HOURS` | How often stored submissions and stale items refresh (default 2) |
 | `DATABASE_URL` | SQLAlchemy URL, defaults to `sqlite:///./squadforces.db` |
 | `CF_API_KEY` / `CF_API_SECRET` | Optional; enables signed CF API requests for higher rate limits |

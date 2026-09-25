@@ -15,8 +15,25 @@
     {% if error %}
     <div class="error-msg">{{ error }}</div>
     {% endif %}
+    {% if invite_note %}
+    <div class="info-msg" style="margin-bottom:10px;">{{ invite_note }}</div>
+    {% endif %}
 
+    {% if closed %}
+    <p class="meta" style="margin-bottom:10px;">Registration is by invitation. Paste the invite link you were sent.</p>
+    <form method="get" action="/register">
+      <div class="form-col" style="margin-bottom:12px;">
+        <label>Invite link or code</label>
+        <input type="text" name="invite" required autofocus autocomplete="off" placeholder="https://…/invite/…" />
+      </div>
+      <button type="submit" class="btn btn-green" style="width:100%;">Continue</button>
+    </form>
+    <p style="text-align:center; margin-top:14px; font-size:13px; color:#888;">
+      Already have an account? <a href="/login">Sign in</a>
+    </p>
+    {% else %}
     <form method="post" action="/register">
+      <input type="hidden" name="invite" value="{{ invite_token }}" />
       <p class="meta" style="margin-bottom:12px; font-size:12px; color:#888;">Login credentials</p>
       <div class="form-col" style="margin-bottom:10px;">
         <label>Username</label>
@@ -54,6 +71,7 @@
     <p style="text-align:center; margin-top:14px; font-size:13px; color:#888;">
       Already have an account? <a href="/login">Sign in</a>
     </p>
+    {% endif %}
   </div>
 </div>
 </body>

@@ -12,7 +12,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 load_dotenv()
 
-from app.database import engine, Base, get_db, SessionLocal, ensure_columns
+from app.database import engine, Base, get_db, SessionLocal, ensure_columns, migrate_groups
 from app.templating import make_templates
 from app import models
 from app.auth import (
@@ -20,17 +20,19 @@ from app.auth import (
     require_auth, can_edit_user, MIN_PASSWORD_LENGTH, safe_next, login_throttle,
 )
 from app.routers import groups, assignments, recommend
+from app.routers import invites as invites_router
 from app.routers import admin as admin_router
 from app import scheduler
 from app.scraper import codeforces as cf
 from app import activity as activity_svc
-from app import histories
+from app import histories, invites
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     ensure_columns()
+    migrate_groups()
     dummy_hash()  # build it now, so the first login for an unknown name isn't visibly slower than later ones
 
     db = SessionLocal()
@@ -108,6 +110,7 @@ app.mount("/static", RevalidatingStaticFiles(directory="static"), name="static")
 templates = make_templates()
 
 app.include_router(groups.router)
+app.include_router(invites_router.router)
 app.include_router(assignments.router)
 app.include_router(recommend.router)
 app.include_router(admin_router.router)
@@ -186,11 +189,43 @@ async def logout(request: Request):
 
 
 # --- Register ---
+def _register_page(request: Request, *, error: str = "", closed: bool = False, invite: str = "", note: str = "",
+                   status_code: int = 200):
+    return templates.TemplateResponse(request, "register.html", {
+        "request": request, "error": error, "closed": closed, "invite_token": invite, "invite_note": note,
+    }, status_code=status_code)
+
+
+def _invite_note(invite) -> str:
+    if invite.group:
+        return f"You're invited to create an account and join {invite.group.name}."
+    return "You're invited to create an account."
+
+
+def _signup_problem(invite) -> str:
+    """Why this invite can't be used to create an account ("" if it can)."""
+    problem = invites.why_unusable(invite)
+    if problem:
+        return problem
+    if not invite.allows_signup:
+        return "This link is for joining a group. Sign in to your account, then open it again."
+    return ""
+
+
 @app.get("/register", response_class=HTMLResponse)
-async def register_page(request: Request):
+async def register_page(request: Request, invite: str = "", db: Session = Depends(get_db)):
     if request.session.get("user_id") is not None:
         return RedirectResponse("/", status_code=303)
-    return templates.TemplateResponse(request, "register.html", {"request": request, "error": ""})
+    token = invites.clean_token(invite)
+    if not token:
+        if invites.open_registration():
+            return _register_page(request)
+        return _register_page(request, closed=True)
+    found = invites.find(db, token)
+    problem = "This invite link isn't valid." if found is None else _signup_problem(found)
+    if problem:
+        return _register_page(request, closed=True, error=problem, status_code=403)
+    return _register_page(request, invite=token, note=_invite_note(found))
 
 
 @app.post("/register")
@@ -204,10 +239,21 @@ async def register(
     cf_handle: str = Form(""),
     atcoder_handle: str = Form(""),
     kilonova_handle: str = Form(""),
+    invite: str = Form(""),
     db: Session = Depends(get_db),
 ):
     username = username.strip()
     cf_handle = cf_handle.strip()
+    token = invites.clean_token(invite)
+
+    found = None
+    if token or not invites.open_registration():
+        found = invites.find(db, token) if token else None
+        problem = "Registration is by invitation: paste your invite link." if not token else (
+            "This invite link isn't valid." if found is None else _signup_problem(found))
+        if problem:
+            return _register_page(request, closed=True, error=problem, status_code=403)
+    note = _invite_note(found) if found else ""
 
     error = ""
     if not username or not password:
@@ -222,27 +268,22 @@ async def register(
         error = f"Codeforces handle '{cf_handle}' is already linked to another account."
 
     if error:
-        return templates.TemplateResponse(request,
-            "register.html", {"request": request, "error": error}, status_code=422
-        )
+        return _register_page(request, error=error, invite=token, note=note, status_code=422)
 
     # Validate CF handle if provided
     cf_rating = cf_rank = None
     if cf_handle:
         user_info = await cf.validate_handle(cf_handle)
         if not user_info:
-            return templates.TemplateResponse(request,
-                "register.html",
-                {"request": request, "error": f"Codeforces handle '{cf_handle}' does not exist."},
-                status_code=422,
-            )
+            return _register_page(request, error=f"Codeforces handle '{cf_handle}' does not exist.",
+                                  invite=token, note=note, status_code=422)
         cf_rating = user_info.get("rating")
         cf_rank = user_info.get("rank")
 
     user = models.User(
         username=username,
         password_hash=await hash_password_async(password),
-        user_type="user",
+        user_type=found.user_type if found else "user",
         full_name=full_name.strip() or None,
         codeforces_handle=cf_handle or None,
         atcoder_handle=atcoder_handle.strip() or None,
@@ -251,13 +292,25 @@ async def register(
         cf_rank=cf_rank,
     )
     db.add(user)
+    joined_group_id = None
+    if found:
+        db.flush()
+        if not invites.redeem(db, found):  # someone used the last use first
+            db.rollback()
+            return _register_page(request, closed=True, error="This invite link is no longer valid.", status_code=403)
+        if found.group:
+            problem = invites.join_group(db, found.group, user)
+            if problem:
+                request.session["notice"] = f"Your account was created, but you couldn't join the group: {problem}"
+            else:
+                joined_group_id = found.group_id
     db.commit()
     user_id, session_version = user.id, user.session_version
     background_tasks.add_task(histories.load_histories, user_id, histories.apply_handle_changes(db, user))
     request.session["user_id"] = user_id
     request.session["sv"] = session_version
     db.close()  # end the request's transaction: a background task that writes must not wait on it (SQLite locks the file)
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse(f"/groups/{joined_group_id}" if joined_group_id else "/", status_code=303)
 
 
 # --- Change password ---

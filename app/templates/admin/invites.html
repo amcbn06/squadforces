@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% from "partials/invites.html" import invite_table, new_link_box %}
+{% block title %}Invites — Squadforces{% endblock %}
+
+{% block content %}
+<div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:12px;">
+  <h1>Invite links</h1>
+  <a href="/admin/users" class="btn">← Users</a>
+</div>
+
+{{ new_link_box(new_link) }}
+
+<div class="box" style="margin-bottom:14px;">
+  <div class="box-header" style="cursor:default;">Create an invite link</div>
+  <div class="box-body" style="padding:12px;">
+    <form method="post" action="/admin/invites/new" style="display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end;">
+      <div class="form-col"><label>Label <span class="meta">(optional)</span></label>
+        <input type="text" name="label" maxlength="100" placeholder="e.g. Autumn cohort"></div>
+      <div class="form-col"><label>Valid for (days)</label>
+        <input type="number" name="days" value="{{ defaults.days }}" min="1" max="{{ defaults.max_days }}" style="width:90px;"></div>
+      <div class="form-col"><label>Uses</label>
+        <input type="number" name="max_uses" value="1" min="1" max="{{ defaults.max_uses }}" style="width:90px;"></div>
+      <div class="form-col"><label>Account type</label>
+        <select name="user_type"><option value="user">user</option><option value="student">student</option></select></div>
+      <div class="form-col"><label>Also join group <span class="meta">(optional)</span></label>
+        <select name="group_id"><option value="">— none —</option>
+          {% for g in groups %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}
+        </select></div>
+      <div class="form-col"><label>&nbsp;</label><button class="btn btn-green">Create link</button></div>
+    </form>
+    <p class="meta" style="margin-top:8px;">
+      Without a group, the link lets someone create an account. With a group, they are added to it when they sign up
+      (if it has room). To let an <em>existing</em> account join a group, use the group's own invite panel.
+    </p>
+  </div>
+</div>
+
+<div class="box">
+  <div class="box-header" style="cursor:default;">All invite links</div>
+  <div class="box-body" style="padding:0 12px 8px;">{{ invite_table(invites, status, '/admin/invites/') }}</div>
+</div>
+{% endblock %}

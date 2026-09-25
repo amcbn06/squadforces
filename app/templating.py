@@ -18,6 +18,7 @@ STATIC_VERSION = _static_version()
 def make_templates() -> Jinja2Templates:
     templates = Jinja2Templates(directory="app/templates")
     templates.env.globals["static_v"] = STATIC_VERSION
+    templates.env.globals["pop_notice"] = lambda request: request.session.pop("notice", None)  # shown once
     # What differs per judge is answered by its platform module (app/platforms/), not by if-chains in templates.
     templates.env.globals["platform_of"] = registry.for_item
     templates.env.globals["platform_options"] = registry.all_platforms

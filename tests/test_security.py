@@ -211,7 +211,7 @@ class WebSecurity(unittest.TestCase):
             ("post", "/admin/users/new", {"username": "x", "password": "secret-pass1"}),
             ("post", f"/admin/users/{self.ids['member2']}/delete", {}),
             ("post", f"/admin/users/{self.ids['member2']}/edit", {"username": "member2", "cf_handle": ""}),
-            ("post", "/groups/new", {"name": "mine"}), ("post", f"/assignments/{self.aid}/delete", {}),
+            ("post", f"/assignments/{self.aid}/delete", {}),
             ("post", f"/groups/{self.gid}/members/{self.ids['member2']}/remove", {}),
         ]:
             r = getattr(self.member, method)(url, **({"data": data} if data is not None else {}))
