@@ -1,5 +1,6 @@
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime
 from urllib.parse import urlencode
 
 from dotenv import load_dotenv
@@ -25,7 +26,7 @@ from app.routers import admin as admin_router
 from app import scheduler
 from app.scraper import codeforces as cf
 from app import activity as activity_svc
-from app import histories, invites
+from app import audit, histories, invites
 
 
 @asynccontextmanager
@@ -122,6 +123,10 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     if exc.status_code == 401:
         return RedirectResponse(url="/login?" + urlencode({"next": request.url.path}), status_code=303)
     if exc.status_code == 403:
+        audit_db = getattr(request.state, "audit_db", None)
+        if audit_db is not None:  # only signed-in requests get here, and a refusal happens before any write
+            audit.record(audit_db, request, "access.denied", target_type="path", target_label=request.url.path[:200],
+                         details={"method": request.method, "reason": str(exc.detail)[:100]}, ok=False, commit=True)
         return HTMLResponse(
             "<h1>403 Forbidden</h1><p>You don't have permission to access this page.</p>",
             status_code=403,
@@ -157,6 +162,8 @@ async def login(
     throttle_key = username.strip().lower()
     wait = login_throttle.blocked_for(throttle_key)
     if wait:
+        audit.record(db, request, "login.blocked", actor=None, target_type="user", target_label=username.strip(),
+                     details={"retry_in_seconds": wait}, ok=False, commit=True)
         return templates.TemplateResponse(request,
             "login.html",
             {"request": request, "error": f"Too many failed attempts. Try again in {wait} seconds.", "next": next},
@@ -173,8 +180,13 @@ async def login(
             db.commit()
         request.session["user_id"] = user.id
         request.session["sv"] = user.session_version
+        user.last_login_at = datetime.utcnow()
+        audit.record(db, request, "login.success", actor=user, target_type="user", target_id=user.id,
+                     target_label=user.username, commit=True)
         return RedirectResponse(url=next, status_code=303)
     login_throttle.record_failure(throttle_key)
+    audit.record(db, request, "login.failed", actor=None, target_type="user", target_id=user.id if user else None,
+                 target_label=username.strip(), details={"known_account": bool(user)}, ok=False, commit=True)
     return templates.TemplateResponse(request,
         "login.html",
         {"request": request, "error": "Incorrect username or password.", "next": next},
@@ -183,7 +195,8 @@ async def login(
 
 
 @app.post("/logout")
-async def logout(request: Request):
+async def logout(request: Request, db: Session = Depends(get_db)):
+    audit.record(db, request, "logout", commit=True)  # before the session is cleared, so the actor is known
     request.session.clear()
     return RedirectResponse("/login", status_code=303)
 
@@ -304,6 +317,12 @@ async def register(
                 request.session["notice"] = f"Your account was created, but you couldn't join the group: {problem}"
             else:
                 joined_group_id = found.group_id
+    user.last_login_at = datetime.utcnow()  # registering signs them in
+    db.flush()
+    audit.record(db, request, "account.register", actor=user, target_type="user", target_id=user.id,
+                 target_label=user.username, group_id=joined_group_id,
+                 details={"account_type": user.user_type, "invite_id": found.id if found else None,
+                          "invite_label": found.label if found else None, "joined_group": bool(joined_group_id)})
     db.commit()
     user_id, session_version = user.id, user.session_version
     background_tasks.add_task(histories.load_histories, user_id, histories.apply_handle_changes(db, user))
@@ -351,6 +370,8 @@ async def change_password(
 
     account.password_hash = await hash_password_async(new_password)
     account.session_version += 1   # signs out every other device; this one is re-stamped just below
+    audit.record(db, request, "password.change", actor=account, target_type="user", target_id=account.id,
+                 target_label=account.username, details={"signed_out_other_devices": True})
     db.commit()
     request.session["sv"] = account.session_version
     return RedirectResponse("/account/password?changed=1", status_code=303)
@@ -399,6 +420,7 @@ async def edit_user_profile(
         raise HTTPException(status_code=403)
 
     handles_before = histories.handles_of(user)
+    name_before = user.full_name
     user.full_name = full_name.strip() or None
     user.atcoder_handle = atcoder_handle.strip() or None
     user.kilonova_handle = kilonova_handle.strip() or None
@@ -412,6 +434,13 @@ async def edit_user_profile(
             user.cf_rank = user_info.get("rank")
 
     to_load = histories.apply_handle_changes(db, user, handles_before)
+    handles_after = histories.handles_of(user)
+    changed = {k: [handles_before[k], handles_after[k]] for k in handles_after if handles_before[k] != handles_after[k]}
+    if user.full_name != name_before:
+        changed["full_name"] = [name_before, user.full_name]
+    if changed:
+        audit.record(db, request, "profile.edit", actor=account, target_type="user", target_id=user.id,
+                     target_label=user.username, details={"changed": changed})
     db.commit()
     background_tasks.add_task(histories.load_histories, user.id, to_load)
     db.close()  # end the request's transaction: a background task that writes must not wait on it (SQLite locks the file)

@@ -10,6 +10,11 @@
   {% if user.cf_rating %}
   <span class="meta" style="font-size:15px;">({{ user.cf_rating }})</span>
   {% endif %}
+  {% if account and (account.user_type == "admin" or account.id == user.id) %}
+  <span class="meta" title="{{ user.last_login_at.strftime('%Y-%m-%d %H:%M') ~ ' UTC' if user.last_login_at else 'No sign-in recorded yet' }}">
+    {% if user.last_login_at %}last sign-in {{ time_ago(user.last_login_at) }}{% else %}no sign-in recorded yet{% endif %}
+  </span>
+  {% endif %}
   {% if can_edit %}
   <span style="margin-left:auto; display:flex; gap:6px;">
     {% if account and account.id == user.id %}

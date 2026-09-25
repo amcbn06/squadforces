@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from app import invites
+from app import audit, invites
 from app.auth import optional_user, require_admin, require_auth
 from app.database import get_db
 from app.limits import INVITE_DEFAULT_DAYS, INVITE_MAX_DAYS, INVITE_MAX_USES
@@ -57,6 +57,9 @@ async def join_with_invite(request: Request, token: str, db: Session = Depends(g
     if not invites.redeem(db, invite):  # the last use went to someone else a moment ago
         db.rollback()
         return _landing(request, account, error="This invite link is no longer valid.", status_code=404)
+    audit.record(db, request, "group.join", actor=account, target_type="group", target_id=group.id,
+                 target_label=group.name, group_id=group.id,
+                 details={"invite_id": invite.id, "invite_label": invite.label, "invited_by": invite.created_by.username if invite.created_by else None})
     db.commit()
     return RedirectResponse(f"/groups/{group.id}", status_code=303)
 
@@ -98,13 +101,21 @@ async def admin_create_invite(
         db, created_by=account, group=group, label=label, days=days, max_uses=max_uses, user_type=user_type,
         allows_signup=True,  # an admin's link from this page is for making an account (and, if chosen, joining a group)
     )
+    audit.record(db, request, "invite.create", actor=account, target_type="invite", target_id=invite.id,
+                 target_label=invite.label or ("..." + invite.token_hint), group_id=group.id if group else None,
+                 details={"kind": "platform", "group": group.name if group else None, "max_uses": invite.max_uses,
+                          "expires": invite.expires_at.isoformat(timespec="minutes"), "account_type": invite.user_type},
+                 commit=True)
     request.session["new_invite"] = {"token": token, "group": None}
     return RedirectResponse("/admin/invites", status_code=303)
 
 
 @router.post("/admin/invites/{invite_id}/revoke")
-async def admin_revoke_invite(invite_id: int, db: Session = Depends(get_db), account=Depends(require_admin)):
+async def admin_revoke_invite(request: Request, invite_id: int, db: Session = Depends(get_db), account=Depends(require_admin)):
     invite = db.get(Invite, invite_id)
     if invite:
+        audit.record(db, request, "invite.revoke", actor=account, target_type="invite", target_id=invite.id,
+                     target_label=invite.label or ("..." + invite.token_hint), group_id=invite.group_id,
+                     details={"kind": "group" if invite.group_id else "platform", "uses": invite.uses})
         invites.revoke(db, invite)
     return RedirectResponse("/admin/invites", status_code=303)

@@ -17,6 +17,7 @@ class User(Base):
     password_hash = Column(String(200), nullable=False)
     # Bumped whenever the password changes; a session is only valid while its stored copy matches.
     session_version = Column(Integer, nullable=False, default=0, server_default="0")
+    last_login_at = Column(DateTime, nullable=True)  # UTC; None until the first sign-in after this was added
     user_type = Column(String(20), nullable=False, default="user")  # admin|user|student
     full_name = Column(String(100), nullable=True)
     codeforces_handle = Column(String(50), nullable=True)
@@ -258,6 +259,25 @@ class RatingEntry(Base):
     new_rating = Column(Integer, nullable=True)
     performance = Column(Integer, nullable=True)
     rated_at = Column(BigInteger, nullable=True)
+
+
+class AuditEvent(Base):
+    """One entry of the audit log (see app/audit.py). Not linked to users or groups, so it outlives them."""
+    __tablename__ = "audit_events"
+
+    id = Column(Integer, primary_key=True)
+    at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    actor_id = Column(Integer, nullable=True, index=True)
+    actor_name = Column(String(50), nullable=True)
+    action = Column(String(40), nullable=False, index=True)
+    target_type = Column(String(20), nullable=True)
+    target_id = Column(Integer, nullable=True)
+    target_label = Column(String(200), nullable=True)
+    group_id = Column(Integer, nullable=True, index=True)
+    details = Column(Text, nullable=True)  # JSON, secrets removed
+    ok = Column(Boolean, nullable=False, default=True)  # False for failed sign-ins and refused requests
+    ip = Column(String(45), nullable=True)
+    user_agent = Column(String(200), nullable=True)
 
 
 class CfContest(Base):

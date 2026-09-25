@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Audit log — Squadforces{% endblock %}
+
+{% block content %}
+<div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:12px;">
+  <h1>Audit log</h1>
+  <a href="/admin/users" class="btn">&larr; Users</a>
+</div>
+
+<div class="box" style="margin-bottom:12px;">
+  <div class="box-body" style="padding:10px 12px;">
+    <form method="get" action="/admin/audit" style="display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end;">
+      <div class="form-col"><label>What</label>
+        <select name="action">
+          <option value="">Everything</option>
+          {% for p in prefixes %}<option value="{{ p }}." {% if filters.action == p ~ '.' %}selected{% endif %}>All {{ p }} events</option>{% endfor %}
+          {% for code, label in labels.items() %}<option value="{{ code }}" {% if filters.action == code %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select></div>
+      <div class="form-col"><label>Who (username)</label>
+        <input type="text" name="actor" value="{{ filters.actor }}" style="width:140px;"></div>
+      <div class="form-col"><label>Group id</label>
+        <input type="text" name="group_id" value="{{ filters.group_id }}" style="width:70px;"></div>
+      <div class="form-col"><label>Last (days)</label>
+        <input type="number" name="days" value="{{ filters.days }}" min="1" max="3650" style="width:80px;"></div>
+      <div class="form-col"><label style="font-weight:normal;"><input type="checkbox" name="failures" value="1" {% if filters.failures %}checked{% endif %} style="min-width:0;"> only failures and refusals</label></div>
+      <div class="form-col"><label>&nbsp;</label><button class="btn btn-green">Filter</button></div>
+    </form>
+  </div>
+</div>
+
+<p class="meta" style="margin-bottom:6px;">
+  {{ total }} event{{ 's' if total != 1 }} &middot; page {{ page }} of {{ pages }} &middot; kept for {{ retention_days }} days.
+  IP addresses come from the proxy's X-Forwarded-For header, so treat them as leads, not proof.
+</p>
+
+<div class="box">
+  <div class="box-body" style="padding:0; overflow-x:auto;">
+    <table class="t" style="width:100%;">
+      <thead>
+        <tr><th class="l">Time (UTC)</th><th class="l">Who</th><th class="l">What</th><th class="l">IP</th></tr>
+      </thead>
+      <tbody>
+        {% for e in events %}
+        <tr {% if not e.ok %}style="background:rgba(200,0,0,.06);"{% endif %}>
+          <td class="l" style="white-space:nowrap;">{{ e.at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+          <td class="l">{% if e.actor_name %}{{ e.actor_name }}{% else %}<span class="meta">nobody</span>{% endif %}</td>
+          <td class="l">{% if not e.ok %}<span style="color:#c00;">&#9888;</span> {% endif %}{{ describe(e) }}</td>
+          <td class="l meta" title="{{ e.user_agent or '' }}">{{ e.ip or '' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="meta" style="padding:14px;">Nothing matches.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if pages > 1 %}
+{% set base = '/admin/audit?action=' ~ (filters.action | urlencode) ~ '&actor=' ~ (filters.actor | urlencode) ~ '&group_id=' ~ (filters.group_id | urlencode) ~ '&days=' ~ filters.days ~ ('&failures=1' if filters.failures else '') ~ '&page=' %}
+<p style="margin-top:10px; display:flex; gap:8px;">
+  {% if page > 1 %}<a class="btn" href="{{ base }}{{ page - 1 }}">&larr; Newer</a>{% endif %}
+  {% if page < pages %}<a class="btn" href="{{ base }}{{ page + 1 }}">Older &rarr;</a>{% endif %}
+</p>
+{% endif %}
+{% endblock %}

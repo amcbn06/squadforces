@@ -12,7 +12,7 @@ from app.models import (
     Group, Assignment, AssignmentItem, ContestProblem, Result, ProblemResult, GroupMembership, Hint,
 )
 from app.auth import require_auth, can_delete_item, can_manage_group
-from app import problems
+from app import audit, problems
 from app import sync as sync_svc
 
 router = APIRouter(prefix="/assignments", tags=["assignments"])
@@ -75,6 +75,9 @@ async def create_assignment(
         description=description.strip() or None,
     )
     db.add(assignment)
+    db.flush()
+    audit.record(db, request, "assignment.create", actor=account, target_type="assignment", target_id=assignment.id,
+                 target_label=assignment.title, group_id=group_id)
     db.commit()
     return RedirectResponse(f"/assignments/{assignment.id}", status_code=303)
 
@@ -96,7 +99,7 @@ async def assignment_detail(
 
 @router.post("/{assignment_id}/delete")
 async def delete_assignment(
-    assignment_id: int, db: Session = Depends(get_db), account=Depends(require_auth)
+    request: Request, assignment_id: int, db: Session = Depends(get_db), account=Depends(require_auth)
 ):
     assignment = db.get(Assignment, assignment_id)
     if not assignment:
@@ -104,6 +107,8 @@ async def delete_assignment(
     if not can_manage_group(account, assignment.group):  # the group's owner or the admin
         raise HTTPException(status_code=403)
     group_id = assignment.group_id
+    audit.record(db, request, "assignment.delete", actor=account, target_type="assignment", target_id=assignment.id,
+                 target_label=assignment.title, group_id=group_id, details={"items": len(assignment.items)})
     db.delete(assignment)
     db.commit()
     return RedirectResponse(f"/groups/{group_id}", status_code=303)
@@ -142,6 +147,10 @@ async def add_item(
         created_by_id=account.id,
     )
     db.add(item)
+    db.flush()
+    audit.record(db, request, "item.add", actor=account, target_type="item", target_id=item.id,
+                 target_label=link.label, group_id=assignment.group_id,
+                 details={"assignment": assignment.title, "platform": link.platform, "kind": link.type})
     db.commit()
     db.refresh(item)
 
@@ -191,6 +200,10 @@ async def bulk_add_items(
         db.add(item)
         new_items.append(item)
         added.append(p.label)
+    if added:
+        audit.record(db, request, "item.add", actor=account, target_type="assignment", target_id=assignment.id,
+                     target_label=assignment.title, group_id=assignment.group_id,
+                     details={"count": len(added), "bulk": True})
     db.commit()
 
     for item in new_items:
@@ -425,6 +438,7 @@ async def set_item_title(
 
 @router.post("/{assignment_id}/items/{item_id}/delete")
 async def delete_item(
+    request: Request,
     assignment_id: int,
     item_id: int,
     db: Session = Depends(get_db),
@@ -434,6 +448,9 @@ async def delete_item(
     if item and item.assignment_id == assignment_id:
         if not can_delete_item(account, item):
             raise HTTPException(status_code=403, detail="You can only remove items you added.")
+        audit.record(db, request, "item.delete", actor=account, target_type="item", target_id=item.id,
+                     target_label=item.display_title, group_id=item.assignment.group_id,
+                     details={"assignment": item.assignment.title, "platform": item.platform})
         db.delete(item)
         db.commit()
     return RedirectResponse(f"/assignments/{assignment_id}", status_code=303)

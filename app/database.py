@@ -27,7 +27,7 @@ def ensure_columns():
         "groups": {"hints_allowed": "BOOLEAN NOT NULL DEFAULT {false}", "owner_id": "INTEGER", "max_members": "INTEGER"},
         "assignment_items": {"rating": "INTEGER", "source_url": "VARCHAR(500)"},
         "contest_problems": {"max_score": "INTEGER"},
-        "users": {"session_version": "INTEGER NOT NULL DEFAULT 0"},
+        "users": {"session_version": "INTEGER NOT NULL DEFAULT 0", "last_login_at": "DATETIME"},
         "hints": {
             "kind": "VARCHAR(10) NOT NULL DEFAULT 'hint'",
             "author_id": "INTEGER",

@@ -6,7 +6,7 @@ from app.database import get_db
 from app.templating import make_templates
 from app.models import User, Group, GroupMembership
 from app.auth import require_admin, hash_password_async
-from app import histories, submissions
+from app import audit, histories, submissions
 from app.scraper import codeforces as cf
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -103,9 +103,17 @@ async def create_user(
     )
     db.add(new_user)
     db.flush()
+    added_to = []
     for gid in group_ids:
-        if db.get(Group, gid):
+        group = db.get(Group, gid)
+        if group:
             db.add(GroupMembership(group_id=gid, user_id=new_user.id))
+            added_to.append(group)
+    audit.record(db, request, "user.create", actor=account, target_type="user", target_id=new_user.id,
+                 target_label=new_user.username, details={"account_type": user_type, "groups": [g.name for g in added_to]})
+    for group in added_to:
+        audit.record(db, request, "group.member_add", actor=account, target_type="user", target_id=new_user.id,
+                     target_label=new_user.username, group_id=group.id, details={"group": group.name, "via": "admin user form"})
     db.commit()
     background_tasks.add_task(histories.load_histories, new_user.id, histories.apply_handle_changes(db, new_user))
     db.close()  # end the request's transaction: a background task that writes must not wait on it (SQLite locks the file)
@@ -166,6 +174,9 @@ async def edit_user(
         }, status_code=422)
 
     handles_before = histories.handles_of(edit_user)
+    changed = {}
+    old_username, old_type, old_name = edit_user.username, edit_user.user_type, edit_user.full_name
+    groups_before = {m.group_id: m.group.name for m in edit_user.memberships}
     edit_user.username = username
     password_reset = bool(password.strip())
     if password_reset:
@@ -187,10 +198,35 @@ async def edit_user(
 
     # Replace group memberships
     db.query(GroupMembership).filter_by(user_id=user_id).delete()
+    groups_after = {}
     for gid in group_ids:
-        if db.get(Group, gid):
+        group = db.get(Group, gid)
+        if group:
             db.add(GroupMembership(group_id=gid, user_id=user_id))
+            groups_after[gid] = group.name
     to_load = histories.apply_handle_changes(db, edit_user, handles_before)
+
+    handles_after = histories.handles_of(edit_user)
+    changed.update({k: [handles_before[k], handles_after[k]] for k in handles_after if handles_before[k] != handles_after[k]})
+    if edit_user.username != old_username:
+        changed["username"] = [old_username, edit_user.username]
+    if edit_user.user_type != old_type:
+        changed["account_type"] = [old_type, edit_user.user_type]
+    if edit_user.full_name != old_name:
+        changed["full_name"] = [old_name, edit_user.full_name]
+    if password_reset:
+        changed["credentials"] = "reset by admin"  # that it happened is recorded; the password never is
+    if changed:
+        audit.record(db, request, "user.edit", actor=account, target_type="user", target_id=edit_user.id,
+                     target_label=edit_user.username, details=changed)
+    for gid, name in groups_after.items():
+        if gid not in groups_before:
+            audit.record(db, request, "group.member_add", actor=account, target_type="user", target_id=edit_user.id,
+                         target_label=edit_user.username, group_id=gid, details={"group": name, "via": "admin user form"})
+    for gid, name in groups_before.items():
+        if gid not in groups_after:
+            audit.record(db, request, "group.member_remove", actor=account, target_type="user", target_id=edit_user.id,
+                         target_label=edit_user.username, group_id=gid, details={"group": name, "via": "admin user form"})
     db.commit()
     background_tasks.add_task(histories.load_histories, edit_user.id, to_load)
     if password_reset and edit_user.id == account.id:
@@ -201,6 +237,7 @@ async def edit_user(
 
 @router.post("/users/{user_id}/delete")
 async def delete_user(
+    request: Request,
     user_id: int,
     db: Session = Depends(get_db),
     account=Depends(require_admin),
@@ -209,6 +246,11 @@ async def delete_user(
         return RedirectResponse("/admin/users?error=Cannot+delete+admin", status_code=303)
     user = db.query(User).filter(User.id == user_id).first()
     if user:
+        owned = db.query(Group).filter(Group.owner_id == user_id).all()
+        audit.record(db, request, "user.delete", actor=account, target_type="user", target_id=user.id,
+                     target_label=user.username, details={"account_type": user.user_type,
+                                                          "groups_returned_to_admin": [g.name for g in owned],
+                                                          "memberships": len(user.memberships)})
         submissions.delete_user_data(db, user_id)  # SQLite doesn't cascade these on its own
         db.query(Group).filter(Group.owner_id == user_id).update({"owner_id": 0})  # their groups go back to the admin
         db.delete(user)
@@ -220,3 +262,41 @@ async def delete_user(
 @router.get("/accounts", response_class=HTMLResponse)
 async def legacy_accounts(account=Depends(require_admin)):
     return RedirectResponse("/admin/users", status_code=303)
+
+
+# ── audit log ────────────────────────────────────────────────────────────────────────────────────
+
+AUDIT_PAGE_SIZE = 100
+
+
+@router.get("/audit", response_class=HTMLResponse)
+async def audit_log(
+    request: Request,
+    action: str = "",
+    actor: str = "",
+    group_id: str = "",
+    days: int = 30,
+    failures: str = "",
+    page: int = 1,
+    db: Session = Depends(get_db),
+    account=Depends(require_admin),
+):
+    page = max(1, page)
+    days = days if 0 < days <= 3650 else 30
+    events, total = audit.search(
+        db,
+        action=action if action in audit.ACTION_LABELS or action.endswith(".") else "",
+        actor=actor,
+        group_id=int(group_id) if group_id.strip().isdigit() else None,
+        days=days,
+        only_failures=bool(failures),
+        limit=AUDIT_PAGE_SIZE,
+        offset=(page - 1) * AUDIT_PAGE_SIZE,
+    )
+    prefixes = sorted({a.split(".")[0] for a in audit.ACTION_LABELS if "." in a})
+    return templates.TemplateResponse(request, "admin/audit.html", {
+        "request": request, "account": account, "events": events, "total": total, "describe": audit.describe,
+        "labels": audit.ACTION_LABELS, "prefixes": prefixes, "page": page, "pages": max(1, -(-total // AUDIT_PAGE_SIZE)),
+        "filters": {"action": action, "actor": actor, "group_id": group_id, "days": days, "failures": failures},
+        "retention_days": audit.RETENTION_DAYS,
+    })

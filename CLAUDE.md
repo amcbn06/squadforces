@@ -58,6 +58,10 @@ Existing databases get new columns through `ensure_columns()` in `app/database.p
 - Only the admin can add someone by username (`/groups/<id>/members/add`, ignoring the member limit); everyone else joins by accepting an invite link. Members can leave; an owner can't (the admin can transfer ownership).
 - `app/invites.py` + `app/routers/invites.py`: one `Invite` shape for platform invites (admin; create an account, optionally joining a group) and group invites (owner or admin; an existing account joins; an admin-made one can also allow sign-up). Only the token's SHA-256 is stored; the link is shown once (session flash). `redeem()` is atomic. Registration (`/register`) needs a valid invite unless `ALLOW_OPEN_REGISTRATION` is set.
 
+### Audit log
+
+`app/audit.py::record(db, request, action, actor=..., target_*, group_id, details, ok, commit)` adds an `AuditEvent` to the **same session as the action**, before the action's own `db.commit()`, so they commit or roll back together; pass `commit=True` only for events with no other change (failed sign-in, refusal). It never raises. Any new route that changes users, groups, membership, invites or assignments should record an event and add its code to `ACTION_LABELS` (and to `GROUP_ACTIONS` if a group's owner may see it). Secrets are dropped by `_scrub` (any detail key containing password/token/secret/hash/cookie), so don't name a harmless flag that way. Refused (403) requests are recorded by the exception handler in `app/main.py` through `request.state.audit_db`, set by `require_auth`. Read it at `/admin/audit`; owners see `audit.for_group()` on their group page. Rows aren't linked to users or groups (they outlive them) and are pruned after `RETENTION_DAYS` by the scheduler. `User.last_login_at` is set on sign-in and registration.
+
 ### Matrix view
 
 `app/routers/assignments.py::_build_matrix()` constructs a list of `{item, cells: [{user, result, problem_results}]}` dicts passed to `assignments/detail.html`. The template renders the table and handles the Alpine.js expand/collapse for contest sub-rows without a round-trip.
