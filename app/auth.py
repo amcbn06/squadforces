@@ -134,6 +134,7 @@ def require_auth(request: Request, db: Session = Depends(get_db)):
         # Drop the dead cookie: /login and / redirect anyone who still has a user_id, which would loop forever.
         request.session.clear()
         raise HTTPException(status_code=401, detail="Not authenticated")
+    request.state.audit_db = db  # lets the 403 handler record a refusal in this same session
     return user
 
 

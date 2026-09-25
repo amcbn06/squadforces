@@ -5,6 +5,7 @@
 <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:12px;">
   <h1>Users</h1>
   <span style="display:flex; gap:6px;">
+    <a href="/admin/audit" class="btn">Audit log</a>
     <a href="/admin/invites" class="btn">Invite links</a>
     <a href="/admin/users/new" class="btn btn-green">+ New user</a>
   </span>
@@ -25,6 +26,7 @@
           <th class="l">Groups</th>
           <th class="l">Handles</th>
           <th>Created</th>
+          <th>Last login</th>
           <th style="width:100px;"></th>
         </tr>
       </thead>
@@ -56,6 +58,7 @@
             {% if u.kilonova_handle %} <span style="color:#e8c84a;">KN:{{ u.kilonova_handle }}</span>{% endif %}
           </td>
           <td class="meta">{{ u.created_at.strftime('%Y-%m-%d') }}</td>
+          <td class="meta" title="{{ u.last_login_at.strftime('%Y-%m-%d %H:%M') ~ ' UTC' if u.last_login_at else 'No sign-in recorded yet' }}">{{ time_ago(u.last_login_at) if u.last_login_at else '—' }}</td>
           <td style="text-align:right;">
             <a href="/admin/users/{{ u.id }}/edit" class="btn" style="font-size:11px; padding:2px 8px;">Edit</a>
             <form method="post" action="/admin/users/{{ u.id }}/delete" style="display:inline;"
@@ -66,7 +69,7 @@
         </tr>
         {% endfor %}
         {% if not users %}
-        <tr><td colspan="7" style="text-align:center; padding:24px; color:#888;">No users yet.</td></tr>
+        <tr><td colspan="8" style="text-align:center; padding:24px; color:#888;">No users yet.</td></tr>
         {% endif %}
       </tbody>
     </table>

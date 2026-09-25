@@ -10,7 +10,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.database import SessionLocal
 from app.models import AssignmentItem, User
 from app.sync import sync_item
-from app import histories, submissions
+from app import audit, histories, submissions
 from app import recommend as rec
 from app.platforms import registry
 
@@ -76,6 +76,18 @@ async def _auto_sync_all() -> None:
             logger.warning("Auto-sync failed for item %d: %s", item_id, exc)
         finally:
             db.close()
+
+
+async def _prune_audit_log() -> None:
+    db = SessionLocal()
+    try:
+        removed = audit.prune(db)
+        if removed:
+            logger.info("Audit log: removed %d event(s) older than %d days", removed, audit.RETENTION_DAYS)
+    except Exception:
+        logger.warning("Pruning the audit log failed", exc_info=True)
+    finally:
+        db.close()
 
 
 async def _retry_not_started() -> None:
@@ -161,6 +173,9 @@ def start() -> None:
         "interval",
         minutes=1,
     )
+
+    # Keep the audit log to its retention period (it holds IP addresses).
+    _scheduler.add_job(_prune_audit_log, "interval", hours=24, next_run_time=_dt.now() + timedelta(minutes=10))
 
     # Re-check not-started contests every 30 minutes.
     _scheduler.add_job(

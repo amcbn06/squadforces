@@ -13,6 +13,7 @@ from app.limits import (
     INVITE_DEFAULT_DAYS, INVITE_MAX_DAYS, INVITE_MAX_USES,
 )
 from app import activity as activity_svc
+from app import audit
 from app import invites as invite_svc
 
 router = APIRouter(prefix="/groups", tags=["groups"])
@@ -114,6 +115,9 @@ async def create_group(
     db.flush()
     if account.user_type != "admin":  # the owner is the group's first member (the admin can't be a member)
         db.add(GroupMembership(group_id=group.id, user_id=account.id))
+    audit.record(db, request, "group.create", actor=account, target_type="group", target_id=group.id,
+                 target_label=group.name, group_id=group.id,
+                 details={"max_members": max_members, "hints_allowed": bool(hints_allowed)})
     db.commit()
     return RedirectResponse(f"/groups/{group.id}", status_code=303)
 
@@ -188,6 +192,8 @@ def _render_group(request: Request, group: Group, account, db: Session, error=No
             "new_link": new_link,
             "invite_defaults": {"days": INVITE_DEFAULT_DAYS, "max_days": INVITE_MAX_DAYS, "max_uses": INVITE_MAX_USES},
             "owner_name": group.owner.username if group.owner else "the administrator",
+            "changes": audit.for_group(db, group.id, 20) if manage else [],
+            "describe": audit.describe,
         },
         status_code=status_code,
     )
@@ -218,19 +224,30 @@ async def edit_group(
     error = _member_limit_error(account, max_members, len(group.memberships))
     if error:
         return _form(request, account, group=group, error=error, status_code=422)
+    before = {"name": group.name, "description": group.description, "hints_allowed": group.hints_allowed,
+              "max_members": group.max_members}
     group.name = name.strip()
     group.description = description.strip() or None
     group.hints_allowed = bool(hints_allowed)
     group.max_members = max_members
+    after = {"name": group.name, "description": group.description, "hints_allowed": group.hints_allowed,
+             "max_members": group.max_members}
+    changed = {k: [before[k], after[k]] for k in after if before[k] != after[k]}
+    if changed:
+        audit.record(db, request, "group.edit", actor=account, target_type="group", target_id=group.id,
+                     target_label=group.name, group_id=group.id, details=changed)
     db.commit()
     return RedirectResponse(f"/groups/{group_id}", status_code=303)
 
 
 @router.post("/{group_id}/delete")
 async def delete_group(
-    group_id: int, db: Session = Depends(get_db), account=Depends(require_auth)
+    request: Request, group_id: int, db: Session = Depends(get_db), account=Depends(require_auth)
 ):
     group = _get_managed_group(db, group_id, account)
+    audit.record(db, request, "group.delete", actor=account, target_type="group", target_id=group.id,
+                 target_label=group.name, group_id=group.id,
+                 details={"members": len(group.memberships), "assignments": len(group.assignments)})
     db.delete(group)
     db.commit()
     return RedirectResponse("/groups/", status_code=303)
@@ -263,7 +280,11 @@ async def add_member(
         if existing:
             error = f"'{member_username}' is already in this group."
         else:
+            over_limit = bool(group.max_members and len(group.memberships) >= group.max_members)
             db.add(GroupMembership(group_id=group_id, user_id=user.id))
+            audit.record(db, request, "group.member_add", actor=account, target_type="user", target_id=user.id,
+                         target_label=user.username, group_id=group_id,
+                         details={"group": group.name, "via": "add-member form", "over_limit": over_limit})
             db.commit()
             return RedirectResponse(f"/groups/{group_id}", status_code=303)
 
@@ -272,13 +293,15 @@ async def add_member(
 
 @router.post("/{group_id}/members/{user_id}/remove")
 async def remove_member(
-    group_id: int, user_id: int, db: Session = Depends(get_db), account=Depends(require_auth)
+    request: Request, group_id: int, user_id: int, db: Session = Depends(get_db), account=Depends(require_auth)
 ):
     group = _get_managed_group(db, group_id, account)
     if user_id == group.owner_id:
         raise HTTPException(status_code=400, detail="The owner can't be removed; transfer or delete the group instead.")
     membership = db.query(GroupMembership).filter_by(group_id=group_id, user_id=user_id).first()
     if membership:
+        audit.record(db, request, "group.member_remove", actor=account, target_type="user", target_id=user_id,
+                     target_label=membership.user.username, group_id=group_id, details={"group": group.name})
         db.delete(membership)
         db.commit()
     return RedirectResponse(f"/groups/{group_id}", status_code=303)
@@ -294,6 +317,8 @@ async def leave_group(group_id: int, request: Request, db: Session = Depends(get
         return RedirectResponse(f"/groups/{group_id}", status_code=303)
     membership = db.query(GroupMembership).filter_by(group_id=group_id, user_id=account.id).first()
     if membership:
+        audit.record(db, request, "group.leave", actor=account, target_type="group", target_id=group.id,
+                     target_label=group.name, group_id=group_id)
         db.delete(membership)
         db.commit()
     return RedirectResponse("/groups/", status_code=303)
@@ -313,6 +338,9 @@ async def transfer_ownership(
         return HTMLResponse("Group not found", status_code=404)
     name = new_owner.strip()
     if name == "admin":
+        audit.record(db, request, "group.owner_transfer", actor=account, target_type="group", target_id=group.id,
+                     target_label=group.name, group_id=group.id,
+                     details={"from": group.owner.username if group.owner else "admin", "to": "admin"})
         group.owner_id = 0
         db.commit()
         return RedirectResponse(f"/groups/{group_id}", status_code=303)
@@ -328,6 +356,9 @@ async def transfer_ownership(
         error = f"'{name}' already owns {MAX_GROUPS_PER_USER} groups."
     if error:
         return _render_group(request, group, account, db, error=error, status_code=422)
+    audit.record(db, request, "group.owner_transfer", actor=account, target_type="group", target_id=group.id,
+                 target_label=group.name, group_id=group.id,
+                 details={"from": group.owner.username if group.owner else "admin", "to": user.username})
     group.owner_id = user.id
     db.commit()
     return RedirectResponse(f"/groups/{group_id}", status_code=303)
@@ -347,21 +378,29 @@ async def create_group_invite(
     account=Depends(require_auth),
 ):
     group = _get_managed_group(db, group_id, account)
-    _, token = invite_svc.create(
+    invite, token = invite_svc.create(
         db, created_by=account, group=group, label=label, days=days, max_uses=max_uses,
         allows_signup=bool(allows_signup) and account.user_type == "admin",  # only the admin can bring in new accounts
     )
+    audit.record(db, request, "invite.create", actor=account, target_type="invite", target_id=invite.id,
+                 target_label=invite.label or ("..." + invite.token_hint), group_id=group.id,
+                 details={"group": group.name, "max_uses": invite.max_uses,
+                          "expires": invite.expires_at.isoformat(timespec="minutes"),
+                          "allows_signup": invite.allows_signup}, commit=True)
     request.session["new_invite"] = {"token": token, "group": group.id}
     return RedirectResponse(f"/groups/{group_id}", status_code=303)
 
 
 @router.post("/{group_id}/invites/{invite_id}/revoke")
 async def revoke_group_invite(
-    group_id: int, invite_id: int, db: Session = Depends(get_db), account=Depends(require_auth)
+    request: Request, group_id: int, invite_id: int, db: Session = Depends(get_db), account=Depends(require_auth)
 ):
-    _get_managed_group(db, group_id, account)
+    group = _get_managed_group(db, group_id, account)
     invite = db.get(Invite, invite_id)
     if invite and invite.group_id == group_id:
+        audit.record(db, request, "invite.revoke", actor=account, target_type="invite", target_id=invite.id,
+                     target_label=invite.label or ("..." + invite.token_hint), group_id=group_id,
+                     details={"group": group.name, "uses": invite.uses})
         invite_svc.revoke(db, invite)
     return RedirectResponse(f"/groups/{group_id}", status_code=303)
 

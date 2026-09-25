@@ -1,4 +1,5 @@
 import hashlib
+from datetime import datetime
 from pathlib import Path
 
 from fastapi.templating import Jinja2Templates
@@ -15,9 +16,22 @@ def _static_version() -> str:
 STATIC_VERSION = _static_version()
 
 
+def time_ago(moment) -> str:
+    """"3 hours ago" for a UTC datetime ("" for None). Coarse on purpose."""
+    if moment is None:
+        return ""
+    seconds = max(0, int((datetime.utcnow() - moment).total_seconds()))
+    for unit, size in (("year", 31536000), ("month", 2592000), ("day", 86400), ("hour", 3600), ("minute", 60)):
+        if seconds >= size:
+            n = seconds // size
+            return f"{n} {unit}{'s' if n != 1 else ''} ago"
+    return "just now"
+
+
 def make_templates() -> Jinja2Templates:
     templates = Jinja2Templates(directory="app/templates")
     templates.env.globals["static_v"] = STATIC_VERSION
+    templates.env.globals["time_ago"] = time_ago
     templates.env.globals["pop_notice"] = lambda request: request.session.pop("notice", None)  # shown once
     # What differs per judge is answered by its platform module (app/platforms/), not by if-chains in templates.
     templates.env.globals["platform_of"] = registry.for_item
