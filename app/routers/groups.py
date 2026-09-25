@@ -96,6 +96,7 @@ async def create_group(
     name: str = Form(...),
     description: str = Form(""),
     hints_allowed: str = Form(""),
+    notes_allowed: str = Form(""),
     max_members: int = Form(DEFAULT_GROUP_MEMBERS),
     db: Session = Depends(get_db),
     account=Depends(require_auth),
@@ -110,14 +111,15 @@ async def create_group(
     if error:
         return _form(request, account, error=error, status_code=422)
     group = Group(name=name, description=description.strip() or None, hints_allowed=bool(hints_allowed),
-                  owner_id=account.id, max_members=max_members)
+                  notes_allowed=bool(notes_allowed), owner_id=account.id, max_members=max_members)
     db.add(group)
     db.flush()
     if account.user_type != "admin":  # the owner is the group's first member (the admin can't be a member)
         db.add(GroupMembership(group_id=group.id, user_id=account.id))
     audit.record(db, request, "group.create", actor=account, target_type="group", target_id=group.id,
                  target_label=group.name, group_id=group.id,
-                 details={"max_members": max_members, "hints_allowed": bool(hints_allowed)})
+                 details={"max_members": max_members, "hints_allowed": bool(hints_allowed),
+                          "notes_allowed": bool(notes_allowed)})
     db.commit()
     return RedirectResponse(f"/groups/{group.id}", status_code=303)
 
@@ -214,6 +216,7 @@ async def edit_group(
     name: str = Form(...),
     description: str = Form(""),
     hints_allowed: str = Form(""),
+    notes_allowed: str = Form(""),
     max_members: int = Form(DEFAULT_GROUP_MEMBERS),
     db: Session = Depends(get_db),
     account=Depends(require_auth),
@@ -225,13 +228,14 @@ async def edit_group(
     if error:
         return _form(request, account, group=group, error=error, status_code=422)
     before = {"name": group.name, "description": group.description, "hints_allowed": group.hints_allowed,
-              "max_members": group.max_members}
+              "notes_allowed": group.notes_allowed, "max_members": group.max_members}
     group.name = name.strip()
     group.description = description.strip() or None
     group.hints_allowed = bool(hints_allowed)
+    group.notes_allowed = bool(notes_allowed)
     group.max_members = max_members
     after = {"name": group.name, "description": group.description, "hints_allowed": group.hints_allowed,
-             "max_members": group.max_members}
+             "notes_allowed": group.notes_allowed, "max_members": group.max_members}
     changed = {k: [before[k], after[k]] for k in after if before[k] != after[k]}
     if changed:
         audit.record(db, request, "group.edit", actor=account, target_type="group", target_id=group.id,

@@ -28,7 +28,15 @@
                  {% if group and group.hints_allowed %}checked{% endif %} style="min-width:0;" />
           Allow hints
         </label>
-        <span class="meta">Shows a hint button on every problem in this group's assignments. Only the group's owner (and the admin) can write hints and solutions; everyone, owner included, can leave notes.</span>
+        <span class="meta">Only the group's owner (and the admin) can write hints and solutions.</span>
+      </div>
+      <div class="form-col" style="margin-bottom:14px;">
+        <label style="display:flex; align-items:center; gap:6px; font-weight:normal; cursor:pointer;">
+          <input type="checkbox" name="notes_allowed" value="1"
+                 {% if group and group.notes_allowed %}checked{% endif %} style="min-width:0;" />
+          Allow notes
+        </label>
+        <span class="meta">Everyone in the group, owner included, can leave notes with how long a problem took. Each switch works on its own.</span>
       </div>
       <div class="form-col" style="margin-bottom:14px;">
         <label>Member limit</label>

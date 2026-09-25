@@ -38,6 +38,7 @@ class Group(Base):
     name = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
     hints_allowed = Column(Boolean, nullable=False, default=False, server_default=false())
+    notes_allowed = Column(Boolean, nullable=False, default=False, server_default=false())
     # Who manages the group (remove members, write hints, invite, delete). The admin (id 0) for groups made before
     # ownership existed; NULL is treated the same way. Admin can always manage any group.
     owner_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

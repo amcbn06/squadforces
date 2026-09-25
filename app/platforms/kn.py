@@ -87,7 +87,7 @@ class Kilonova(Platform):
     label = "Kilonova"
     icon = "kn.png"
     handle_attr = "kilonova_handle"
-    profile_url = "https://kilonova.ro/user/{handle}"
+    profile_url = "https://kilonova.ro/profile/{handle}"
     supports_contests = True
     has_submissions = True
 

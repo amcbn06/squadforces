@@ -33,7 +33,7 @@ class WebTestCase(unittest.TestCase):
         self.addCleanup(self.client_ctx.__exit__, None, None, None)
         r = self.admin.post("/login", data={"username": "admin", "password": "test-admin-pw"})
         self.assertEqual(r.status_code, 303)
-        r = self.admin.post("/groups/new", data={"name": "Team", "hints_allowed": "1"})
+        r = self.admin.post("/groups/new", data={"name": "Team", "hints_allowed": "1", "notes_allowed": "1"})
         self.gid = int(re.search(r"/groups/(\d+)", r.headers["location"]).group(1))
         for name in ("alice", "bob"):
             self.admin.post("/admin/users/new", data={
