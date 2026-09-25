@@ -37,11 +37,13 @@ It never runs code or hosts problems. It is an **observer** of Codeforces, AtCod
 - **Solve classification that respects how you solved it.** Live, virtual, upsolved (solved after taking part) or standalone practice; the most recent accepted submission decides, so re-doing a contest virtually updates it correctly.
 - **Team virtuals.** Codeforces team submissions in gyms count for every member, exactly as Codeforces shows them.
 - **Paste links, get items.** A bulk box detects the judge, contest-or-problem and gym/EDU variant from each URL; unknown links are kept, not rejected.
-- **Hints and notes per problem.** Admins add hints and solutions; members leave notes with a self-reported time-to-solve.
+- **Groups anyone can run.** Users create their own groups (up to 5 each, with a member limit of their choice, up to 10) and manage them: assignments, hints, members. The admin can manage every group.
+- **Invite links, not open sign-up.** Registration needs a link. The admin makes *platform* links (create an account, optionally straight into a group); group owners make *group* links (an existing user joins). Links expire, have a use limit, can be revoked, and are stored only as a hash. Nobody is added to a group without accepting a link (the admin can always add anyone).
+- **Hints and notes per problem.** A group's owner (or the admin) adds hints and solutions; members leave notes with a self-reported time-to-solve.
 - **Profiles.** Every member's submission history across judges, a last-20 list with links to the judge, streaks and a multi-year activity heatmap.
 - **Stays current by itself.** Histories load when a handle is saved and refresh every two hours; only new submissions are fetched.
 - **Contest recommendations.** A page that picks recent Codeforces rounds suited to a rating and division, graded by problem difficulty.
-- **Accounts done properly.** Admin creates groups, members self-register; PBKDF2 password hashing, signed sessions that end everywhere when a password changes.
+- **Accounts done properly.** PBKDF2 password hashing, login throttling, signed sessions that end everywhere when a password changes.
 
 <table>
   <tr>
@@ -107,14 +109,18 @@ python run.py             # http://localhost:8000
 | `DATABASE_URL` | SQLAlchemy URL, default `sqlite:///./squadforces.db` |
 | `SYNC_INTERVAL_HOURS` | How often histories and stale items refresh (default `2`) |
 | `CF_API_KEY` / `CF_API_SECRET` | Optional: signed Codeforces requests |
+| `ALLOW_OPEN_REGISTRATION` | `1` lets anyone sign up without an invite. Leave it off in production; it is for local development and the demo |
+| `PUBLIC_URL` | Base URL used in invite links. Defaults to Railway's public domain, then to the address a request came to |
 
-Then sign in as `admin`, create a group, add members with their handles (their histories load straight away), and start an assignment.
+Then sign in as `admin` and open **Admin → Invite links** to make a link for each person (or cohort). They sign up with it, add their handles (their histories load straight away), and can create groups of their own or join others' through group links.
+
+**Existing databases upgrade in place.** Groups made before ownership existed become admin-owned with a member limit of 10 (or their current size if larger), so nothing is removed or moved.
 
 ## Security
 
 - Passwords are hashed with PBKDF2-HMAC-SHA256 (600,000 iterations, per-user salt); minimum length 8. Logins are throttled per username (5 failures, then 60 s, doubling), for unknown usernames too.
 - Sessions are signed cookies (`HttpOnly`, `SameSite=Lax`, `Secure` when deployed) that end on every device when a password changes. A deployment refuses to start without `SECRET_KEY`, and without `ADMIN_PASSWORD` when it creates the admin account.
-- Every route is behind sign-in except the login and register pages; group data needs membership, and admin actions need the admin account. `tests/test_security.py` checks the outsider, member and admin cases.
+- Registration is closed: an account needs an invite link (random, expiring, use-limited, revocable, stored as a hash). Every route is behind sign-in except login, the invite pages and registration; group data needs membership, group management needs ownership (or the admin), and admin actions need the admin account. `tests/test_security.py` and `tests/test_invites_groups.py` check the outsider, member, owner and admin cases.
 - The post-login redirect only accepts paths on this site, and handles are URL-encoded before they reach a judge.
 - Dependencies are pinned and audited with `pip-audit`.
 

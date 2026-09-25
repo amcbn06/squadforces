@@ -9,3 +9,4 @@ import tempfile
 _TMP = tempfile.mkdtemp(prefix="squadforces-tests-")
 os.environ["DATABASE_URL"] = "sqlite:///" + os.path.join(_TMP, "test.db").replace("\\", "/")
 os.environ["ADMIN_PASSWORD"] = "test-admin-pw"
+os.environ["ALLOW_OPEN_REGISTRATION"] = "1"  # tests that need registration closed switch it off themselves

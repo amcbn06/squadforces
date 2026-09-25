@@ -277,7 +277,8 @@ async def seed(db) -> None:
                         codeforces_handle=cf_h, atcoder_handle=ac_h, kilonova_handle=kn_h, cf_rating=1500, cf_rank="specialist")
         db.add(u)
         users[name] = u
-    group = models.Group(name="Squadforces Demo Team", description="A fictional ICPC-style team (synthetic data).", hints_allowed=True)
+    group = models.Group(name="Squadforces Demo Team", description="A fictional ICPC-style team (synthetic data).",
+                        hints_allowed=True, owner_id=users["ioana"].id, max_members=10)  # ioana runs the team
     db.add(group)
     db.flush()
     for u in users.values():
@@ -344,6 +345,7 @@ def main() -> None:
     db_path = ROOT / "demo.db"
     os.environ["DATABASE_URL"] = "sqlite:///" + db_path.as_posix()
     os.environ.setdefault("ADMIN_PASSWORD", "demo")
+    os.environ.setdefault("ALLOW_OPEN_REGISTRATION", "1")  # a demo, not a deployment
     sys.path.insert(0, str(ROOT))
     os.chdir(ROOT)
     from app.main import app

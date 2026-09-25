@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Invitation — Squadforces</title>
+  <link rel="stylesheet" href="/static/style.css?v={{ static_v }}" />
+</head>
+<body>
+<div id="login-wrap">
+  <div id="login-box" style="max-width:380px;">
+    <img src="/static/logo.svg" alt="Squadforces" style="width:72px; display:block; margin:0 auto 10px;">
+    <h1>Invitation</h1>
+
+    {% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
+
+    {% if invite and invite.group %}
+    <p style="margin:10px 0;">
+      You've been invited to join <strong>{{ invite.group.name }}</strong>{% if invite.group.owner and invite.group.owner.user_type != 'admin' %},
+      run by <strong>{{ invite.group.owner.username }}</strong>{% endif %}.
+    </p>
+    {% if invite.group.description %}<p class="meta" style="margin-bottom:10px;">{{ invite.group.description }}</p>{% endif %}
+    {% if not error %}
+      {% if account %}
+      <form method="post" action="/invite/{{ token }}/join">
+        <button class="btn btn-green" style="width:100%;">Join {{ invite.group.name }}</button>
+      </form>
+      <p class="meta" style="text-align:center; margin-top:10px;">Signed in as {{ account.username }}.</p>
+      {% else %}
+      <a href="/login?next=/invite/{{ token }}" class="btn btn-green" style="display:block; text-align:center;">Sign in to join</a>
+      {% if invite.allows_signup %}
+      <p style="text-align:center; margin-top:12px;">No account yet? <a href="/register?invite={{ token }}">Create one</a></p>
+      {% else %}
+      <p class="meta" style="text-align:center; margin-top:12px;">No account yet? Ask the administrator for an invite to create one.</p>
+      {% endif %}
+      {% endif %}
+    {% endif %}
+    {% endif %}
+
+    <p style="text-align:center; margin-top:14px; font-size:13px;"><a href="{{ '/groups/' if account else '/login' }}">{{ 'Back to your groups' if account else 'Sign in' }}</a></p>
+  </div>
+</div>
+</body>
+</html>

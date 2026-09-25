@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/invites.html" import invite_table, new_link_box %}
 {% block title %}{{ group.name }} — Squadforces{% endblock %}
 
 {% block content %}
@@ -8,8 +9,9 @@
   <div>
     <h1>{{ group.name }}</h1>
     {% if group.description %}<p class="meta">{{ group.description }}</p>{% endif %}
+    <p class="meta">Owner: {{ owner_name }}</p>
   </div>
-  {% if account and account.user_type == "admin" %}
+  {% if can_manage %}
   <div style="display:flex; gap:6px;">
     <a href="/groups/{{ group.id }}/edit-page" class="btn">Edit</a>
     <form method="post" action="/groups/{{ group.id }}/delete" style="display:inline;"
@@ -26,7 +28,7 @@
   <div>
     <div class="box">
       <div class="box-header" style="cursor:default;">
-        Members <span class="meta" style="font-weight:normal;">({{ members | length }})</span>
+        Members <span class="meta" style="font-weight:normal;">({{ members | length }}{% if group.max_members %} of {{ group.max_members }}{% endif %})</span>
       </div>
       <div class="box-body" style="padding:10px;">
         {% if error %}
@@ -50,8 +52,10 @@
                 {% if user.cf_rating %}
                 <span class="meta">({{ user.cf_rating }})</span>
                 {% endif %}<br>
+                {% if user.codeforces_handle %}
                 <a href="https://codeforces.com/profile/{{ user.codeforces_handle }}" target="_blank"
                    class="meta">CF: {{ user.codeforces_handle }}</a>
+                {% endif %}
                 {% if user.atcoder_handle %}
                 · <a href="https://atcoder.jp/users/{{ user.atcoder_handle }}" target="_blank"
                      class="meta">AC: {{ user.atcoder_handle }}</a>
@@ -61,7 +65,9 @@
                      class="meta">KN: {{ user.kilonova_handle }}</a>
                 {% endif %}
               </div>
-              {% if account and account.user_type == "admin" %}
+              {% if user.id == group.owner_id %}
+              <span class="meta" title="Owns this group">owner</span>
+              {% elif can_manage %}
               <div style="display:flex; gap:4px;">
                 <a href="/users/{{ user.username }}"
                    class="btn" style="padding:1px 7px; font-size:11px;" title="View profile">✎</a>
@@ -79,6 +85,20 @@
         {% endif %}
       </div>
     </div>
+
+    {% if is_member and group.owner_id != account.id %}
+    <form method="post" action="/groups/{{ group.id }}/leave" style="margin-top:8px;"
+          onsubmit="return confirm('Leave {{ group.name }}? You can rejoin only with a new invite link.')">
+      <button class="btn" style="width:100%;">Leave this group</button>
+    </form>
+    {% endif %}
+
+    {% if account.user_type == "admin" %}
+    <form method="post" action="/groups/{{ group.id }}/owner" style="margin-top:8px; display:flex; gap:5px;">
+      <input type="text" name="new_owner" required placeholder="New owner (member or 'admin')" style="flex:1; min-width:0;" />
+      <button class="btn" title="Hand this group to one of its members">Transfer</button>
+    </form>
+    {% endif %}
   </div>
 
   <!-- Assignments -->
@@ -111,6 +131,33 @@
   </div>
 
 </div>
+
+{% if can_manage %}
+<div class="box" style="margin-top:12px;">
+  <div class="box-header" style="cursor:default;">Invite links</div>
+  <div class="box-body" style="padding:10px 12px;">
+    {{ new_link_box(new_link) }}
+    <form method="post" action="/groups/{{ group.id }}/invites"
+          style="display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; margin-bottom:8px;">
+      <div class="form-col"><label>Label <span class="meta">(optional)</span></label>
+        <input type="text" name="label" maxlength="100" placeholder="e.g. Autumn cohort"></div>
+      <div class="form-col"><label>Valid for (days)</label>
+        <input type="number" name="days" value="{{ invite_defaults.days }}" min="1" max="{{ invite_defaults.max_days }}" style="width:90px;"></div>
+      <div class="form-col"><label>Uses</label>
+        <input type="number" name="max_uses" value="1" min="1" max="{{ invite_defaults.max_uses }}" style="width:90px;"></div>
+      {% if account.user_type == "admin" %}
+      <div class="form-col"><label style="font-weight:normal;"><input type="checkbox" name="allows_signup" value="1" style="min-width:0;"> also let new people sign up</label></div>
+      {% endif %}
+      <div class="form-col"><label>&nbsp;</label><button class="btn btn-green">Create invite link</button></div>
+    </form>
+    <p class="meta" style="margin-bottom:8px;">
+      Anyone you send the link to can join while it is valid and the group has room ({{ members | length }}{% if group.max_members %} of {{ group.max_members }}{% endif %} members now).
+      People are only added when they open the link and accept, and they can leave at any time.
+    </p>
+    {{ invite_table(invites, invite_status, '/groups/' ~ group.id ~ '/invites/') }}
+  </div>
+</div>
+{% endif %}
 
 {% if leaderboard %}
 <div class="box" style="margin-top:12px;">

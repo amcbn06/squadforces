@@ -28,7 +28,13 @@
                  {% if group and group.hints_allowed %}checked{% endif %} style="min-width:0;" />
           Allow hints
         </label>
-        <span class="meta">Shows a hint button on every problem in this group's assignments. Only the admin can write hints.</span>
+        <span class="meta">Shows a hint button on every problem in this group's assignments. Only the group's owner (and the admin) can write hints; members leave notes.</span>
+      </div>
+      <div class="form-col" style="margin-bottom:14px;">
+        <label>Member limit</label>
+        <input type="number" name="max_members" min="1" max="{{ member_ceiling }}" required style="width:100px;"
+               value="{{ (group.max_members if group and group.max_members else default_members) }}" />
+        <span class="meta">People can join through an invite link until the group has this many members (at most {{ member_ceiling }}).</span>
       </div>
       <div style="display:flex; gap:8px;">
         <button type="submit" class="btn btn-green">{{ 'Save' if group else 'Create' }}</button>

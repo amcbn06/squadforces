@@ -11,7 +11,7 @@ from sqlalchemy import or_
 from app.models import (
     Group, Assignment, AssignmentItem, ContestProblem, Result, ProblemResult, GroupMembership, Hint,
 )
-from app.auth import require_auth, require_admin, can_delete_item
+from app.auth import require_auth, can_delete_item, can_manage_group
 from app import problems
 from app import sync as sync_svc
 
@@ -96,11 +96,13 @@ async def assignment_detail(
 
 @router.post("/{assignment_id}/delete")
 async def delete_assignment(
-    assignment_id: int, db: Session = Depends(get_db), account=Depends(require_admin)
+    assignment_id: int, db: Session = Depends(get_db), account=Depends(require_auth)
 ):
     assignment = db.get(Assignment, assignment_id)
     if not assignment:
         return HTMLResponse("Not found", status_code=404)
+    if not can_manage_group(account, assignment.group):  # the group's owner or the admin
+        raise HTTPException(status_code=403)
     group_id = assignment.group_id
     db.delete(assignment)
     db.commit()
@@ -245,7 +247,7 @@ def _hint_owner_item(hint: Hint) -> AssignmentItem:
 
 
 def _can_edit_hint(account, hint: Hint) -> bool:
-    if account.user_type == "admin":
+    if can_manage_group(account, _hint_owner_item(hint).assignment.group):  # the group's owner or the admin
         return True
     return hint.kind == "note" and hint.author_id == account.id
 
@@ -278,7 +280,7 @@ async def add_hint(
     if len(text) > MAX_HINT_LENGTH:
         raise HTTPException(status_code=400, detail=f"Hint is too long (max {MAX_HINT_LENGTH} characters).")
 
-    if account.user_type == "admin":
+    if can_manage_group(account, assignment.group):
         entry_kind = "solution" if is_solution else "hint"
         author_id = None
         minutes = None
@@ -330,8 +332,8 @@ async def edit_hint(
         raise HTTPException(status_code=400, detail=f"Hint is too long (max {MAX_HINT_LENGTH} characters).")
     if text:
         hint.text = text
-        # Only an admin-authored hint/solution can be re-toggled; a note always stays a note.
-        if account.user_type == "admin" and hint.kind != "note":
+        # Only a manager-written hint/solution can be re-toggled; a note always stays a note.
+        if can_manage_group(account, owner_item.assignment.group) and hint.kind != "note":
             hint.kind = "solution" if is_solution else "hint"
         if hint.kind == "note":
             minutes, minutes_ok = _parse_time_minutes(time_minutes)
@@ -381,7 +383,7 @@ async def set_manual_solved(
     _check_group_access(account, group_id, db)
     if not item.manual_status:
         raise HTTPException(status_code=400, detail="Solve status for this problem is tracked automatically.")
-    if account.user_type != "admin" and user_id != account.id:
+    if not can_manage_group(account, item.assignment.group) and user_id != account.id:
         raise HTTPException(status_code=403, detail="You can only mark your own progress.")
     if not db.query(GroupMembership).filter_by(group_id=group_id, user_id=user_id).first():
         raise HTTPException(status_code=400, detail="That user is not a member of this group.")
@@ -516,6 +518,7 @@ def _render_detail(request: Request, assignment, account, db: Session, status_co
             "matrix": _build_matrix(assignment.items, members, db),
             "hints_map": _hints_map(assignment, db, account) if group.hints_allowed else {},
             "account": account,
+            "can_manage": can_manage_group(account, group),
             **extra,
         },
         status_code=status_code,

@@ -40,6 +40,8 @@
 </div>
 
 <div id="page">
+  {% set _notice = pop_notice(request) if request is defined else none %}
+  {% if _notice %}<div class="info-msg" style="margin-bottom:10px;">{{ _notice }}</div>{% endif %}
   {% block content %}{% endblock %}
 </div>
 

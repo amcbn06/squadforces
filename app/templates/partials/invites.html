@@ -1,0 +1,45 @@
+{# Shared by the admin's invite list and a group's invite panel. #}
+{% macro new_link_box(url) %}
+{% if url %}
+<div class="info-msg" style="margin-bottom:10px;">
+  <strong>Invite link created.</strong> Copy it now; it is only shown once.
+  <div style="display:flex; gap:6px; margin-top:6px;">
+    <input type="text" readonly value="{{ url }}" style="flex:1; min-width:0;" onclick="this.select()">
+    <button type="button" class="btn" onclick="navigator.clipboard.writeText(this.previousElementSibling.value); this.textContent='Copied'">Copy</button>
+  </div>
+</div>
+{% endif %}
+{% endmacro %}
+
+{% macro invite_table(invites, status, revoke_base) %}
+{% if invites %}
+<div style="overflow-x:auto;">
+<table class="t" style="width:100%;">
+  <thead>
+    <tr><th class="l">Invite</th><th class="l">For</th><th>Uses</th><th>Expires (UTC)</th><th>Status</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for inv in invites %}
+    {% set state = status(inv) %}
+    <tr {% if state != 'active' %}style="opacity:.55;"{% endif %}>
+      <td class="l">{{ inv.label or 'Untitled' }} <span class="meta">…{{ inv.token_hint }}</span></td>
+      <td class="l">
+        {% if inv.group %}{{ inv.group.name }}{% if inv.allows_signup %} <span class="meta">(also lets new people sign up)</span>{% endif %}
+        {% else %}New account{% if inv.user_type == 'student' %} <span class="meta">(student)</span>{% endif %}{% endif %}
+      </td>
+      <td>{{ inv.uses }}/{{ inv.max_uses }}</td>
+      <td>{{ inv.expires_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      <td>{{ state }}</td>
+      <td>{% if state == 'active' %}
+        <form method="post" action="{{ revoke_base }}{{ inv.id }}/revoke" style="margin:0;" onsubmit="return confirm('Revoke this invite link?')">
+          <button class="btn btn-red" style="padding:1px 7px; font-size:11px;">Revoke</button>
+        </form>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="meta" style="padding:8px 0;">No invite links yet.</p>
+{% endif %}
+{% endmacro %}

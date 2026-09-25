@@ -2,7 +2,7 @@
 {% block title %}{{ assignment.title }} — Squadforces{% endblock %}
 
 {% block content %}
-{% set is_admin = account and account.user_type == "admin" %}
+{% set is_admin = can_manage %}  {# the group's owner or the admin: may write hints and mark for others #}
 {% macro platform_icon(item) %}
   {% set pf = platform_of(item) %}
   {% if pf.icon %}<img src="/static/{{ pf.icon }}" class="picon" alt="{{ pf.label }}" title="{{ pf.label }}">
@@ -42,7 +42,7 @@
     <form method="post" action="/assignments/{{ assignment.id }}/sync" style="display:inline;">
       <button class="btn" title="Re-sync all items">↻ Refresh all</button>
     </form>
-    {% if account and account.user_type == "admin" %}
+    {% if can_manage %}
     <form method="post" action="/assignments/{{ assignment.id }}/delete" style="display:inline;"
           onsubmit="return confirm('Delete this assignment and all its data?')">
       <button class="btn btn-red">Delete</button>

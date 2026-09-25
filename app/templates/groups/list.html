@@ -4,21 +4,28 @@
 {% block content %}
 <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:10px;">
   <h1>Groups</h1>
-  {% if account and account.user_type == "admin" %}
-  <a href="/groups/new" class="btn btn-green">+ New group</a>
-  {% endif %}
+  <span style="display:flex; align-items:center; gap:10px;">
+    {% if account and account.user_type == "user" %}
+    <span class="meta">You own {{ owned }} of {{ max_groups }} groups</span>
+    {% endif %}
+    {% if can_create %}
+    <a href="/groups/new" class="btn btn-green">+ New group</a>
+    {% elif create_reason %}
+    <span class="meta" title="{{ create_reason }}">{{ create_reason }}</span>
+    {% endif %}
+  </span>
 </div>
 
 {% if groups %}
 <div class="card-grid">
   {% for group in groups %}
   <a href="/groups/{{ group.id }}" class="card">
-    <h3>{{ group.name }}</h3>
+    <h3>{{ group.name }}{% if group.owner_id == account.id and account.user_type != "admin" %} <span class="meta" style="font-weight:normal;">(yours)</span>{% endif %}</h3>
     {% if group.description %}
     <p class="meta" style="margin-bottom:4px;">{{ group.description }}</p>
     {% endif %}
     <span class="meta">
-      {{ group.memberships | length }} member{{ 's' if group.memberships | length != 1 }} ·
+      {{ group.memberships | length }}{% if group.max_members %}/{{ group.max_members }}{% endif %} member{{ 's' if group.memberships | length != 1 }} ·
       {{ group.assignments | length }} assignment{{ 's' if group.assignments | length != 1 }}
     </span>
   </a>
@@ -27,9 +34,12 @@
 {% else %}
 <div class="box">
   <div class="box-body" style="text-align:center; padding: 32px;">
-    <p style="color:#888;">No groups yet.</p>
-    {% if account and account.user_type == "admin" %}
+    <p style="color:#888;">You're not in any group yet.</p>
+    {% if can_create %}
     <a href="/groups/new" class="btn btn-green" style="margin-top:8px;">Create a group</a>
+    <p class="meta" style="margin-top:8px;">Or open an invite link someone sent you to join theirs.</p>
+    {% else %}
+    <p class="meta" style="margin-top:8px;">Open an invite link someone sent you to join a group.</p>
     {% endif %}
   </div>
 </div>
