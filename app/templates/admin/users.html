@@ -35,6 +35,7 @@
         <tr>
           <td class="l">
             <a href="/users/{{ u.username }}" style="color:inherit; text-decoration:none;"><strong>{{ u.username }}</strong></a>
+            {% if not can_log_in(u.password_hash) %}<span class="meta" title="No password: nobody can sign in to this account">(no sign-in)</span>{% endif %}
           </td>
           <td class="l">{{ u.full_name or '' }}</td>
           <td>

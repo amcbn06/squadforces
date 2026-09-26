@@ -51,6 +51,13 @@ def _member_limit_error(account, raw: int, current_members: int) -> str:
     return ""
 
 
+def _platform_boards(db: Session, account) -> list[dict]:
+    """The home page's leaderboards: users see the users', students the students'; the admin sees both."""
+    kinds = ("user", "student") if account.user_type == "admin" else (account.user_type,)
+    return [{"title": "Most hardworking " + ("students" if k == "student" else "users"),
+             "rows": leaderboard_svc.for_platform(db, k)} for k in kinds]
+
+
 @router.get("/", response_class=HTMLResponse)
 async def list_groups(request: Request, db: Session = Depends(get_db), account=Depends(require_auth)):
     if account.user_type == "admin":
@@ -71,7 +78,7 @@ async def list_groups(request: Request, db: Session = Depends(get_db), account=D
     return templates.TemplateResponse(request, "groups/list.html", {
         "request": request, "groups": groups, "account": account,
         "can_create": allowed, "create_reason": reason, "owned": owned, "max_groups": MAX_GROUPS_PER_USER,
-        "hardworking": leaderboard_svc.for_platform(db), "window_days": leaderboard_svc.WINDOW_DAYS,
+        "boards": _platform_boards(db, account), "window_days": leaderboard_svc.WINDOW_DAYS,
     })
 
 

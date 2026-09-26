@@ -17,7 +17,7 @@ from app.database import engine, Base, get_db, SessionLocal, ensure_columns, mig
 from app.templating import make_templates
 from app import models
 from app.auth import (
-    hash_password, hash_password_async, verify_password_async, needs_rehash, dummy_hash,
+    hash_password, hash_password_async, verify_password_async, needs_rehash, dummy_hash, can_log_in,
     require_auth, can_edit_user, MIN_PASSWORD_LENGTH, safe_next, login_throttle,
 )
 from app.routers import groups, assignments, recommend
@@ -171,8 +171,10 @@ async def login(
         )
     user = db.query(models.User).filter_by(username=username.strip()).first()
     # Always do a full hash, even for an unknown username, so response time doesn't reveal which names exist.
-    verified = await verify_password_async(password, user.password_hash if user else dummy_hash())
-    if user and verified:
+    # An account with no password can't be signed in to, but takes the same time to refuse.
+    loginable = bool(user) and can_log_in(user.password_hash)
+    verified = await verify_password_async(password, user.password_hash if loginable else dummy_hash())
+    if loginable and verified:
         login_throttle.reset(throttle_key)
         if needs_rehash(user.password_hash):
             # Legacy SHA-256 hash (or fewer iterations than now): upgrade it while we hold the plaintext.

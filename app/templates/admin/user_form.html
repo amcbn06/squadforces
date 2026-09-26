@@ -23,8 +23,15 @@
 
       <div class="form-col" style="margin-bottom:10px;">
         <label>Password{% if edit_user %} <span class="meta">(leave blank to keep current)</span>{% endif %}</label>
-        <input type="password" name="password" {% if not edit_user %}required{% endif %}
-               autocomplete="new-password" />
+        <input type="password" name="password" autocomplete="new-password" />
+        <span class="meta" style="color:#888;">
+          {% if edit_user and not can_log_in(edit_user.password_hash) %}
+          This account has no password, so nobody can sign in to it. Set one to let them.
+          {% elif not edit_user %}
+          Leave empty to create an account that can't be signed in to: it can be added to groups and appears in the
+          leaderboards, but it is only there to follow someone's activity.
+          {% endif %}
+        </span>
       </div>
 
       <div class="form-col" style="margin-bottom:10px;">
