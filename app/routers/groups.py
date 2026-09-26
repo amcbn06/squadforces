@@ -1,18 +1,17 @@
-from datetime import datetime, timedelta
-
 from fastapi import APIRouter, Depends, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.templating import make_templates
-from app.models import Group, Invite, User, GroupMembership, Assignment, AssignmentItem, Result
+from app.models import Group, Invite, User, GroupMembership
 from app.auth import require_auth, require_admin, can_manage_group, can_create_group
 from app.limits import (
     MAX_GROUPS_PER_USER, MAX_GROUP_MEMBERS, DEFAULT_GROUP_MEMBERS,
     INVITE_DEFAULT_DAYS, INVITE_MAX_DAYS, INVITE_MAX_USES,
 )
 from app import activity as activity_svc
+from app import leaderboard as leaderboard_svc
 from app import audit
 from app import invites as invite_svc
 
@@ -70,6 +69,7 @@ async def list_groups(request: Request, db: Session = Depends(get_db), account=D
     return templates.TemplateResponse(request, "groups/list.html", {
         "request": request, "groups": groups, "account": account,
         "can_create": allowed, "create_reason": reason, "owned": owned, "max_groups": MAX_GROUPS_PER_USER,
+        "hardworking": leaderboard_svc.for_platform(db), "window_days": leaderboard_svc.WINDOW_DAYS,
     })
 
 
@@ -139,38 +139,7 @@ def _render_group(request: Request, group: Group, account, db: Session, error=No
     members = [m.user for m in group.memberships]
     manage = can_manage_group(account, group)
 
-    # 30-day leaderboard
-    cutoff = datetime.utcnow() - timedelta(days=30)
-    recent_items = (
-        db.query(AssignmentItem)
-        .join(Assignment)
-        .filter(
-            Assignment.group_id == group.id,
-            AssignmentItem.added_at >= cutoff,
-        )
-        .all()
-    )
-
-    leaderboard = []
-    for user in members:
-        problems_solved = 0
-        contests_done = 0
-        for item in recent_items:
-            result = db.query(Result).filter_by(assignment_item_id=item.id, user_id=user.id).first()
-            if item.type == "contest":
-                if result and result.participated:
-                    contests_done += 1
-                if result and result.problems_solved_count:
-                    problems_solved += result.problems_solved_count
-            elif item.type == "problem":
-                if result and result.solved:
-                    problems_solved += 1
-        leaderboard.append({
-            "user": user,
-            "problems_solved": problems_solved,
-            "contests_done": contests_done,
-        })
-    leaderboard.sort(key=lambda x: (-x["problems_solved"], -x["contests_done"]))
+    leaderboard = leaderboard_svc.for_group(db, group)
 
     flash = request.session.get("new_invite")
     new_link = None
@@ -185,6 +154,7 @@ def _render_group(request: Request, group: Group, account, db: Session, error=No
             "group": group,
             "members": members,
             "leaderboard": leaderboard,
+            "window_days": leaderboard_svc.WINDOW_DAYS,
             "account": account,
             "error": error,
             "can_manage": manage,

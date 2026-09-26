@@ -49,6 +49,8 @@ def ensure_columns():
                     if (table, name) == ("groups", "notes_allowed") and "hints_allowed" in existing:
                         # Notes used to be switched on together with hints: a group keeps what it had.
                         conn.execute(text("UPDATE groups SET notes_allowed = hints_allowed"))
+        if insp.has_table("submissions"):
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_submissions_recent ON submissions (submitted_at)"))
         # Older deploys stored solution/hint as a boolean on a since-removed column; fold it into kind.
         if "is_solution" in existing_by_table.get("hints", set()):
             conn.execute(text("UPDATE hints SET kind = 'solution' WHERE is_solution = 1"))

@@ -16,6 +16,8 @@
   </span>
 </div>
 
+<div class="home-layout">
+<div class="home-main">
 {% if groups %}
 <div class="card-grid">
   {% for group in groups %}
@@ -44,4 +46,31 @@
   </div>
 </div>
 {% endif %}
+</div>
+
+<aside class="home-side">
+  <div class="box">
+    <div class="box-header" style="cursor:default;">Most hardworking — last {{ window_days }} days</div>
+    <div class="box-body" style="padding:0;">
+      {% if hardworking %}
+      <table class="t">
+        <thead><tr><th style="width:32px;">#</th><th class="l">User</th><th title="Problems first solved in this period">Solved</th></tr></thead>
+        <tbody>
+          {% for row in hardworking %}
+          <tr>
+            <td>{{ row.rank }}</td>
+            <td class="l"><a href="/users/{{ row.user.username }}" style="color:inherit; text-decoration:none;"><strong>{{ row.user.username }}</strong></a></td>
+            <td><strong>{{ row.solved }}</strong></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="meta" style="padding:10px 14px;">Nobody has solved a new problem yet in this period.</p>
+      {% endif %}
+    </div>
+  </div>
+  <p class="meta" style="margin-top:6px;">Problems first solved in the period, on any judge; solving one again doesn't count.</p>
+</aside>
+</div>
 {% endblock %}

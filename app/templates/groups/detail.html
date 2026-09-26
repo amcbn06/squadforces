@@ -186,7 +186,7 @@
 {% if leaderboard %}
 <div class="box" style="margin-top:12px;">
   <div class="box-header" style="cursor:default;">
-    Leaderboard — last 30 days
+    Leaderboard — new problems solved in the last {{ window_days }} days
   </div>
   <div class="box-body" style="padding:0;">
     <table class="t">
@@ -194,20 +194,18 @@
         <tr>
           <th style="width:32px;">#</th>
           <th class="l">Member</th>
-          <th>Problems solved</th>
-          <th>Contests (live/virtual)</th>
+          <th>Solved</th>
         </tr>
       </thead>
       <tbody>
         {% for row in leaderboard %}
         <tr>
-          <td>{{ loop.index }}</td>
+          <td>{{ row.rank }}</td>
           <td class="l">
             <a href="/users/{{ row.user.username }}" style="color:inherit; text-decoration:none;"><strong>{{ row.user.username }}</strong></a>
             {% if row.user.cf_rating %}<span class="meta"> ({{ row.user.cf_rating }})</span>{% endif %}
           </td>
-          <td>{% if row.problems_solved %}<strong>{{ row.problems_solved }}</strong>{% else %}<span style="color:#ccc;">0</span>{% endif %}</td>
-          <td>{% if row.contests_done %}<strong>{{ row.contests_done }}</strong>{% else %}<span style="color:#ccc;">0</span>{% endif %}</td>
+          <td>{% if row.solved %}<strong>{{ row.solved }}</strong>{% else %}<span style="color:#ccc;">0</span>{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>
