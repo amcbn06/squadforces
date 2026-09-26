@@ -112,6 +112,12 @@ class Platform:
         """Readable name of the submission's problem."""
         return sub.problem_name or sub.problem_key
 
+    def problem_keys(self, item) -> set[str]:
+        """The `Submission.problem_key`s of the problems this item covers (a problem, or a contest's problems)."""
+        if item.type == "problem":
+            return {item.external_id}
+        return {cp.platform_problem_id for cp in item.contest_problems}
+
     def manual_status(self, item) -> bool:
         """True where solve status can't be fetched, so members mark it themselves and enter the title."""
         return False

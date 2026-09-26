@@ -397,3 +397,8 @@ input:focus, textarea:focus, select:focus { outline: 1px solid var(--border-focu
 .stats b { color: var(--text); font-size: 14px; }
 .legend { display: inline-flex; align-items: center; gap: 12px; font-size: 11px; font-weight: normal; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 3px; vertical-align: middle; }
+
+.home-layout { display: flex; gap: 16px; align-items: flex-start; }
+.home-main { flex: 1; min-width: 0; }
+.home-side { width: 300px; flex-shrink: 0; }
+@media (max-width: 800px) { .home-layout { flex-direction: column; } .home-side { width: 100%; } }

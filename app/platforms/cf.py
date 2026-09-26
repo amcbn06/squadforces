@@ -169,6 +169,11 @@ class Codeforces(Platform):
             return f"https://codeforces.com/gym/{contest_id}/problem/{index}"
         return f"https://codeforces.com/problemset/problem/{contest_id}/{index}"
 
+    def problem_keys(self, item) -> set[str]:
+        if item.type == "problem":
+            return {item.external_id}
+        return {f"{item.external_id}/{cp.index}" for cp in item.contest_problems}
+
     def problem_url(self, item, contest_problem) -> str:
         if is_gym_id(item.external_id):
             return f"https://codeforces.com/gym/{item.external_id}/problem/{contest_problem.index}"

@@ -203,6 +203,7 @@ class Submission(Base):
         UniqueConstraint("user_id", "platform", "submission_id"),
         Index("ix_submissions_problem", "user_id", "platform", "problem_key"),
         Index("ix_submissions_contest", "user_id", "platform", "contest_key"),
+        Index("ix_submissions_recent", "submitted_at"),  # the leaderboards look at the last 30 days only
     )
 
     id = Column(Integer, primary_key=True)
