@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.templating import make_templates
 from app.models import User, Group, GroupMembership
-from app.auth import require_admin, hash_password_async
+from app.auth import require_admin, hash_password_async, NO_LOGIN
 from app import audit, histories, submissions
 from app.scraper import codeforces as cf
 
@@ -53,7 +53,7 @@ async def create_user(
     request: Request,
     background_tasks: BackgroundTasks,
     username: str = Form(...),
-    password: str = Form(...),
+    password: str = Form(""),
     user_type: str = Form("user"),
     full_name: str = Form(""),
     cf_handle: str = Form(""),
@@ -67,8 +67,8 @@ async def create_user(
     cf_handle = cf_handle.strip()
     error = None
 
-    if not username or not password:
-        error = "Username and password are required."
+    if not username:
+        error = "Username is required."
     elif db.query(User).filter_by(username=username).first():
         error = f"Username '{username}' is already taken."
     elif cf_handle and db.query(User).filter_by(codeforces_handle=cf_handle).first():
@@ -92,7 +92,8 @@ async def create_user(
     user_type = user_type if user_type in ("user", "student") else "user"
     new_user = User(
         username=username,
-        password_hash=await hash_password_async(password),
+        # No password = an account to follow, not to sign in to
+        password_hash=await hash_password_async(password) if password else NO_LOGIN,
         user_type=user_type,
         full_name=full_name.strip() or None,
         codeforces_handle=cf_handle or None,
@@ -110,7 +111,8 @@ async def create_user(
             db.add(GroupMembership(group_id=gid, user_id=new_user.id))
             added_to.append(group)
     audit.record(db, request, "user.create", actor=account, target_type="user", target_id=new_user.id,
-                 target_label=new_user.username, details={"account_type": user_type, "groups": [g.name for g in added_to]})
+                 target_label=new_user.username, details={"account_type": user_type, "groups": [g.name for g in added_to],
+                          **({} if password else {"sign_in": "disabled (no password)"})})
     for group in added_to:
         audit.record(db, request, "group.member_add", actor=account, target_type="user", target_id=new_user.id,
                      target_label=new_user.username, group_id=group.id, details={"group": group.name, "via": "admin user form"})

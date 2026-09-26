@@ -92,10 +92,11 @@ def for_group(db: Session, group: models.Group) -> list[Row]:
     return _ranked([Row(u, len(solved.get(u.id, set()) & wanted)) for u in members])
 
 
-def for_platform(db: Session, limit: int = GLOBAL_LIMIT) -> list[Row]:
-    """The most hardworking accounts (students and the admin aside): new problems solved in the last 30 days,
-    on any judge, whether or not they are in an assignment. Accounts with none are left out."""
-    users = db.query(models.User).filter(models.User.user_type == "user").all()
+def for_platform(db: Session, user_type: str = "user", limit: int = GLOBAL_LIMIT) -> list[Row]:
+    """The most hardworking accounts of one type ("user" or "student"; the admin is never ranked): new problems
+    solved in the last 30 days, on any judge, whether or not they are in an assignment. Accounts with none are
+    left out. Users are ranked against users and students against students."""
+    users = db.query(models.User).filter(models.User.user_type == user_type).all()
     by_id = {u.id: u for u in users}
     solved = new_solves(db, by_id)
     rows = [Row(by_id[uid], len(s)) for uid, s in solved.items() if s]

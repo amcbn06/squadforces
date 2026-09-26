@@ -873,3 +873,91 @@ class AdminInvitePage(SiteTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AccountTypesAndDummyAccounts(SiteTestCase):
+    def solve(self, username, problem, days_ago=1, platform="codeforces"):
+        db = SessionLocal()
+        try:
+            uid = db.query(models.User).filter_by(username=username).one().id
+            if not db.query(models.SubmissionSync).filter_by(user_id=uid, platform=platform).first():
+                db.add(models.SubmissionSync(user_id=uid, platform=platform, last_synced_at=datetime.utcnow(),
+                                             full_sync_at=datetime.utcnow()))
+            db.add(models.Submission(user_id=uid, platform=platform, submission_id=abs(hash((username, problem))) % 10**9,
+                                     problem_key=problem, verdict="AC", accepted=True,
+                                     submitted_at=int((datetime.utcnow() - timedelta(days=days_ago)).timestamp())))
+            db.commit()
+        finally:
+            db.close()
+
+    def home(self, client):
+        return client.get("/groups/").text
+
+    def test_users_see_the_users_board_students_the_students_board_and_the_admin_both(self):
+        u, s = self.make_user("worker"), self.make_user("pupil", user_type="student")
+        self.solve("worker", "1/A")
+        self.solve("pupil", "1/A")
+        page = self.home(u)
+        self.assertIn("Most hardworking users", page)
+        self.assertIn("/users/worker", page.split("Most hardworking users")[1])
+        self.assertNotIn("pupil", page)
+        page = self.home(s)
+        self.assertIn("Most hardworking students", page)
+        self.assertIn("pupil", page)
+        self.assertNotIn("/users/worker", page)
+        page = self.home(self.admin)
+        self.assertIn("Most hardworking users", page)
+        self.assertIn("Most hardworking students", page)
+        self.assertIn("/users/worker", page)
+        self.assertIn("/users/pupil", page)
+
+    def create(self, name, password="", user_type="user", **extra):
+        return self.admin.post("/admin/users/new", data={"username": name, "password": password, "user_type": user_type, **extra})
+
+    def try_login(self, name, password):
+        return TestClient(app, follow_redirects=False).post("/login", data={"username": name, "password": password}).status_code
+
+    def test_an_account_created_without_a_password_cannot_be_signed_in_to(self):
+        self.assertEqual(self.create("ghost").status_code, 303)
+        db = SessionLocal()
+        stored = db.query(models.User).filter_by(username="ghost").one().password_hash
+        db.close()
+        self.assertEqual(stored, "!")
+        for attempt in ("", "!", "ghost", "secret-pass1", "pbkdf2_sha256$1$00$00"):
+            self.assertEqual(self.try_login("ghost", attempt), 401, attempt)
+        self.assertEqual(self.try_login("nobody", "x"), 401)                               # same answer as an unknown name
+
+    def test_such_an_account_can_join_groups_and_appears_in_the_matching_board(self):
+        self.owner = self.make_user("owner")
+        gid, _ = self.new_group(self.owner, "Team")
+        self.create("ghost", group_ids=[gid])
+        self.create("ghoststudent", user_type="student")
+        self.solve("ghost", "7/A")
+        self.solve("ghoststudent", "7/A")
+        self.assertIn("ghost", self.owner.get(f"/groups/{gid}").text)
+        page = self.home(self.owner)
+        self.assertIn("/users/ghost", page)
+        self.assertNotIn("ghoststudent", page)
+        self.assertIn("/users/ghoststudent", self.home(self.admin))
+
+    def test_the_admin_can_give_such_an_account_a_password_later_and_only_then_it_signs_in(self):
+        self.create("ghost")
+        db = SessionLocal()
+        uid = db.query(models.User).filter_by(username="ghost").one().id
+        db.close()
+        r = self.admin.post(f"/admin/users/{uid}/edit", data={"username": "ghost", "password": "", "user_type": "user"})
+        self.assertEqual(r.status_code, 303)
+        self.assertEqual(self.try_login("ghost", ""), 401)                                   # blank keeps it locked
+        page = self.admin.get(f"/admin/users/{uid}/edit").text
+        self.assertIn("has no password", page)
+        self.admin.post(f"/admin/users/{uid}/edit", data={"username": "ghost", "password": "now-a-password", "user_type": "user"})
+        self.assertEqual(self.try_login("ghost", "now-a-password"), 303)
+        self.assertNotIn("has no password", self.admin.get(f"/admin/users/{uid}/edit").text)
+
+    def test_the_users_list_marks_them_and_the_new_form_explains_the_empty_password(self):
+        self.create("ghost")
+        self.assertIn("(no sign-in)", self.admin.get("/admin/users").text)
+        form = self.admin.get("/admin/users/new").text
+        self.assertIn("can't be signed in to", form)
+        self.assertNotRegex(form, r'name="password"[^>]*required')
+        self.assertEqual(self.create("").status_code, 422)                                    # the username is still needed

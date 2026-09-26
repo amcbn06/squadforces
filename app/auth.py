@@ -77,6 +77,15 @@ def _pbkdf2(password: str, salt: bytes, iterations: int) -> bytes:
     return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
 
 
+# The stored value of an account nobody can sign in to (created by the admin with no password). It isn't a
+# valid hash in any format, so nothing can ever verify against it.
+NO_LOGIN = "!"
+
+
+def can_log_in(stored: str) -> bool:
+    return bool(stored) and stored != NO_LOGIN
+
+
 def hash_password(password: str) -> str:
     salt = secrets.token_bytes(16)
     return f"{_SCHEME}${PBKDF2_ITERATIONS}${salt.hex()}${_pbkdf2(password, salt, PBKDF2_ITERATIONS).hex()}"
@@ -85,6 +94,8 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, stored: str) -> bool:
     """Check a password against a stored hash in the current format, or in the legacy one
     ("<salt>:<sha256(salt + password)>") that accounts created before the upgrade still have."""
+    if not can_log_in(stored):
+        return False
     try:
         if stored.startswith(_SCHEME + "$"):
             _, iterations, salt_hex, hash_hex = stored.split("$")
