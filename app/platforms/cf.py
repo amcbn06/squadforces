@@ -394,10 +394,16 @@ async def _contest_meta(item) -> tuple[str, list[dict]]:
         return "", await api.get_contest_problems_from_status(contest_id)
 
 
+def _in_russian(text) -> bool:
+    return bool(text) and any("Ѐ" <= ch <= "ӿ" for ch in text)
+
+
 def _needs_meta(item) -> bool:
     problems = item.contest_problems
     if not problems or not item.title:
         return True
+    if not is_gym_id(item.external_id) and (_in_russian(item.title) or any(_in_russian(p.name) for p in problems)):
+        return True  # names fetched before English was requested; a regular round always has English ones
     if is_gym_id(item.external_id):
         return False  # gyms never get ratings, and their problem list doesn't change
     if any(p.rating is None for p in problems) and item.last_synced_at is not None:
@@ -434,7 +440,7 @@ async def _sync_contest(item, members: list, db) -> None:
     if _needs_meta(item):
         try:
             title, problems = await _contest_meta(item)
-            if not item.title:
+            if not item.title or (title and _in_russian(item.title) and not is_gym_id(item.external_id)):
                 item.title = title or f"Contest {item.external_id}"
         except api.ContestNotStartedError:
             raise  # sync_item marks the item "not_started"
