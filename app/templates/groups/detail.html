@@ -109,7 +109,7 @@
     </div>
 
     {% if group.assignments %}
-    {% for assignment in group.assignments | sort(attribute='week_start_date', reverse=True) %}
+    {% for assignment in assignments %}
     <a href="/assignments/{{ assignment.id }}" class="card" style="margin-bottom:6px; display:block;">
       <div style="display:flex; justify-content:space-between; align-items:baseline;">
         <strong>{{ assignment.title }}</strong>

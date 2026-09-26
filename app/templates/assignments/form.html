@@ -17,12 +17,20 @@
       <div class="form-col" style="margin-bottom:10px; width:100%;">
         <label>Title *</label>
         <input type="text" name="title" required autofocus style="width:100%;"
+               value="{{ default_title }}" onfocus="this.select()"
                placeholder="e.g. Week 4 — Dynamic Programming" />
       </div>
 
       <div class="form-col" style="margin-bottom:10px;">
         <label>Week start date</label>
-        <input type="date" name="week_start_date" />
+        <input type="date" name="week_start_date" id="week-start" value="{{ default_date }}" />
+        <script>
+          // The browser's own "today", so the default doesn't slip a day around midnight UTC.
+          (function () {
+            var d = new Date(), pad = function (n) { return (n < 10 ? '0' : '') + n; };
+            document.getElementById('week-start').value = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+          })();
+        </script>
       </div>
 
       <div class="form-col" style="margin-bottom:14px; width:100%;">

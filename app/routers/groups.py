@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
@@ -140,6 +142,10 @@ def _render_group(request: Request, group: Group, account, db: Session, error=No
     manage = can_manage_group(account, group)
 
     leaderboard = leaderboard_svc.for_group(db, group)
+    # Newest week first; assignments with no date (it is optional) follow, newest first. Sorting by the raw date
+    # fails as soon as a group mixes dated and undated ones.
+    assignments = sorted(group.assignments, key=lambda a: (a.week_start_date is not None, a.week_start_date or date.min, a.id),
+                         reverse=True)
 
     flash = request.session.get("new_invite")
     new_link = None
@@ -154,6 +160,7 @@ def _render_group(request: Request, group: Group, account, db: Session, error=No
             "group": group,
             "members": members,
             "leaderboard": leaderboard,
+            "assignments": assignments,
             "window_days": leaderboard_svc.WINDOW_DAYS,
             "account": account,
             "error": error,

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, Request, Form, BackgroundTasks, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -41,7 +41,12 @@ async def new_assignment_form(
         return HTMLResponse("Group not found", status_code=404)
     _check_group_access(account, group_id, db)
     return templates.TemplateResponse(request,
-        "assignments/form.html", {"request": request, "group": group, "error": None, "account": account}
+        "assignments/form.html", {
+            "request": request, "group": group, "error": None, "account": account,
+            # Starting points for the fields, both editable: the next number and today's date
+            "default_title": f"Assignment {db.query(Assignment).filter_by(group_id=group_id).count() + 1}",
+            "default_date": date.today().isoformat(),
+        }
     )
 
 
