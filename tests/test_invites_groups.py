@@ -492,6 +492,14 @@ class Ownership(SiteTestCase):
         self.item_id = db.query(models.AssignmentItem).one().id
         db.close()
 
+    def test_the_new_assignment_form_suggests_the_next_number_and_todays_date(self):
+        from datetime import date
+        page = self.owner.get(f"/assignments/new?group_id={self.gid}").text
+        self.assertIn('value="Assignment 2"', page)                        # setUp already made one
+        self.assertIn(f'value="{date.today().isoformat()}"', page)
+        self.owner.post("/assignments/new", data={"group_id": self.gid, "title": "Assignment 2"})
+        self.assertIn('value="Assignment 3"', self.owner.get(f"/assignments/new?group_id={self.gid}").text)
+
     def test_a_group_page_lists_dated_and_undated_assignments_together(self):
         """The date is optional; a group mixing both used to answer 500."""
         for title, day in (("Undated old", ""), ("Week B", "2026-05-11"), ("Week A", "2026-05-04"), ("Undated new", "")):
