@@ -45,6 +45,12 @@ async def _throttle():
             _last_request_time = time.monotonic()
 
 
+# Codeforces names problems in the language the request asks for, and answers in Russian when it doesn't say
+# (from some servers). Ask for English on every call: it is a header, so the anonymous standings call that
+# forbids extra parameters still accepts it.
+HEADERS = {"Accept-Language": "en"}
+
+
 async def _call(method: str, params: dict, *, signed: bool = True, timeout: float = 15) -> dict:
     for attempt in range(_LIMIT_RETRIES + 1):
         call_params = dict(params)
@@ -58,7 +64,7 @@ async def _call(method: str, params: dict, *, signed: bool = True, timeout: floa
 
         url = f"{CF_BASE}/{method}"
         async with _throttle():
-            async with httpx.AsyncClient(timeout=timeout) as client:
+            async with httpx.AsyncClient(timeout=timeout, headers=HEADERS) as client:
                 resp = await client.get(url, params=call_params)
 
         try:
@@ -155,7 +161,7 @@ async def get_contest_info(contest_id: str) -> dict:
     try:
         url = f"{CF_BASE}/contest.standings"
         async with _throttle():
-            async with httpx.AsyncClient(timeout=15) as client:
+            async with httpx.AsyncClient(timeout=15, headers=HEADERS) as client:
                 async with client.stream("GET", url, params={"contestId": contest_id}) as resp:
                     async for chunk in resp.aiter_bytes(chunk_size=1024):
                         buf += chunk

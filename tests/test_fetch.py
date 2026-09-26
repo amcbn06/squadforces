@@ -254,3 +254,23 @@ class KilonovaFetch(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CodeforcesLanguage(unittest.IsolatedAsyncioTestCase):
+    async def test_every_request_asks_for_english(self):
+        from app.scraper import codeforces as cf_api
+        seen = []
+
+        class FakeResp:
+            status_code = 200
+            def json(self): return {"status": "OK", "result": []}
+
+        class FakeClient:
+            def __init__(self, *a, **k): seen.append(k.get("headers"))
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): return False
+            async def get(self, url, params=None): return FakeResp()
+
+        with mock.patch.object(cf_api.httpx, "AsyncClient", FakeClient):
+            await cf_api.get_contest_list()
+        self.assertEqual(seen, [{"Accept-Language": "en"}])

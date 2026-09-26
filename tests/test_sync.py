@@ -155,6 +155,30 @@ class CodeforcesContestSync(SyncTestCase):
         await self.sync(self.item_)
         self.assertEqual((self.cf.count("info:"), self.cf.count("status:alice_cf")), (1, 1))  # fresh copy, known contest
 
+    async def test_russian_names_from_before_english_was_requested_are_replaced_on_the_next_sync(self):
+        await self.sync(self.item_)
+        self.db.refresh(self.item_)
+        self.item_.title = "Раунд 2000"
+        self.item_.contest_problems[0].name = "Альфа"
+        self.db.commit()
+        await self.sync(self.item_)
+        self.db.expire_all()
+        item = self.db.get(models.AssignmentItem, self.item_.id)
+        self.assertEqual(item.title, "Round 2000")
+        self.assertEqual(sorted(cp.name for cp in item.contest_problems), ["Alpha", "Beta", "Delta", "Gamma"])
+        infos = self.cf.count("info:")
+        await self.sync(self.item_)
+        self.assertEqual(self.cf.count("info:"), infos)               # English names: not looked up again
+
+    async def test_a_given_title_in_russian_is_kept_for_a_gym(self):
+        gym = self.item(self.assignment, "codeforces", "contest", "100500", title="Тренировка")
+        self.cf.gyms["100500"] = {"name": "Тренировка", "phase": "FINISHED", "problems": [{"index": "A", "name": "Задача"}]}
+        await self.sync(gym)
+        self.db.expire_all()
+        self.assertEqual(self.db.get(models.AssignmentItem, gym.id).title, "Тренировка")
+        await self.sync(gym)
+        self.assertEqual(self.cf.count("gym-problems"), 1)            # a gym's Russian names are its own: no re-fetching
+
     async def test_a_new_submission_is_picked_up_by_the_next_refresh_incrementally(self):
         await self.sync(self.item_)
         self.cf.status["alice_cf"].insert(0, cf_raw(20, 2000, "D", "OK", at=20000, ptype="PRACTICE"))
