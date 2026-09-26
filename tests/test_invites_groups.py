@@ -492,6 +492,17 @@ class Ownership(SiteTestCase):
         self.item_id = db.query(models.AssignmentItem).one().id
         db.close()
 
+    def test_a_group_page_lists_dated_and_undated_assignments_together(self):
+        """The date is optional; a group mixing both used to answer 500."""
+        for title, day in (("Undated old", ""), ("Week B", "2026-05-11"), ("Week A", "2026-05-04"), ("Undated new", "")):
+            r = self.owner.post("/assignments/new", data={"group_id": self.gid, "title": title, "week_start_date": day})
+            self.assertEqual(r.status_code, 303, title)
+        r = self.owner.get(f"/groups/{self.gid}")
+        self.assertEqual(r.status_code, 200)
+        page = r.text
+        order = [page.index(t) for t in ("Week B", "Week A", "Undated new", "Undated old")]
+        self.assertEqual(order, sorted(order))                # dated newest first, then undated newest first
+
     def test_the_owner_manages_their_group(self):
         page = self.owner.get(f"/groups/{self.gid}").text
         for text in ("Edit", "Delete", "Invite links", "Owner: owner"):
