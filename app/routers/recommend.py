@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime, timezone
 from typing import Optional
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse
@@ -23,6 +24,20 @@ templates.env.filters["ts_to_date"] = (
 )
 
 DEFAULT_DIVISIONS = ["div2", "div3", "educational"]
+SUB_FILTERS = ("all", "none", "attempted", "solved")
+
+
+def _url(**params) -> str:
+    """A /recommend link carrying only the given params (division lists included as repeated keys)."""
+    pairs: list[tuple[str, str]] = []
+    for key, value in params.items():
+        if value is None or value == "":
+            continue
+        if isinstance(value, (list, tuple)):
+            pairs.extend((key, v) for v in value)
+        else:
+            pairs.append((key, str(value)))
+    return "/recommend?" + urlencode(pairs)
 
 
 @router.get("/debug", response_class=PlainTextResponse)
@@ -95,7 +110,10 @@ async def recommend_page(
     db: Session = Depends(get_db),
     rating: int = 1200,
     member_id: Optional[str] = Query(default=None),
-    divisions: Optional[list[str]] = Query(None),
+    platform: str = "cf",
+    cf_divisions: Optional[list[str]] = Query(None),
+    atc_divisions: Optional[list[str]] = Query(None),
+    sub_filter: str = "all",
     account=Depends(require_auth),
 ):
     # member_id arrives as "" when the select has no selection
@@ -104,18 +122,38 @@ async def recommend_page(
     except (ValueError, TypeError):
         member_id_int = None
 
+    platform = platform if platform in ("cf", "atc") else "cf"
+    sub_filter = sub_filter if sub_filter in SUB_FILTERS else "all"
+
     all_members = db.query(models.User).filter(models.User.user_type != "admin").order_by(models.User.username).all()
 
-    selected_divs = [d for d in (divisions or DEFAULT_DIVISIONS) if d in rec.DIVISION_LABELS]
-    if not selected_divs:
-        selected_divs = DEFAULT_DIVISIONS
+    selected_cf_divs = [d for d in (cf_divisions or DEFAULT_DIVISIONS) if d in rec.DIVISION_LABELS] \
+        or DEFAULT_DIVISIONS
+    selected_atc_divs = [d for d in (atc_divisions or rec.ATC_DEFAULT_DIVISIONS) if d in rec.ATC_DIVISION_LABELS] \
+        or rec.ATC_DEFAULT_DIVISIONS
 
     total = db.query(models.CfContest).count()
     if total == 0:
         background_tasks.add_task(rec.bootstrap_cache)
-
     progress = rec.get_cache_progress(db)
-    recommendations = rec.get_recommendations(db, selected_divs, rating) if total > 0 else []
+
+    if platform == "cf":
+        recommendations = rec.get_cf_recommendations(
+            db, selected_cf_divs, rating, account=account, sub_filter=sub_filter,
+        ) if total > 0 else []
+    else:
+        recommendations = await rec.get_atc_recommendations(
+            selected_atc_divs, rating, db=db, account=account, sub_filter=sub_filter,
+        )
+
+    # link builders: every control (tab, filter, Apply) needs to keep the params it doesn't itself change
+    shared = dict(rating=rating, member_id=member_id_int, cf_divisions=selected_cf_divs,
+                  atc_divisions=selected_atc_divs)
+    tab_urls = {
+        "cf": _url(platform="cf", sub_filter=sub_filter, **shared),
+        "atc": _url(platform="atc", sub_filter=sub_filter, **shared),
+    }
+    filter_urls = {f: _url(platform=platform, sub_filter=f, **shared) for f in SUB_FILTERS}
 
     response = templates.TemplateResponse(request, "recommend.html", {
         "request": request,
@@ -124,8 +162,14 @@ async def recommend_page(
         "rating": rating,
         "member_id": member_id_int,
         "all_members": all_members,
-        "selected_divs": selected_divs,
-        "all_divisions": rec.DIVISION_LABELS,
+        "platform": platform,
+        "tab_urls": tab_urls,
+        "sub_filter": sub_filter,
+        "filter_urls": filter_urls,
+        "selected_cf_divs": selected_cf_divs,
+        "selected_atc_divs": selected_atc_divs,
+        "cf_divisions": rec.DIVISION_LABELS,
+        "atc_divisions": rec.ATC_DIVISION_LABELS,
         "bootstrapping": total == 0,
         "account": account,
     })

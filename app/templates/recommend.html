@@ -6,10 +6,23 @@
 <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:12px;">
   <div>
     <h1>Contest Recommendations</h1>
-    <p class="meta" style="font-style:italic; margin-top:2px;">
-      Currently only Codeforces rated contests are supported.
-    </p>
   </div>
+</div>
+
+{# ── Platform tabs ─────────────────────────────────────────────────────── #}
+<div style="display:flex; gap:2px; margin-bottom:12px; border-bottom:1px solid var(--border-light);">
+  <a href="{{ tab_urls.cf }}"
+     style="padding:6px 14px; font-size:13px; font-weight:600; text-decoration:none;
+            border-bottom:2px solid {{ 'var(--accent, #1565c0)' if platform == 'cf' else 'transparent' }};
+            color:{{ 'var(--text)' if platform == 'cf' else 'var(--text-meta)' }};">
+    Codeforces
+  </a>
+  <a href="{{ tab_urls.atc }}"
+     style="padding:6px 14px; font-size:13px; font-weight:600; text-decoration:none;
+            border-bottom:2px solid {{ 'var(--accent, #1565c0)' if platform == 'atc' else 'transparent' }};
+            color:{{ 'var(--text)' if platform == 'atc' else 'var(--text-meta)' }};">
+    AtCoder
+  </a>
 </div>
 
 <div style="display:grid; grid-template-columns:220px 1fr; gap:12px; align-items:start;">
@@ -23,6 +36,14 @@
       <div class="box-body" style="padding:10px;">
         <form method="get" action="/recommend" id="rc-form"
               style="display:flex; flex-direction:column; gap:10px;">
+          <input type="hidden" name="platform" value="{{ platform }}">
+          {# the tab not currently shown still needs its own division picks to round-trip through Apply #}
+          {% if platform == 'cf' %}
+            {% for d in selected_atc_divs %}<input type="hidden" name="atc_divisions" value="{{ d }}">{% endfor %}
+          {% else %}
+            {% for d in selected_cf_divs %}<input type="hidden" name="cf_divisions" value="{{ d }}">{% endfor %}
+          {% endif %}
+          {% if sub_filter != 'all' %}<input type="hidden" name="sub_filter" value="{{ sub_filter }}">{% endif %}
 
           <div>
             <div class="meta" style="margin-bottom:4px;">Member</div>
@@ -38,7 +59,7 @@
           </div>
 
           <div>
-            <div class="meta" style="margin-bottom:4px;">CF Rating</div>
+            <div class="meta" style="margin-bottom:4px;">Rating</div>
             <input type="number" name="rating" id="rc-rating" value="{{ rating }}"
                    min="0" max="4000" style="width:100%;">
           </div>
@@ -46,13 +67,23 @@
           <div>
             <div class="meta" style="margin-bottom:6px;">Division</div>
             <div style="display:flex; flex-direction:column; gap:5px;">
-              {% for div_key, div_label in all_divisions.items() %}
-              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:12px;">
-                <input type="checkbox" name="divisions" value="{{ div_key }}"
-                       {% if div_key in selected_divs %}checked{% endif %}>
-                {{ div_label }}
-              </label>
-              {% endfor %}
+              {% if platform == 'cf' %}
+                {% for div_key, div_label in cf_divisions.items() %}
+                <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:12px;">
+                  <input type="checkbox" name="cf_divisions" value="{{ div_key }}"
+                         {% if div_key in selected_cf_divs %}checked{% endif %}>
+                  {{ div_label }}
+                </label>
+                {% endfor %}
+              {% else %}
+                {% for div_key, div_label in atc_divisions.items() %}
+                <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:12px;">
+                  <input type="checkbox" name="atc_divisions" value="{{ div_key }}"
+                         {% if div_key in selected_atc_divs %}checked{% endif %}>
+                  {{ div_label }}
+                </label>
+                {% endfor %}
+              {% endif %}
             </div>
           </div>
 
@@ -62,7 +93,23 @@
       </div>
     </div>
 
-    {# Contest database progress #}
+    {# Submission filter #}
+    <div class="box">
+      <div class="box-header" style="cursor:default; font-size:12px;">Your submissions</div>
+      <div class="box-body" style="padding:8px 10px; display:flex; flex-direction:column; gap:4px;">
+        <a href="{{ filter_urls.all }}" class="btn {{ 'btn-green' if sub_filter == 'all' }}"
+           style="text-align:left; font-size:12px;">All contests</a>
+        <a href="{{ filter_urls.none }}" class="btn {{ 'btn-green' if sub_filter == 'none' }}"
+           style="text-align:left; font-size:12px;">Not attempted</a>
+        <a href="{{ filter_urls.attempted }}" class="btn {{ 'btn-green' if sub_filter == 'attempted' }}"
+           style="text-align:left; font-size:12px;">Attempted, no AC</a>
+        <a href="{{ filter_urls.solved }}" class="btn {{ 'btn-green' if sub_filter == 'solved' }}"
+           style="text-align:left; font-size:12px;">Solved something</a>
+      </div>
+    </div>
+
+    {# Contest database progress — Codeforces only; AtCoder has no rate-limited fetch to track #}
+    {% if platform == 'cf' %}
     <div class="box">
       <div class="box-header" style="cursor:default; font-weight:normal; font-size:12px;">
         Contest database
@@ -88,19 +135,37 @@
         {% endif %}
       </div>
     </div>
+    {% else %}
+    <div class="box">
+      <div class="box-body" style="padding:10px 12px;">
+        <p class="meta" style="font-size:11px;">
+          Contest list and problem difficulties come from the AtCoder Problems community catalog
+          (kenkoooo.com) — no separate indexing needed here.
+        </p>
+      </div>
+    </div>
+    {% endif %}
 
   </div>
 
   {# ── Main content ─────────────────────────────────────────────────────── #}
   <div>
-    {% if progress.fetched == 0 and not bootstrapping %}
+    {% if platform == 'cf' and progress.fetched == 0 and not bootstrapping %}
     <div class="info-msg" style="margin-bottom:8px;">
       Contest list loaded — problem ratings are being fetched in the background (1 per minute).
       Grades shown are approximate until ratings are cached.
     </div>
     {% endif %}
 
-    {% if bootstrapping %}
+    {% set has_handle = (account.codeforces_handle if platform == 'cf' else account.atcoder_handle) %}
+    {% if sub_filter != 'all' and not has_handle %}
+    <div class="info-msg" style="margin-bottom:8px;">
+      No {{ 'Codeforces' if platform == 'cf' else 'AtCoder' }} handle is set on your account, so submissions
+      can't be checked — set one to use this filter.
+    </div>
+    {% endif %}
+
+    {% if platform == 'cf' and bootstrapping %}
     <div class="box">
       <div class="box-body" style="text-align:center; padding:48px 24px;">
         <span class="dot dot-syncing" style="width:10px; height:10px; margin-bottom:10px; display:inline-block;"></span>
@@ -122,6 +187,9 @@
     {% for item in recommendations %}
     {% set c = item.contest %}
     {% set g = item.grade %}
+    {% set division_label = (cf_divisions if platform == 'cf' else atc_divisions)[c.division] %}
+    {% set url = ('https://codeforces.com/contest/' ~ c.id) if platform == 'cf'
+                 else ('https://atcoder.jp/contests/' ~ c.id) %}
     <div class="card" style="display:flex; align-items:center; gap:12px; margin-bottom:6px;">
 
       <div style="flex-shrink:0; width:34px; height:34px; border-radius:3px;
@@ -130,14 +198,14 @@
            title="Score {{ g.score }}/10">{{ g.letter }}</div>
 
       <div style="flex:1; min-width:0;">
-        <a href="https://codeforces.com/contest/{{ c.id }}" target="_blank" rel="noopener"
+        <a href="{{ url }}" target="_blank" rel="noopener"
            style="font-size:13px; font-weight:600; color:var(--text); display:block;
                   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
           {{ c.name }}
         </a>
         <div class="meta" style="margin-top:2px;">
           {{ c.start_time | ts_to_date }}
-          &nbsp;·&nbsp; {{ all_divisions[c.division] }}
+          &nbsp;·&nbsp; {{ division_label }}
           &nbsp;·&nbsp; score {{ g.score }}/10
           {% if g.exact %}
           &nbsp;·&nbsp;
@@ -151,7 +219,7 @@
         </div>
       </div>
 
-      <a href="https://codeforces.com/contest/{{ c.id }}" target="_blank" rel="noopener"
+      <a href="{{ url }}" target="_blank" rel="noopener"
          class="btn" style="flex-shrink:0;">Open →</a>
     </div>
     {% endfor %}

@@ -70,6 +70,23 @@ Existing databases get new columns through `ensure_columns()` in `app/database.p
 
 `app/leaderboard.py`: a problem counts for a user once, if their *first* accepted submission (per platform + problem key) falls in the last 30 days. Computed by query (accepted in the window and no older acceptance, via the `(user, platform, problem_key)` index) rather than a stored flag, so it can't go stale as submissions are added or re-graded; only users whose full history is loaded (`SubmissionSync.full_sync_at`) are counted. The group board intersects that with the group's problems from `Platform.problem_keys(item)` (override it if a platform's contest problems are keyed differently from `ContestProblem.platform_problem_id`); the platform board (home page, right side) is per account type: users are ranked against users, students against students (the admin sees both, and is never ranked). An account created by the admin with an empty password stores `auth.NO_LOGIN` (`"!"`): `verify_password` always refuses it, so it can be a group member and on the boards but never signed in to; setting a password later enables it. Manual platforms (CSES, links) have no submissions and don't count.
 
+### Recommend page
+
+`app/recommend.py` grades and ranks two independent pools, one per tab (`/recommend?platform=cf|atc`), both through
+the same `grade_contest()` / `_problem_fit()` — a geometric-weighted fit score with the same ideal (0–300 over the
+viewer's rating) and stretch (300–500) bands for both judges. Codeforces (`get_cf_recommendations()`) still reads a
+DB-backed cache (`CfContest`/`CfContestProblem`), filled by the scheduler at one contest per minute because CF's
+per-contest API call is rate-limited. AtCoder (`get_atc_recommendations()`) needs no such cache and runs live on
+every request: `app/scraper/atcoder.py`'s problem catalog and kenkoooo difficulty models are already cached
+in-process for 12h for item sync, so listing every AtCoder contest with its problems' difficulty costs no extra
+HTTP calls. Divisions are CF's existing `div1`../`combined`/`other` vs. AtCoder's `abc`/`arc`/`agc`/`other`
+(`detect_atc_division()`, from the contest id prefix) — two separate checkbox groups and default sets, not merged.
+
+The "your submissions" filter (`sub_filter=all|none|attempted|solved`) keeps only contests where the *viewer's own*
+stored submissions land in that bucket (`_submission_bucket()`), independent of whose rating is being graded. It
+only applies to contests with a real, cached problem set (`exact` grading) — the typical-distribution fallback
+isn't a real problem list to check submissions against — and needs the viewer to have a handle on that platform.
+
 ### Cached rating vs rating_entries
 
 `User.cf_rating` / `cf_rank` (shown wherever a member is listed: matrix, group page, leaderboards, Recommend) are a snapshot, refreshed by `Codeforces.refresh_profile()` on every submission refresh (`app/submissions.py::refresh_user`) — not the same thing as `rating_entries`, which already came from `fetch_rating_history` on every refresh and was never the stale one. Before this, the snapshot was set only when a handle was first saved, so a rating change after a contest didn't reach it until the handle was next edited by hand.

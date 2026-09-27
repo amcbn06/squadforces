@@ -7,10 +7,12 @@ The recommendation page queries only the DB — no live API calls at render time
 """
 import logging
 import re
+from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app import models
+from app import models, submissions
+from app.scraper import atcoder as atc
 from app.scraper import codeforces as cf
 
 logger = logging.getLogger(__name__)
@@ -45,6 +47,39 @@ DIVISION_TYPICAL: dict[str, list[int]] = {
 
 # How many recent rated CF contests to keep in the cache
 CACHE_SIZE = 300
+
+# AtCoder's own pool, graded and ranked separately from Codeforces (see ATC_* below).
+ATC_DIVISION_LABELS: dict[str, str] = {
+    "abc":   "Beginner (ABC)",
+    "arc":   "Regular (ARC)",
+    "agc":   "Grand (AGC)",
+    "other": "Other",
+}
+
+# Typical kenkoooo difficulty spread per contest type — same fallback role as DIVISION_TYPICAL, but AtCoder
+# essentially never needs it: get_contest_tasks() is served from an in-process cache, not a slow per-contest fetch.
+ATC_DIVISION_TYPICAL: dict[str, list[int]] = {
+    "abc":   [100, 300, 500, 800, 1200, 1600, 2000],
+    "arc":   [800, 1200, 1600, 2000, 2400, 2800],
+    "agc":   [1200, 1600, 2000, 2400, 2800, 3200],
+    "other": [400, 800, 1200, 1600, 2000, 2400],
+}
+
+ATC_DEFAULT_DIVISIONS = ["abc", "arc"]
+
+# How many recent rated AtCoder contests to consider (no DB cache, so this just bounds the per-request scan).
+ATC_CACHE_SIZE = 300
+
+
+def detect_atc_division(contest_id: str) -> str:
+    cid = contest_id.lower()
+    if cid.startswith("abc"):
+        return "abc"
+    if cid.startswith("arc"):
+        return "arc"
+    if cid.startswith("agc"):
+        return "agc"
+    return "other"
 
 # Guard against concurrent bootstrap (set on first trigger, cleared never — per process)
 _bootstrap_running = False
@@ -281,11 +316,22 @@ def get_cache_progress(db: Session) -> dict:
 # Recommendations
 # ---------------------------------------------------------------------------
 
-def get_recommendations(
+def _submission_bucket(subs: list) -> str:
+    """The viewer's relationship to a contest's problems, for the submission filter:
+    "none" (never touched it), "attempted" (submitted, nothing accepted), "solved" (accepted at least one)."""
+    if not subs:
+        return "none"
+    return "solved" if any(s.accepted for s in subs) else "attempted"
+
+
+def get_cf_recommendations(
     db: Session,
     divisions: list[str],
     user_rating: int,
     top_n: int = 5,
+    *,
+    account: Optional[models.User] = None,
+    sub_filter: str = "all",
 ) -> list[dict]:
     """
     Return the top_n most suitable CF contests for a user at user_rating,
@@ -293,6 +339,10 @@ def get_recommendations(
 
     Contests with cached problem ratings are graded exactly; others fall back
     to the typical rating distribution for their division.
+
+    `sub_filter` ("all" | "none" | "attempted" | "solved") keeps only contests where `account`'s own stored
+    Codeforces submissions land in that bucket; it only applies to contests with cached problems (exact grading)
+    since the fallback distribution isn't a real problem set to check submissions against.
 
     Sort order: grade score DESC, then recency DESC.
     """
@@ -313,9 +363,77 @@ def get_recommendations(
             ratings = DIVISION_TYPICAL.get(contest.division, DIVISION_TYPICAL["other"])
             exact = False
 
+        if sub_filter != "all":
+            if not exact or account is None or not account.codeforces_handle:
+                continue
+            problem_keys = {f"{contest.id}/{p.index}" for p in contest.problems}
+            subs = submissions.for_problems(db, account.id, "codeforces", problem_keys)
+            if _submission_bucket(subs) != sub_filter:
+                continue
+
         g = grade_contest(ratings, user_rating)
         g["exact"] = exact
         scored.append({"contest": contest, "grade": g})
 
     scored.sort(key=lambda x: (-x["grade"]["score"], -(x["contest"].start_time or 0)))
+    return scored[:top_n]
+
+
+async def get_atc_recommendations(
+    divisions: list[str],
+    user_rating: int,
+    top_n: int = 5,
+    *,
+    db: Optional[Session] = None,
+    account: Optional[models.User] = None,
+    sub_filter: str = "all",
+) -> list[dict]:
+    """
+    AtCoder's own pool, graded the same way as get_cf_recommendations() (same grade_contest(), same ideal/stretch
+    bands) but computed live instead of from a DB cache: kenkoooo's problem catalog and difficulty models are
+    already cached in-process by app.scraper.atcoder, so there's no rate limit to work around and nothing to
+    pre-fetch in the background.
+
+    Returns dicts shaped like {"contest": {"id", "name", "start_time", "division"}, "grade": {...}} — a plain
+    dict instead of a CfContest row, since there's no DB-backed contest object here.
+    """
+    contests = await atc.get_all_contests()
+    rated = [
+        c for c in contests
+        if c.get("start_epoch_second") and (c.get("rate_change") or "-") != "-"
+    ]
+    rated.sort(key=lambda c: c.get("start_epoch_second", 0), reverse=True)
+
+    scored = []
+    for c in rated[:ATC_CACHE_SIZE]:
+        division = detect_atc_division(c["id"])
+        if division not in divisions:
+            continue
+
+        tasks = await atc.get_contest_tasks(c["id"])
+        exact = bool(tasks)
+        ratings = [t.get("difficulty") for t in tasks] if exact \
+            else ATC_DIVISION_TYPICAL.get(division, ATC_DIVISION_TYPICAL["other"])
+
+        if sub_filter != "all":
+            if not exact or db is None or account is None or not account.atcoder_handle:
+                continue
+            problem_ids = {t["id"] for t in tasks}
+            subs = submissions.for_problems(db, account.id, "atcoder", problem_ids)
+            if _submission_bucket(subs) != sub_filter:
+                continue
+
+        g = grade_contest(ratings, user_rating)
+        g["exact"] = exact
+        scored.append({
+            "contest": {
+                "id": c["id"],
+                "name": c.get("title") or c["id"],
+                "start_time": c.get("start_epoch_second"),
+                "division": division,
+            },
+            "grade": g,
+        })
+
+    scored.sort(key=lambda x: (-x["grade"]["score"], -(x["contest"]["start_time"] or 0)))
     return scored[:top_n]
