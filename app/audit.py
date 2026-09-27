@@ -47,6 +47,7 @@ ACTION_LABELS: dict[str, str] = {
     "invite.create": "Created an invite link",
     "invite.revoke": "Revoked an invite link",
     "assignment.create": "Created an assignment",
+    "assignment.edit": "Edited an assignment",
     "assignment.delete": "Deleted an assignment",
     "item.add": "Added contests or problems",
     "item.delete": "Removed a contest or problem",
