@@ -230,6 +230,15 @@ class Codeforces(Platform):
             for h in await api.get_user_rating_history(handle)
         ]
 
+    async def refresh_profile(self, user, handle: str) -> None:
+        """`User.cf_rating` / `cf_rank` are a snapshot shown wherever a member is listed (matrix, group page,
+        leaderboards, Recommend); unlike rating_entries they are not derived from stored submissions, so a
+        contest's rating change would otherwise never reach them until the handle was next edited by hand."""
+        info = await api.validate_handle(handle)
+        if info:
+            user.cf_rating = info.get("rating")
+            user.cf_rank = info.get("rank")
+
     # ── item sync ────────────────────────────────────────────────────────────
 
     async def sync_item(self, item, members: list, db) -> None:
