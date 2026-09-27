@@ -220,15 +220,15 @@
           <td>
             {% if item.type == 'contest' %}
               {% if item.platform == 'kilonova' %}
-                {# Kilonova contest: show accumulated score / total with color #}
+                {# Kilonova contest: show accumulated score / total with color; 0 only if something was tried #}
                 {% set kd = r.raw_scrape_data if r and r.raw_scrape_data else {} %}
                 {% set ks = kd.get('kn_score', 0) %}
                 {% set kt = kd.get('kn_total', 0) %}
-                {% if kt > 0 %}
+                {% if kt > 0 and kd.get('kn_attempted') %}
                   {% set hue = ((ks / kt) * 120) | int %}
                   <span style="color:hsl({{ hue }},75%,45%); font-weight:bold;">{{ ks }}/{{ kt }}</span>
                 {% else %}
-                  <span style="color:#ccc;">—</span>
+                  <span style="color:#ccc;" title="{{ 'No submissions yet' if r else '' }}">—</span>
                 {% endif %}
               {% elif r and (r.participated or r.problems_solved_count) %}
                 <strong>{{ r.problems_solved_count or 0 }}/{{ r.problems_total_count or '?' }}</strong>
@@ -262,10 +262,12 @@
                 {% set kd = r.raw_scrape_data if r and r.raw_scrape_data else {} %}
                 {% set ks = kd.get('kn_score') %}
                 {% set kt = kd.get('kn_total', 100) %}
-                {% if ks is not none %}
+                {% if ks is not none and kd.get('kn_attempted') %}
                   {% set hue = ((ks / kt) * 120) | int if kt > 0 else 0 %}
                   <span style="color:hsl({{ hue }},75%,45%); font-weight:bold;">{{ ks }}</span>
                   {% if kt != 100 %}<span class="meta">/{{ kt }}</span>{% endif %}
+                {% elif ks is not none %}
+                  <span style="color:#ccc;" title="No submissions yet">—</span>
                 {% else %}
                   <span style="color:#ddd;">?</span>
                 {% endif %}
@@ -328,9 +330,11 @@
           <td>
             {% if item.platform == 'kilonova' %}
               {% set ks = pr.score if pr and pr.score is not none else none %}
-              {% if ks is not none %}
+              {% if ks is not none and pr.attempts %}
                 {% set hue = (ks * 120 // 100) %}
-                <span style="color:hsl({{ hue }},75%,45%); font-weight:bold;">{{ ks }}</span>
+                <span style="color:hsl({{ hue }},75%,45%); font-weight:bold;">{{ ks }}p</span>
+              {% elif ks is not none %}
+                <span style="color:#ccc;" title="No submissions yet">—</span>
               {% else %}
                 <span style="color:#ddd;">·</span>
               {% endif %}

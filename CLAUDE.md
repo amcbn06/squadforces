@@ -74,6 +74,10 @@ Existing databases get new columns through `ensure_columns()` in `app/database.p
 
 `app/activity.py::user_activity()` returns daily counts from the user's very first stored submission on any of the three judges (`submissions.earliest_submission_at()` per platform, oldest wins); `app/templates/users/profile.html`'s script renders the current year from Jan 1 to today, then complete Jan-Dec years below back to the first one with data.
 
+### Kilonova: tried vs untried
+
+`ProblemResult.attempts` (per-problem, in a contest item) and `Result.raw_scrape_data["kn_attempted"]` (a whole contest's total, or a standalone problem) record whether a member submitted anything at all, so the matrix can tell "never touched it" (a dash) from "submitted and scored 0" ("0p"), which used to look identical.
+
 ### Matrix view
 
 `app/routers/assignments.py::_build_matrix()` constructs a list of `{item, cells: [{user, result, problem_results}]}` dicts passed to `assignments/detail.html`. The template renders the table and handles the Alpine.js expand/collapse for contest sub-rows without a round-trip.
