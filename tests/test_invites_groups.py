@@ -511,6 +511,42 @@ class Ownership(SiteTestCase):
         order = [page.index(t) for t in ("Week B", "Week A", "Undated new", "Undated old")]
         self.assertEqual(order, sorted(order))                # dated newest first, then undated newest first
 
+    def test_the_owner_can_edit_an_assignment_after_creating_it(self):
+        r = self.owner.post("/assignments/new", data={"group_id": self.gid, "title": "Draft", "week_start_date": "2026-01-05"})
+        aid = int(re.search(r"/assignments/(\d+)", r.headers["location"]).group(1))
+        page = self.owner.get(f"/assignments/{aid}").text
+        self.assertIn(f'href="/assignments/{aid}/edit-page"', page)
+
+        form = self.owner.get(f"/assignments/{aid}/edit-page").text
+        self.assertIn('value="Draft"', form)
+        self.assertIn('value="2026-01-05"', form)
+        self.assertNotIn("document.getElementById('week-start')", form)      # editing must not overwrite the stored date with today
+
+        r = self.owner.post(f"/assignments/{aid}/edit",
+                            data={"title": "Week 1 — Renamed", "week_start_date": "2026-01-12", "description": "New topics"})
+        self.assertEqual(r.status_code, 303)
+        db = SessionLocal()
+        a = db.get(models.Assignment, aid)
+        self.assertEqual((a.title, str(a.week_start_date), a.description), ("Week 1 — Renamed", "2026-01-12", "New topics"))
+        db.close()
+        page = self.owner.get(f"/assignments/{aid}").text
+        self.assertIn("Week 1 — Renamed", page)
+        self.assertIn("New topics", page)
+
+        r = self.owner.post(f"/assignments/{aid}/edit", data={"title": "  ", "week_start_date": "2026-01-12"})
+        self.assertEqual(r.status_code, 422)                                 # title can't be blanked out
+        db = SessionLocal()
+        self.assertEqual(db.get(models.Assignment, aid).title, "Week 1 — Renamed")
+        db.close()
+
+    def test_only_the_owner_or_admin_can_edit_an_assignment(self):
+        for client in (self.member, self.other):
+            self.assertEqual(client.get(f"/assignments/{self.aid}/edit-page").status_code, 403)
+            self.assertEqual(client.post(f"/assignments/{self.aid}/edit", data={"title": "hijack"}).status_code, 403)
+        db = SessionLocal()
+        self.assertEqual(db.get(models.Assignment, self.aid).title, "Week")
+        db.close()
+
     def test_the_owner_manages_their_group(self):
         page = self.owner.get(f"/groups/{self.gid}").text
         for text in ("Edit", "Delete", "Invite links", "Owner: owner"):

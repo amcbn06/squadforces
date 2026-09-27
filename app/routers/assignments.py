@@ -87,6 +87,77 @@ async def create_assignment(
     return RedirectResponse(f"/assignments/{assignment.id}", status_code=303)
 
 
+@router.get("/{assignment_id}/edit-page", response_class=HTMLResponse)
+async def edit_assignment_form(
+    request: Request, assignment_id: int, db: Session = Depends(get_db), account=Depends(require_auth)
+):
+    assignment = db.get(Assignment, assignment_id)
+    if not assignment:
+        return HTMLResponse("Assignment not found", status_code=404)
+    if not can_manage_group(account, assignment.group):  # the group's owner or the admin, same as Delete
+        raise HTTPException(status_code=403)
+    return templates.TemplateResponse(request,
+        "assignments/form.html", {
+            "request": request, "group": assignment.group, "assignment": assignment, "error": None,
+            "account": account,
+        }
+    )
+
+
+@router.post("/{assignment_id}/edit")
+async def edit_assignment(
+    request: Request,
+    assignment_id: int,
+    title: str = Form(...),
+    week_start_date: str = Form(""),
+    description: str = Form(""),
+    db: Session = Depends(get_db),
+    account=Depends(require_auth),
+):
+    assignment = db.get(Assignment, assignment_id)
+    if not assignment:
+        return HTMLResponse("Assignment not found", status_code=404)
+    if not can_manage_group(account, assignment.group):
+        raise HTTPException(status_code=403)
+
+    title = title.strip()
+    if not title:
+        return templates.TemplateResponse(request,
+            "assignments/form.html", {
+                "request": request, "group": assignment.group, "assignment": assignment,
+                "error": "Title is required.", "account": account,
+            }, status_code=422,
+        )
+    if len(title) > MAX_TITLE_LENGTH:
+        return templates.TemplateResponse(request,
+            "assignments/form.html", {
+                "request": request, "group": assignment.group, "assignment": assignment,
+                "error": f"Title is too long (max {MAX_TITLE_LENGTH} characters).", "account": account,
+            }, status_code=422,
+        )
+
+    parsed_date = None
+    if week_start_date.strip():
+        try:
+            parsed_date = date.fromisoformat(week_start_date.strip())
+        except ValueError:
+            pass
+
+    before = {"title": assignment.title, "week_start_date": str(assignment.week_start_date) if assignment.week_start_date else None,
+              "description": assignment.description}
+    assignment.title = title
+    assignment.week_start_date = parsed_date
+    assignment.description = description.strip() or None
+    after = {"title": assignment.title, "week_start_date": str(assignment.week_start_date) if assignment.week_start_date else None,
+             "description": assignment.description}
+    changed = {k: [before[k], after[k]] for k in after if before[k] != after[k]}
+    if changed:
+        audit.record(db, request, "assignment.edit", actor=account, target_type="assignment", target_id=assignment.id,
+                     target_label=assignment.title, group_id=assignment.group_id, details=changed)
+    db.commit()
+    return RedirectResponse(f"/assignments/{assignment_id}", status_code=303)
+
+
 @router.get("/{assignment_id}", response_class=HTMLResponse)
 async def assignment_detail(
     request: Request,
