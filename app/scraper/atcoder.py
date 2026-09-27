@@ -132,20 +132,31 @@ async def get_contest_tasks(contest_id: str) -> list[dict]:
 _contests: Optional[tuple[float, dict[str, dict]]] = None
 
 
-async def get_contest_timing(contest_id: str) -> dict | None:
-    """Return {start_epoch_second, duration_second} for a contest, or None if not found.
-    contests.json is ~1 MB, so it is cached for all lookups."""
+async def _ensure_contests() -> dict[str, dict]:
+    """Every AtCoder contest, keyed by id. contests.json is ~1 MB, so it is fetched once and cached for all
+    lookups (get_contest_timing() and get_all_contests() both read this)."""
     global _contests
     if _contests is None or time.monotonic() - _contests[0] > _CATALOG_TTL:
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(f"{AC_PROBLEMS_BASE}/resources/contests.json")
         if resp.status_code != 200:
-            return None
+            return _contests[1] if _contests else {}
         _contests = (time.monotonic(), {c["id"]: c for c in resp.json()})
-    c = _contests[1].get(contest_id)
+    return _contests[1]
+
+
+async def get_contest_timing(contest_id: str) -> dict | None:
+    """Return {start_epoch_second, duration_second} for a contest, or None if not found."""
+    c = (await _ensure_contests()).get(contest_id)
     if not c:
         return None
     return {"start_epoch_second": c["start_epoch_second"], "duration_second": c["duration_second"]}
+
+
+async def get_all_contests() -> list[dict]:
+    """Every AtCoder contest kenkoooo knows about — id, title, start_epoch_second, duration_second, and
+    rate_change ("All", " ~ 1999", "-" for unrated, ...). Same cached file get_contest_timing() reads."""
+    return list((await _ensure_contests()).values())
 
 
 async def validate_handle(handle: str) -> bool:
