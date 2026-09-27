@@ -15,10 +15,10 @@ ACTIVITY_MAX_AGE = timedelta(hours=1)  # how stale a stored copy may be before a
 
 
 async def user_activity(db: Session, user) -> dict[str, dict[str, int]]:
-    """{"YYYY-MM-DD": {"cf": n, "atc": n, "kn": n}} for the last two calendar years."""
+    """{"YYYY-MM-DD": {"cf": n, "atc": n, "kn": n}}, from the user's very first stored submission on."""
     now = datetime.now(timezone.utc)
-    since = datetime(now.year - 2, 1, 1, tzinfo=timezone.utc).timestamp()
     activity: dict[str, dict[str, int]] = {}
+    earliest = None
 
     for key, short in HEATMAP_PLATFORMS.items():
         platform = registry.get(key)
@@ -28,6 +28,19 @@ async def user_activity(db: Session, user) -> dict[str, dict[str, int]]:
             await submissions.refresh_user(db, user, platform, max_age=ACTIVITY_MAX_AGE)
         except Exception:
             logger.warning("Could not refresh %s submissions of %s for the heatmap", key, user.username, exc_info=True)
+        first = submissions.earliest_submission_at(db, user.id, key)
+        if first is not None:
+            earliest = first if earliest is None else min(earliest, first)
+
+    # Back to Jan 1 of the year of the very first submission (any platform), so an older year is never cut
+    # off partway; with no history at all there is nothing to show, so this year alone is enough.
+    since_year = datetime.fromtimestamp(earliest, tz=timezone.utc).year if earliest is not None else now.year
+    since = datetime(since_year, 1, 1, tzinfo=timezone.utc).timestamp()
+
+    for key, short in HEATMAP_PLATFORMS.items():
+        platform = registry.get(key)
+        if not platform.handle_of(user):
+            continue
         for day, count in submissions.daily_counts(db, user.id, key, since).items():
             activity.setdefault(day, {short_name: 0 for short_name in HEATMAP_PLATFORMS.values()})[short] += count
     return activity
