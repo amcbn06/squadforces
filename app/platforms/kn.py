@@ -178,11 +178,6 @@ class Kilonova(Platform):
             await _sync_problem(item, handled, db)
 
 
-def _best(subs, key: str) -> float:
-    """Highest score among a user's submissions to one problem (0 when there are none)."""
-    return max((s.score or 0 for s in subs if s.problem_key == key), default=0)
-
-
 async def _sync_contest(item, members: list, db) -> None:
     list_id = int(item.external_id)
     pl = await api.get_problem_list(list_id)
@@ -225,12 +220,15 @@ async def _sync_contest(item, members: list, db) -> None:
 
         solved_count = 0
         score_total = 0
+        attempted_any = False
         for cp in listed:
-            best = _best(subs, cp.platform_problem_id)
+            psubs = [s for s in subs if s.problem_key == cp.platform_problem_id]
+            best = max((s.score or 0 for s in psubs), default=0)
             scale = cp.max_score or DEFAULT_SCALE
             solved = best >= scale
             score_total += int(best)
             solved_count += solved
+            attempted_any = attempted_any or bool(psubs)
 
             pr = db.query(models.ProblemResult).filter_by(contest_problem_id=cp.id, user_id=user.id).first()
             if not pr:
@@ -239,13 +237,14 @@ async def _sync_contest(item, members: list, db) -> None:
             pr.solved = solved
             pr.score = int(best)
             pr.solve_type = None
-            pr.attempts = None
+            # Reused as "how many submissions": distinguishes never attempted (None) from attempted and 0p.
+            pr.attempts = len(psubs) or None
             pr.best_wrong_verdict = None
 
         result.problems_solved_count = solved_count
         result.problems_total_count = len(problem_ids)
         result.participated = None
-        result.raw_scrape_data = {"kn_score": score_total, "kn_total": scale_total}
+        result.raw_scrape_data = {"kn_score": score_total, "kn_total": scale_total, "kn_attempted": attempted_any}
         result.last_synced_at = datetime.utcnow()
 
 
@@ -271,7 +270,7 @@ async def _sync_problem(item, members: list, db) -> None:
         result.solve_time = (
             datetime.fromtimestamp(first_full.submitted_at, timezone.utc).replace(tzinfo=None) if first_full else None
         )
-        result.raw_scrape_data = {"kn_score": int(best), "kn_total": scale}
+        result.raw_scrape_data = {"kn_score": int(best), "kn_total": scale, "kn_attempted": bool(subs)}
         result.last_synced_at = datetime.utcnow()
 
 

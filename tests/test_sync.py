@@ -2,7 +2,7 @@
 from datetime import datetime, timedelta
 from unittest import mock
 
-from app import models, submissions, sync
+from app import auth, models, submissions, sync
 from app.scraper import atcoder as ac_api
 from app.scraper import codeforces as cf_api
 from app.scraper import kilonova as kn_api
@@ -510,12 +510,16 @@ class KilonovaSync(SyncTestCase):
 
         r = self.result(item, self.andrei)
         self.assertEqual((r.problems_solved_count, r.problems_total_count), (2, 3))
-        self.assertEqual(r.raw_scrape_data, {"kn_score": 100 + 70 + 50, "kn_total": 250})
+        self.assertEqual(r.raw_scrape_data, {"kn_score": 100 + 70 + 50, "kn_total": 250, "kn_attempted": True})
         pr = self.problem_results(item, self.andrei)
-        self.assertEqual([(pr[i].score, pr[i].solved) for i in "123"], [(100, True), (70, False), (50, True)])
+        self.assertEqual([(pr[i].score, pr[i].solved, pr[i].attempts) for i in "123"],
+                         [(100, True, 1), (70, False, 2), (50, True, 1)])                # 101 was submitted twice
 
         r = self.result(item, self.bianca)
-        self.assertEqual((r.problems_solved_count, r.raw_scrape_data["kn_score"]), (0, 0))
+        self.assertEqual((r.problems_solved_count, r.raw_scrape_data["kn_score"], r.raw_scrape_data["kn_attempted"]),
+                         (0, 0, True))                                                  # attempted 100, scored 0
+        pr = self.problem_results(item, self.bianca)
+        self.assertEqual([(pr[i].score, pr[i].attempts) for i in "123"], [(0, 1), (0, None), (0, None)])
 
     async def test_problem_infos_are_fetched_once_per_problem(self):
         item = await self.sync(self.item(self.assignment, "kilonova", "contest", "77"))
@@ -527,11 +531,33 @@ class KilonovaSync(SyncTestCase):
         item = await self.sync(self.item(self.assignment, "kilonova", "problem", "101"))
         self.assertEqual(item.title, "Problem 101")
         r = self.result(item, self.andrei)
-        self.assertEqual((r.solved, r.raw_scrape_data), (False, {"kn_score": 70, "kn_total": 100}))
+        self.assertEqual((r.solved, r.raw_scrape_data), (False, {"kn_score": 70, "kn_total": 100, "kn_attempted": True}))
         item2 = await self.sync(self.item(self.assignment, "kilonova", "problem", "102"))
         r = self.result(item2, self.andrei)
-        self.assertEqual((r.solved, r.raw_scrape_data), (True, {"kn_score": 50, "kn_total": 50}))  # scale 50: 50 is full marks
-        self.assertEqual(self.result(item2, self.bianca).raw_scrape_data, {"kn_score": 0, "kn_total": 50})
+        self.assertEqual((r.solved, r.raw_scrape_data),
+                         (True, {"kn_score": 50, "kn_total": 50, "kn_attempted": True}))  # scale 50: 50 is full marks
+        # bianca never touched 102: tried is False, distinct from a 0-point attempt
+        self.assertEqual(self.result(item2, self.bianca).raw_scrape_data, {"kn_score": 0, "kn_total": 50, "kn_attempted": False})
+
+    def test_the_matrix_shows_a_dash_for_never_tried_and_0p_for_tried_but_scored_nothing(self):
+        from fastapi.testclient import TestClient
+        from app.main import app
+
+        async def go():
+            await self.sync(self.item(self.assignment, "kilonova", "contest", "77"))
+            await self.sync(self.item(self.assignment, "kilonova", "problem", "102"))
+        import asyncio
+        asyncio.run(go())
+        self.bianca.password_hash = auth.hash_password("secret-pass1")
+        self.db.commit()
+        with TestClient(app, follow_redirects=False) as c:
+            r = c.post("/login", data={"username": "bianca_u", "password": "secret-pass1"})
+            self.assertEqual(r.status_code, 303)
+            page = c.get(f"/assignments/{self.assignment.id}").text
+        # bianca: attempted 100 (0p), never touched 101 or 102, and never touched the standalone item either
+        self.assertIn(">0p<", page)
+        self.assertIn('title="No submissions yet">—<', page)
+        self.assertNotRegex(page, r'>0<(?!/span>p)')                          # a bare "0" (untried) never appears
 
     async def test_unknown_handle_is_reported(self):
         self.db.add(models.GroupMembership(group_id=self.assignment.group_id, user_id=self.ghost.id))
