@@ -66,6 +66,10 @@ Existing databases get new columns through `ensure_columns()` in `app/database.p
 
 `app/leaderboard.py`: a problem counts for a user once, if their *first* accepted submission (per platform + problem key) falls in the last 30 days. Computed by query (accepted in the window and no older acceptance, via the `(user, platform, problem_key)` index) rather than a stored flag, so it can't go stale as submissions are added or re-graded; only users whose full history is loaded (`SubmissionSync.full_sync_at`) are counted. The group board intersects that with the group's problems from `Platform.problem_keys(item)` (override it if a platform's contest problems are keyed differently from `ContestProblem.platform_problem_id`); the platform board (home page, right side) is per account type: users are ranked against users, students against students (the admin sees both, and is never ranked). An account created by the admin with an empty password stores `auth.NO_LOGIN` (`"!"`): `verify_password` always refuses it, so it can be a group member and on the boards but never signed in to; setting a password later enables it. Manual platforms (CSES, links) have no submissions and don't count.
 
+### Activity heatmap
+
+`app/activity.py::user_activity()` returns daily counts from the user's very first stored submission on any of the three judges (`submissions.earliest_submission_at()` per platform, oldest wins); `app/templates/users/profile.html`'s script renders the current year from Jan 1 to today, then complete Jan-Dec years below back to the first one with data.
+
 ### Matrix view
 
 `app/routers/assignments.py::_build_matrix()` constructs a list of `{item, cells: [{user, result, problem_results}]}` dicts passed to `assignments/detail.html`. The template renders the table and handles the Alpine.js expand/collapse for contest sub-rows without a round-trip.

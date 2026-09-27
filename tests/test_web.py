@@ -231,7 +231,7 @@ class SubmissionStoreThroughTheApp(WebTestCase):
         self.cf = FakeCodeforces(self)
         self.cf.contests["1"] = ("Beta Round 1", [{"index": "A", "name": "Theatre Square", "rating": 1000}])
         self.cf.problem_ratings[("1", "A")] = 1000
-        self.recent = int(time.time()) - 3600  # inside the heatmap's two-year window
+        self.recent = int(time.time()) - 3600  # recent enough to be inside the heatmap window
         self.cf.status["alice_cf"] = [cf_raw(2, 1, "A", "OK", at=self.recent, name="Theatre Square")]
         db = SessionLocal()
         db.query(models.User).filter_by(username="alice").update({"codeforces_handle": "alice_cf"})

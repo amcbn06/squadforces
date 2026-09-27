@@ -151,6 +151,15 @@ def rating_entry(db: Session, user_id: int, platform_key: str, contest_key: str)
     )
 
 
+def earliest_submission_at(db: Session, user_id: int, platform_key: str) -> Optional[float]:
+    """Unix seconds of the user's oldest stored submission on a platform, or None with no history yet."""
+    return (
+        db.query(func.min(models.Submission.submitted_at))
+        .filter_by(user_id=user_id, platform=platform_key)
+        .scalar()
+    )
+
+
 def daily_counts(db: Session, user_id: int, platform_key: str, since_epoch: float) -> dict[str, int]:
     """Submissions per UTC day ("YYYY-MM-DD") from `since_epoch` on."""
     counts: dict[str, int] = {}

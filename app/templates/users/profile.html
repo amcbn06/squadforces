@@ -83,7 +83,7 @@
 </div>
 {% endif %}
 
-{# Activity: the stats and the legend in the header, the last year below, older years on demand #}
+{# Activity: the stats and the legend in the header, this year so far below, complete earlier years on demand #}
 <div class="box" style="margin-bottom:10px;">
   <div class="box-header" style="cursor:default; display:flex; align-items:center; flex-wrap:wrap; gap:6px 16px;">
     <span>Activity</span>
@@ -213,17 +213,16 @@
 
   function render() {
     if (!activity) return;
-    const theme = themeVars(), today = todayUtc();
-    // the last 12 months up to today
+    const theme = themeVars(), today = todayUtc(), thisYear = today.getUTCFullYear();
+    // this year so far, from Jan 1
     document.getElementById('heatmap-container').innerHTML =
-      buildRange(new Date(today.getTime() - 364 * DAY), today, activity, theme);
-    // earlier calendar years, only those with something in them
-    const firstYear = Math.min(today.getUTCFullYear(), ...Object.keys(activity).map(k => +k.slice(0, 4)));
-    const olderStart = new Date(today.getTime() - 364 * DAY);
+      buildRange(utc(thisYear, 0, 1), today, activity, theme);
+    // earlier years, complete (Jan-Dec), back to the first one with anything in it
+    const years = Object.keys(activity).map(k => +k.slice(0, 4));
+    const firstYear = years.length ? Math.min(thisYear, ...years) : thisYear;
     let older = '';
-    for (let y = olderStart.getUTCFullYear(); y >= firstYear; y--) {
-      const start = utc(y, 0, 1), end = y === olderStart.getUTCFullYear() ? new Date(olderStart.getTime() - DAY) : utc(y, 11, 31);
-      if (end < start) continue;
+    for (let y = thisYear - 1; y >= firstYear; y--) {
+      const start = utc(y, 0, 1), end = utc(y, 11, 31);
       if (!Object.keys(activity).some(k => k >= key(start) && k <= key(end))) continue;
       older += `<div class="meta" style="font-weight:600; margin:6px 0 3px;">${y}</div>` + buildRange(start, end, activity, theme);
     }

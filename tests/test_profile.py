@@ -2,7 +2,7 @@
 import re
 import time
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest import mock
 
 from fastapi.testclient import TestClient
@@ -153,6 +153,20 @@ class ProfileSite(unittest.TestCase):
         db.close()
         data = self.ana.get("/users/ana/activity.json").json()
         self.assertEqual(sum(day["kn"] for day in data.values()), 0)
+
+    def test_activity_reaches_back_to_the_first_submission_but_no_further(self):
+        db = SessionLocal()
+        old = int(datetime(2019, 3, 5, tzinfo=timezone.utc).timestamp())
+        db.get(models.User, self.ana_id).codeforces_handle = "ana_cf"
+        db.add(models.Submission(user_id=self.ana_id, platform="codeforces", submission_id=1, problem_key="1/A",
+                                 submitted_at=old, verdict="AC", accepted=True, final=True))
+        db.add(models.SubmissionSync(user_id=self.ana_id, platform="codeforces", handle="ana_cf",
+                                     submission_count=1, last_synced_at=datetime.utcnow() - timedelta(minutes=3)))
+        db.commit()
+        db.close()
+        data = self.ana.get("/users/ana/activity.json").json()
+        self.assertIn("2019-03-05", data)
+        self.assertNotIn("2018-12-31", data)                                       # Jan 1 of that year, not earlier
 
 
 class ActivityUnit(unittest.TestCase):
