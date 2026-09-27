@@ -348,6 +348,11 @@ async def refresh_user(
         except Exception:
             logger.warning("Could not refresh %s rating history for %s", platform.key, handle, exc_info=True)
 
+        try:
+            await platform.refresh_profile(user, handle)
+        except Exception:
+            logger.warning("Could not refresh %s profile fields for %s", platform.key, handle, exc_info=True)
+
         db.commit()
         logger.info("%s submissions of %s: +%d new, %d changed, %d stored", platform.key, handle, added, updated, count)
         return state

@@ -145,6 +145,12 @@ class Platform:
         """The user's rated-contest history, or None if this platform has none."""
         return None
 
+    async def refresh_profile(self, user, handle: str) -> None:
+        """Update any cached profile fields this platform keeps on `user` (e.g. a current rating shown outside
+        any single contest) from `handle`'s current standing. Most platforms have nothing to refresh here;
+        Codeforces overrides it to keep `User.cf_rating` / `cf_rank` current after every submission refresh."""
+        return None
+
     async def sync_item(self, item, members: list, db) -> None:
         """Fill in the item's metadata (title, problems, rating) and derive each member's results from the
         submission store. Members' stores have already been refreshed when this runs."""

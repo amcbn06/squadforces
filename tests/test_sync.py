@@ -22,6 +22,7 @@ class FakeCodeforces:
         self.calls: list[str] = []
         self.not_started: set[str] = set()
         self.info_error: Exception | None = None
+        self.user_info: dict[str, dict] = {}   # handle -> {"rating", "rank"} for refresh_profile()
 
         async def get_user_status(handle, offset=1, count=100000):
             self.calls.append(f"status:{handle}")
@@ -63,10 +64,15 @@ class FakeCodeforces:
             self.calls.append(f"gym-problems:{contest_id}")
             return self.gyms[contest_id]["problems"]
 
+        async def validate_handle(handle):
+            self.calls.append(f"validate:{handle}")
+            return self.user_info.get(handle)
+
         for name, fn in [("get_user_status", get_user_status), ("get_user_rating_history", get_user_rating_history),
                          ("get_contest_info", get_contest_info), ("get_contest_problems", get_contest_problems),
                          ("get_contest_metadata", get_contest_metadata), ("get_problem_rating", get_problem_rating),
-                         ("get_gym_metadata", get_gym_metadata), ("get_gym_problems", get_gym_problems)]:
+                         ("get_gym_metadata", get_gym_metadata), ("get_gym_problems", get_gym_problems),
+                         ("validate_handle", validate_handle)]:
             p = mock.patch.object(cf_api, name, fn)
             p.start()
             testcase.addCleanup(p.stop)
@@ -148,6 +154,22 @@ class CodeforcesContestSync(SyncTestCase):
         pr = self.problem_results(item, self.bob)
         self.assertEqual(set(pr), {"A", "B", "C", "D"})
         self.assertFalse(any(p.solved for p in pr.values()))
+
+    async def test_a_refresh_updates_the_users_cached_rating_and_rank(self):
+        self.alice.cf_rating, self.alice.cf_rank = 1200, "pupil"
+        self.db.commit()
+        self.cf.user_info["alice_cf"] = {"handle": "alice_cf", "rating": 1350, "rank": "specialist"}
+        await self.sync(self.item_)
+        self.db.refresh(self.alice)
+        self.assertEqual((self.alice.cf_rating, self.alice.cf_rank), (1350, "specialist"))
+
+    async def test_a_judge_outage_on_the_rating_lookup_keeps_the_last_known_rating(self):
+        self.alice.cf_rating = 1200
+        self.db.commit()
+        # no entry in self.cf.user_info: validate_handle() returns None, as it does for a real outage
+        await self.sync(self.item_)
+        self.db.refresh(self.alice)
+        self.assertEqual(self.alice.cf_rating, 1200)
 
     async def test_the_contest_is_not_looked_up_again_and_the_store_is_reused(self):
         await self.sync(self.item_)
