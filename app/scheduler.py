@@ -137,6 +137,17 @@ async def _prefetch_contest_problems() -> None:
         db.close()
 
 
+async def _refresh_atc_contest_cache() -> None:
+    """Metadata + every contest's problem difficulties, in one pass — cheap for AtCoder (see recommend.py),
+    unlike its rate-limited Codeforces counterpart above, so this doesn't need to be split into a throttled job."""
+    db = SessionLocal()
+    try:
+        await rec.refresh_atc_contest_metadata(db)
+        await rec.prefetch_atc_contest_problems(db)
+    finally:
+        db.close()
+
+
 def start() -> None:
     global _scheduler
     from datetime import datetime as _dt
@@ -172,6 +183,15 @@ def start() -> None:
         _prefetch_contest_problems,
         "interval",
         minutes=1,
+    )
+
+    # AtCoder's own pool: no rate limit to pace around, so metadata + every contest's problems refresh together,
+    # once a day (a few seconds' work once the catalog files are warm).
+    _scheduler.add_job(
+        _refresh_atc_contest_cache,
+        "interval",
+        hours=24,
+        next_run_time=_dt.now(),
     )
 
     # Keep the audit log to its retention period (it holds IP addresses).

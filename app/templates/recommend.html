@@ -37,12 +37,6 @@
         <form method="get" action="/recommend" id="rc-form"
               style="display:flex; flex-direction:column; gap:10px;">
           <input type="hidden" name="platform" value="{{ platform }}">
-          {# the tab not currently shown still needs its own division picks to round-trip through Apply #}
-          {% if platform == 'cf' %}
-            {% for d in selected_atc_divs %}<input type="hidden" name="atc_divisions" value="{{ d }}">{% endfor %}
-          {% else %}
-            {% for d in selected_cf_divs %}<input type="hidden" name="cf_divisions" value="{{ d }}">{% endfor %}
-          {% endif %}
           {% if sub_filter != 'all' %}<input type="hidden" name="sub_filter" value="{{ sub_filter }}">{% endif %}
 
           <div>
@@ -50,12 +44,17 @@
             <select name="member_id" id="rc-member" style="width:100%;">
               <option value="">— or enter rating below —</option>
               {% for m in all_members %}
-              <option value="{{ m.id }}" data-rating="{{ m.cf_rating or '' }}"
+              <option value="{{ m.id }}" data-rating="{{ member_ratings[m.id] }}"
                       {% if m.id == member_id %}selected{% endif %}>
-                {{ m.username }}{% if m.cf_rating %} ({{ m.cf_rating }}){% endif %}
+                {{ m.username }} ({{ member_ratings[m.id] }})
               </option>
               {% endfor %}
             </select>
+            {% if not all_members %}
+            <p class="meta" style="margin-top:4px; font-size:11px;">
+              Nobody of your kind has a {{ 'Codeforces' if platform == 'cf' else 'AtCoder' }} handle linked yet.
+            </p>
+            {% endif %}
           </div>
 
           <div>
@@ -95,7 +94,9 @@
 
     {# Submission filter #}
     <div class="box">
-      <div class="box-header" style="cursor:default; font-size:12px;">Your submissions</div>
+      <div class="box-header" style="cursor:default; font-size:12px;">
+        {{ filter_account.username }}'s submissions{% if filter_account.id == account.id %} (you){% endif %}
+      </div>
       <div class="box-body" style="padding:8px 10px; display:flex; flex-direction:column; gap:4px;">
         <a href="{{ filter_urls.all }}" class="btn {{ 'btn-green' if sub_filter == 'all' }}"
            style="text-align:left; font-size:12px;">All contests</a>
@@ -108,8 +109,7 @@
       </div>
     </div>
 
-    {# Contest database progress — Codeforces only; AtCoder has no rate-limited fetch to track #}
-    {% if platform == 'cf' %}
+    {# Contest database progress #}
     <div class="box">
       <div class="box-header" style="cursor:default; font-weight:normal; font-size:12px;">
         Contest database
@@ -130,42 +130,37 @@
         </div>
         {% if progress.pct < 100 %}
         <p class="meta" style="margin-top:5px; font-size:11px;">
-          1 contest indexed per minute.
+          {% if platform == 'cf' %}1 contest indexed per minute.{% else %}Indexing in the background.{% endif %}
         </p>
         {% endif %}
       </div>
     </div>
-    {% else %}
-    <div class="box">
-      <div class="box-body" style="padding:10px 12px;">
-        <p class="meta" style="font-size:11px;">
-          Contest list and problem difficulties come from the AtCoder Problems community catalog
-          (kenkoooo.com) — no separate indexing needed here.
-        </p>
-      </div>
-    </div>
-    {% endif %}
 
   </div>
 
   {# ── Main content ─────────────────────────────────────────────────────── #}
   <div>
-    {% if platform == 'cf' and progress.fetched == 0 and not bootstrapping %}
+    {% if progress.fetched == 0 and not bootstrapping %}
     <div class="info-msg" style="margin-bottom:8px;">
-      Contest list loaded — problem ratings are being fetched in the background (1 per minute).
+      Contest list loaded — problem ratings are being fetched in the background.
       Grades shown are approximate until ratings are cached.
     </div>
     {% endif %}
 
-    {% set has_handle = (account.codeforces_handle if platform == 'cf' else account.atcoder_handle) %}
-    {% if sub_filter != 'all' and not has_handle %}
+    {% set filter_handle = (filter_account.codeforces_handle if platform == 'cf' else filter_account.atcoder_handle) %}
+    {% if sub_filter != 'all' and not filter_handle %}
     <div class="info-msg" style="margin-bottom:8px;">
+      {% if filter_account.id == account.id %}
       No {{ 'Codeforces' if platform == 'cf' else 'AtCoder' }} handle is set on your account, so submissions
       can't be checked — set one to use this filter.
+      {% else %}
+      {{ filter_account.username }} has no {{ 'Codeforces' if platform == 'cf' else 'AtCoder' }} handle set, so
+      their submissions can't be checked.
+      {% endif %}
     </div>
     {% endif %}
 
-    {% if platform == 'cf' and bootstrapping %}
+    {% if bootstrapping %}
     <div class="box">
       <div class="box-body" style="text-align:center; padding:48px 24px;">
         <span class="dot dot-syncing" style="width:10px; height:10px; margin-bottom:10px; display:inline-block;"></span>
