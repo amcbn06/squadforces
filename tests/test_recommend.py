@@ -126,6 +126,24 @@ class CfPool(DbTestCase):
         untouched = rec.get_cf_recommendations(self.db, ["div2"], 1000, account=self.alice, sub_filter="none")
         self.assertEqual([r["contest"].id for r in untouched], [101])
 
+    async def test_progress_is_reported_regardless_of_sub_filter(self):
+        self.db.add(models.Submission(user_id=self.alice.id, platform="codeforces", submission_id=1,
+                                       problem_key="100/A", contest_key="100", submitted_at=1, accepted=True,
+                                       verdict="AC"))
+        self.db.commit()
+        recs = {r["contest"].id: r["progress"] for r in
+                rec.get_cf_recommendations(self.db, ["div2"], 1000, account=self.alice)}
+        self.assertEqual(recs[100], {"solved": 1, "total": 3})
+        self.assertEqual(recs[101], {"solved": 0, "total": 2})
+
+    async def test_progress_is_none_without_exact_data_or_an_account(self):
+        recs = {r["contest"].id: r["progress"] for r in
+                rec.get_cf_recommendations(self.db, ["div2", "div3"], 1000, account=self.alice)}
+        self.assertIsNone(recs[200])  # no cached problem set
+        recs_no_account = {r["contest"].id: r["progress"] for r in
+                            rec.get_cf_recommendations(self.db, ["div2"], 1000)}
+        self.assertIsNone(recs_no_account[100])  # nobody to check
+
 
 class AtcPool(DbTestCase):
     """get_atc_recommendations() reads the AtcContest/AtcContestProblem cache — same shape and same tests as
@@ -172,6 +190,16 @@ class AtcPool(DbTestCase):
         self.assertEqual([r["contest"].id for r in solved], ["abc343"])
         untouched = rec.get_atc_recommendations(self.db, ["abc", "arc"], 900, account=self.alice, sub_filter="none")
         self.assertEqual([r["contest"].id for r in untouched], ["arc180"])
+
+    def test_progress_is_reported_regardless_of_sub_filter(self):
+        self.db.add(models.Submission(user_id=self.alice.id, platform="atcoder", submission_id=1,
+                                       problem_key="abc343_a", contest_key="abc343", submitted_at=1,
+                                       accepted=True, verdict="AC"))
+        self.db.commit()
+        recs = {r["contest"].id: r["progress"] for r in
+                rec.get_atc_recommendations(self.db, ["abc", "arc"], 900, account=self.alice)}
+        self.assertEqual(recs["abc343"], {"solved": 1, "total": 3})
+        self.assertEqual(recs["arc180"], {"solved": 0, "total": 2})
 
 
 class AtcCacheBuilding(DbTestCase):
@@ -331,7 +359,7 @@ class RecommendPageHTTP(unittest.TestCase):
         mid = self._user_id("alice_u")
         r = self.admin.get("/recommend", params={"platform": "cf", "member_id": mid, "rating": "1750"})
         self.assertEqual(r.status_code, 200)
-        self.assertIn("Top picks for rating 1750", r.text)
+        self.assertIn("picks for rating 1750", r.text)
 
     def test_the_submission_filter_checks_the_selected_member_not_the_viewer(self):
         # Reproduces the reported bug: the admin (no handle) selects a member who does have one and filters —
@@ -344,6 +372,23 @@ class RecommendPageHTTP(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertNotIn("No Codeforces handle is set on your account", r.text)
         self.assertNotIn("alice_u has no Codeforces handle set", r.text)  # alice_u DOES have one
+
+    def test_a_solved_contest_shows_a_checkmark(self):
+        from app.database import SessionLocal
+        db = SessionLocal()
+        _cf_contest(db, 100, "Div 2 A", "div2", problems={"A": 800})
+        db.close()
+        self.make_user("alice_u", user_type="user", cf="alice_cf")
+        mid = self._user_id("alice_u")
+        db = SessionLocal()
+        db.add(models.Submission(user_id=mid, platform="codeforces", submission_id=1, problem_key="100/A",
+                                  contest_key="100", submitted_at=1, accepted=True, verdict="AC"))
+        db.commit()
+        db.close()
+
+        r = self.admin.get("/recommend", params={"platform": "cf", "member_id": mid, "cf_divisions": "div2"})
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("✓ solved", r.text)
 
     def _user_id(self, username):
         from app.database import SessionLocal

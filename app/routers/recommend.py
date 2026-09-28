@@ -25,6 +25,9 @@ templates.env.filters["ts_to_date"] = (
 
 DEFAULT_DIVISIONS = ["div2", "div3", "educational"]
 SUB_FILTERS = ("all", "none", "attempted", "solved")
+# More than a top-5 glance: with each card now showing solve progress, a longer, scrollable list lets the viewer
+# skim past ones already done instead of re-filtering to find the next fresh one.
+TOP_N = 20
 
 
 def _url(**params) -> str:
@@ -171,13 +174,13 @@ async def recommend_page(
     if platform == "cf":
         progress = rec.get_cache_progress(db)
         recommendations = rec.get_cf_recommendations(
-            db, selected_cf_divs, rating_val, account=filter_account, sub_filter=sub_filter,
+            db, selected_cf_divs, rating_val, TOP_N, account=filter_account, sub_filter=sub_filter,
         ) if cf_total > 0 else []
         bootstrapping = cf_total == 0
     else:
         progress = rec.get_atc_cache_progress(db)
         recommendations = rec.get_atc_recommendations(
-            db, selected_atc_divs, rating_val, account=filter_account, sub_filter=sub_filter,
+            db, selected_atc_divs, rating_val, TOP_N, account=filter_account, sub_filter=sub_filter,
         ) if atc_total > 0 else []
         bootstrapping = atc_total == 0
 
