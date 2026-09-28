@@ -177,11 +177,15 @@
     </div>
 
     {% else %}
-    <h2 style="margin-bottom:6px;">Top picks for rating {{ rating }}</h2>
+    <h2 style="margin-bottom:6px;">{{ recommendations | length }} picks for rating {{ rating }}</h2>
 
+    <div style="max-height:680px; overflow-y:auto; padding-right:4px;">
     {% for item in recommendations %}
     {% set c = item.contest %}
     {% set g = item.grade %}
+    {% set p = item.progress %}
+    {% set full_solve = p and p.total and p.solved == p.total %}
+    {% set part_solve = p and p.solved > 0 and not full_solve %}
     {% set division_label = (cf_divisions if platform == 'cf' else atc_divisions)[c.division] %}
     {% set url = ('https://codeforces.com/contest/' ~ c.id) if platform == 'cf'
                  else ('https://atcoder.jp/contests/' ~ c.id) %}
@@ -214,10 +218,19 @@
         </div>
       </div>
 
+      {% if p %}
+      <div style="flex-shrink:0; font-style:italic; font-weight:700; font-size:12.5px; white-space:nowrap;
+                  color:{{ '#2e7d32' if full_solve else ('#b5502e' if part_solve else 'var(--text-meta)') }};"
+           title="{{ p.solved }} of {{ p.total }} problems solved, by {{ filter_account.username }}">
+        {% if full_solve %}✓ solved{% else %}{{ p.solved }}/{{ p.total }} solved{% endif %}
+      </div>
+      {% endif %}
+
       <a href="{{ url }}" target="_blank" rel="noopener"
          class="btn" style="flex-shrink:0;">Open →</a>
     </div>
     {% endfor %}
+    </div>
     {% endif %}
   </div>
 

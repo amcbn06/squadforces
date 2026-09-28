@@ -444,6 +444,14 @@ def _submission_bucket(subs: list) -> str:
     return "solved" if any(s.accepted for s in subs) else "attempted"
 
 
+def _solve_progress(subs: list, problem_keys: set[str]) -> dict:
+    """{"solved": n, "total": m} of `problem_keys` that `subs` (a member's own stored submissions on this
+    contest's problems) has at least one accepted submission on — shown on every card regardless of sub_filter,
+    so a top pick already solved in full is obvious without switching filters."""
+    solved_keys = {s.problem_key for s in subs if s.accepted}
+    return {"solved": len(solved_keys & problem_keys), "total": len(problem_keys)}
+
+
 def get_cf_recommendations(
     db: Session,
     divisions: list[str],
@@ -464,6 +472,9 @@ def get_cf_recommendations(
     Codeforces submissions land in that bucket; it only applies to contests with cached problems (exact grading)
     since the fallback distribution isn't a real problem set to check submissions against.
 
+    Each row also carries "progress" — {"solved", "total"} of `account`'s own problems on that contest, or None
+    where there's no exact problem set or no `account` — shown on every card regardless of `sub_filter`.
+
     Sort order: grade score DESC, then recency DESC.
     """
     contests = (
@@ -474,6 +485,8 @@ def get_cf_recommendations(
         .all()
     )
 
+    has_handle = account is not None and bool(account.codeforces_handle)
+
     scored = []
     for contest in contests:
         if contest.problems_fetched and contest.problems:
@@ -483,17 +496,19 @@ def get_cf_recommendations(
             ratings = DIVISION_TYPICAL.get(contest.division, DIVISION_TYPICAL["other"])
             exact = False
 
-        if sub_filter != "all":
-            if not exact or account is None or not account.codeforces_handle:
-                continue
+        progress = None
+        if exact and has_handle:
             problem_keys = {f"{contest.id}/{p.index}" for p in contest.problems}
             subs = submissions.for_problems(db, account.id, "codeforces", problem_keys)
-            if _submission_bucket(subs) != sub_filter:
+            progress = _solve_progress(subs, problem_keys)
+            if sub_filter != "all" and _submission_bucket(subs) != sub_filter:
                 continue
+        elif sub_filter != "all":
+            continue  # no exact problem set (or nobody to check) -> can't tell, so excluded from every filter
 
         g = grade_contest(ratings, user_rating)
         g["exact"] = exact
-        scored.append({"contest": contest, "grade": g})
+        scored.append({"contest": contest, "grade": g, "progress": progress})
 
     scored.sort(key=lambda x: (-x["grade"]["score"], -(x["contest"].start_time or 0)))
     return scored[:top_n]
@@ -521,6 +536,8 @@ def get_atc_recommendations(
         .all()
     )
 
+    has_handle = account is not None and bool(account.atcoder_handle)
+
     scored = []
     for contest in contests:
         if contest.problems_fetched and contest.problems:
@@ -530,17 +547,19 @@ def get_atc_recommendations(
             ratings = ATC_DIVISION_TYPICAL.get(contest.division, ATC_DIVISION_TYPICAL["other"])
             exact = False
 
-        if sub_filter != "all":
-            if not exact or account is None or not account.atcoder_handle:
-                continue
+        progress = None
+        if exact and has_handle:
             problem_ids = {p.problem_id for p in contest.problems}
             subs = submissions.for_problems(db, account.id, "atcoder", problem_ids)
-            if _submission_bucket(subs) != sub_filter:
+            progress = _solve_progress(subs, problem_ids)
+            if sub_filter != "all" and _submission_bucket(subs) != sub_filter:
                 continue
+        elif sub_filter != "all":
+            continue
 
         g = grade_contest(ratings, user_rating)
         g["exact"] = exact
-        scored.append({"contest": contest, "grade": g})
+        scored.append({"contest": contest, "grade": g, "progress": progress})
 
     scored.sort(key=lambda x: (-x["grade"]["score"], -(x["contest"].start_time or 0)))
     return scored[:top_n]
