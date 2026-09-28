@@ -74,22 +74,33 @@ Existing databases get new columns through `ensure_columns()` in `app/database.p
 
 `app/recommend.py` grades and ranks two independent pools, one per tab (`/recommend?platform=cf|atc`), both through
 the same `grade_contest()` / `_problem_fit()` — a geometric-weighted fit score with the same ideal (0–300 over the
-viewer's rating) and stretch (300–500) bands for both judges. Codeforces (`get_cf_recommendations()`) still reads a
-DB-backed cache (`CfContest`/`CfContestProblem`), filled by the scheduler at one contest per minute because CF's
-per-contest API call is rate-limited. AtCoder (`get_atc_recommendations()`) needs no such cache and runs live on
-every request: `app/scraper/atcoder.py`'s problem catalog and kenkoooo difficulty models are already cached
-in-process for 12h for item sync, so listing every AtCoder contest with its problems' difficulty costs no extra
-HTTP calls. Divisions are CF's existing `div1`../`combined`/`other` vs. AtCoder's `abc`/`arc`/`agc`/`other`
-(`detect_atc_division()`, from the contest id prefix) — two separate checkbox groups and default sets, not merged.
+graded rating) and stretch (300–500) bands for both judges. Both pools are DB-backed the same way —
+`CfContest`/`CfContestProblem` and `AtcContest`/`AtcContestProblem` — filled by the scheduler, never queried live
+at render time; a request only ever reads the DB. Codeforces refreshes at one contest per minute because its API
+is rate-limited; AtCoder has no such limit (`app/scraper/atcoder.py`'s catalog is already cached in-process), so
+its cache is normally built in one pass (`bootstrap_atc_cache()` / the daily `_refresh_atc_contest_cache` job) —
+that's the whole reason it has its own tables instead of being computed live as it first was. Divisions are CF's
+existing `div1`../`combined`/`other` vs. AtCoder's `abc`/`arc`/`agc`/`other` (`detect_atc_division()`, from the
+contest id prefix) — two separate checkbox groups and default sets, not merged.
 
-The "your submissions" filter (`sub_filter=all|none|attempted|solved`) keeps only contests where the *viewer's own*
-stored submissions land in that bucket (`_submission_bucket()`), independent of whose rating is being graded. It
-only applies to contests with a real, cached problem set (`exact` grading) — the typical-distribution fallback
-isn't a real problem list to check submissions against — and needs the viewer to have a handle on that platform.
+The Member dropdown (`app/routers/recommend.py::recommend_page`) is scoped to the active tab: only accounts of the
+viewer's own `user_type` (a user sees users, a student sees students, the admin sees both — same rule as
+`leaderboard.for_platform()`) that have a handle linked to that tab's platform. With nobody explicitly chosen (or a
+stale id left over from switching tabs), the viewer is auto-selected if they themselves qualify, else the dropdown
+stays blank. `recommend.effective_rating(user, platform)` is the number both the dropdown's pre-fill and the
+default grading rating use — the cached rating, or the 800 floor if a handle is linked but has never rated a
+contest there (e.g. someone unrated on Codeforces). A typed `rating` always overrides whatever a selected member
+would imply, and is parsed leniently so a bad value never 422s.
+
+The "submissions" filter (`sub_filter=all|none|attempted|solved`) keeps only contests where the *selected member's*
+(not necessarily the viewer's) stored submissions land in that bucket (`_submission_bucket()`) — the member picked
+in the dropdown is who gets graded *and* whose history is checked; with nobody picked it falls back to the viewer.
+It only applies to contests with a real, cached problem set (`exact` grading) — the typical-distribution fallback
+isn't a real problem list to check submissions against — and needs that member to have a handle on the platform.
 
 ### Cached rating vs rating_entries
 
-`User.cf_rating` / `cf_rank` (shown wherever a member is listed: matrix, group page, leaderboards, Recommend) are a snapshot, refreshed by `Codeforces.refresh_profile()` on every submission refresh (`app/submissions.py::refresh_user`) — not the same thing as `rating_entries`, which already came from `fetch_rating_history` on every refresh and was never the stale one. Before this, the snapshot was set only when a handle was first saved, so a rating change after a contest didn't reach it until the handle was next edited by hand.
+`User.cf_rating` / `cf_rank` (shown wherever a member is listed: matrix, group page, leaderboards, Recommend) are a snapshot, refreshed by `Codeforces.refresh_profile()` on every submission refresh (`app/submissions.py::refresh_user`) — not the same thing as `rating_entries`, which already came from `fetch_rating_history` on every refresh and was never the stale one. Before this, the snapshot was set only when a handle was first saved, so a rating change after a contest didn't reach it until the handle was next edited by hand. `User.atc_rating` is the same idea for AtCoder (`AtCoder.refresh_profile()`): the latest *rated* entry's `NewRating` from the handle's history, skipping unrated contests in between; stays `None` for a handle that has never finished a rated one, same as an unrated CF handle leaves `cf_rating` `None`.
 
 ### Activity heatmap
 

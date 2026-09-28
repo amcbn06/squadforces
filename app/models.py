@@ -25,6 +25,7 @@ class User(Base):
     kilonova_handle = Column(String(50), nullable=True)
     cf_rating = Column(Integer, nullable=True)
     cf_rank = Column(String(30), nullable=True)
+    atc_rating = Column(Integer, nullable=True)  # AtCoder's own cached rating, kept current the same way cf_rating is
     created_at = Column(DateTime, default=datetime.utcnow)
 
     memberships = relationship("GroupMembership", back_populates="user", cascade="all, delete-orphan")
@@ -304,6 +305,33 @@ class CfContestProblem(Base):
     rating = Column(Integer, nullable=True)
 
     contest = relationship("CfContest", back_populates="problems")
+
+
+class AtcContest(Base):
+    """Recommend's AtCoder pool, cached the same way CfContest is — same shape, but keyed by AtCoder's own
+    string contest id (e.g. "abc343") since it has no numeric one."""
+    __tablename__ = "atc_contests"
+
+    id = Column(String(50), primary_key=True)
+    name = Column(String(300), nullable=False)
+    start_time = Column(Integer, nullable=True)
+    duration_seconds = Column(Integer, nullable=True)
+    division = Column(String(20), nullable=True)
+    problems_fetched = Column(Boolean, default=False, nullable=False)
+
+    problems = relationship("AtcContestProblem", back_populates="contest", cascade="all, delete-orphan")
+
+
+class AtcContestProblem(Base):
+    __tablename__ = "atc_contest_problems"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    contest_id = Column(String(50), ForeignKey("atc_contests.id", ondelete="CASCADE"), nullable=False)
+    problem_id = Column(String(50), nullable=False)  # kenkoooo's problem id, e.g. "abc343_f" — matches Submission.problem_key
+    index = Column(String(10), nullable=False)       # the task's letter in this contest, e.g. "F"
+    rating = Column(Integer, nullable=True)           # kenkoooo's difficulty estimate
+
+    contest = relationship("AtcContest", back_populates="problems")
 
 
 class ProblemResult(Base):

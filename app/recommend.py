@@ -1,9 +1,10 @@
 """
 Contest recommendation engine.
 
-Manages a local DB cache of CF contest metadata + problem ratings.
-The cache is filled gradually by the scheduler (20 contests / 15 min).
-The recommendation page queries only the DB — no live API calls at render time.
+Manages two local DB caches — CfContest/CfContestProblem and AtcContest/AtcContestProblem — of contest metadata
+and problem ratings, one per judge, filled by the scheduler. The recommendation page queries only the DB, never
+a judge, at render time. Codeforces is rate-limited (1 contest/min); AtCoder isn't, so its cache is normally
+built in one pass (see bootstrap_atc_cache()).
 """
 import logging
 import re
@@ -67,8 +68,13 @@ ATC_DIVISION_TYPICAL: dict[str, list[int]] = {
 
 ATC_DEFAULT_DIVISIONS = ["abc", "arc"]
 
-# How many recent rated AtCoder contests to consider (no DB cache, so this just bounds the per-request scan).
+# How many recent rated AtCoder contests to keep in the cache
 ATC_CACHE_SIZE = 300
+
+# The floor both judges effectively start at — used whenever a linked handle has never rated a contest there
+# (e.g. octavianProdan on Codeforces), so an "unrated" account still gets graded and pre-fills a sane number
+# instead of showing blank.
+UNRATED_FLOOR = 800
 
 
 def detect_atc_division(contest_id: str) -> str:
@@ -81,8 +87,17 @@ def detect_atc_division(contest_id: str) -> str:
         return "agc"
     return "other"
 
+
+def effective_rating(user: models.User, platform: str) -> int:
+    """`user`'s rating on `platform` ("cf" | "atc") for grading/pre-fill purposes: the cached rating, or
+    UNRATED_FLOOR if they have a handle linked but have never finished a rated contest there."""
+    rating = user.cf_rating if platform == "cf" else user.atc_rating
+    return rating if rating is not None else UNRATED_FLOOR
+
+
 # Guard against concurrent bootstrap (set on first trigger, cleared never — per process)
 _bootstrap_running = False
+_atc_bootstrap_running = False
 
 
 # ---------------------------------------------------------------------------
@@ -296,6 +311,99 @@ async def bootstrap_cache() -> None:
         _bootstrap_running = False
 
 
+async def refresh_atc_contest_metadata(db: Session) -> int:
+    """
+    Upsert the most recent ATC_CACHE_SIZE rated AtCoder contests from kenkoooo's contest list.
+
+    Cost: whatever it takes to warm app.scraper.atcoder's in-process catalog (a few flat JSON files, cached
+    12h) — no per-contest call and no rate limit, unlike Codeforces.
+    """
+    try:
+        all_contests = await atc.get_all_contests()
+    except Exception as exc:
+        logger.warning("Failed to fetch AtCoder contest list: %s", exc)
+        return 0
+
+    rated = [c for c in all_contests if c.get("start_epoch_second") and (c.get("rate_change") or "-") != "-"]
+    rated.sort(key=lambda c: c.get("start_epoch_second", 0), reverse=True)
+
+    added = 0
+    for c in rated[:ATC_CACHE_SIZE]:
+        existing = db.get(models.AtcContest, c["id"])
+        division = detect_atc_division(c["id"])
+        if existing is None:
+            db.add(models.AtcContest(
+                id=c["id"],
+                name=c.get("title") or c["id"],
+                start_time=c.get("start_epoch_second"),
+                duration_seconds=c.get("duration_second"),
+                division=division,
+            ))
+            added += 1
+        else:
+            existing.division = division
+            if c.get("title"):
+                existing.name = c["title"]
+    db.commit()
+    logger.info("AtCoder contest metadata refresh: %d new contest(s) added", added)
+    return added
+
+
+async def prefetch_atc_contest_problems(db: Session, batch_size: int = ATC_CACHE_SIZE) -> int:
+    """
+    Fetch and cache problem difficulties for up to `batch_size` AtCoder contests that haven't been fetched yet.
+
+    Unlike Codeforces's per-contest CF API call, this reads app.scraper.atcoder's already-cached catalog — no
+    extra HTTP request per contest — so the whole backlog can be (and by default is) done in one pass instead of
+    throttled over many scheduler ticks.
+    """
+    uncached = (
+        db.query(models.AtcContest)
+        .filter(models.AtcContest.problems_fetched == False)  # noqa: E712
+        .order_by(models.AtcContest.start_time.desc())
+        .limit(batch_size)
+        .all()
+    )
+
+    fetched = 0
+    for contest in uncached:
+        try:
+            tasks = await atc.get_contest_tasks(contest.id)
+            for i, t in enumerate(tasks):
+                db.add(models.AtcContestProblem(
+                    contest_id=contest.id,
+                    problem_id=t["id"],
+                    index=t.get("contest_index") or chr(ord("A") + i),
+                    rating=t.get("difficulty"),
+                ))
+            contest.problems_fetched = True
+            db.commit()
+            fetched += 1
+        except Exception as exc:
+            logger.error("Failed to cache AtCoder contest %s: %s", contest.id, exc, exc_info=True)
+            db.rollback()
+
+    logger.info("AtCoder contest problem prefetch: %d/%d fetched", fetched, len(uncached))
+    return fetched
+
+
+async def bootstrap_atc_cache() -> None:
+    """One-shot: refresh metadata then fetch every contest's problem difficulties in the same pass (cheap, see
+    prefetch_atc_contest_problems). Uses its own DB session — safe to run as a BackgroundTask."""
+    global _atc_bootstrap_running
+    if _atc_bootstrap_running:
+        return
+    _atc_bootstrap_running = True
+    from app.database import SessionLocal
+    db = SessionLocal()
+    try:
+        await refresh_atc_contest_metadata(db)
+        await prefetch_atc_contest_problems(db)
+    finally:
+        db.close()
+        _atc_bootstrap_running = False
+
+
 # ---------------------------------------------------------------------------
 # Progress
 # ---------------------------------------------------------------------------
@@ -306,6 +414,18 @@ def get_cache_progress(db: Session) -> dict:
     fetched = (
         db.query(models.CfContest)
         .filter(models.CfContest.problems_fetched == True)   # noqa: E712
+        .count()
+    )
+    pct = int(fetched / total * 100) if total else 0
+    return {"total": total, "fetched": fetched, "pct": pct}
+
+
+def get_atc_cache_progress(db: Session) -> dict:
+    """Return {total, fetched, pct} for the progress bar — same shape as get_cache_progress()."""
+    total = db.query(models.AtcContest).count()
+    fetched = (
+        db.query(models.AtcContest)
+        .filter(models.AtcContest.problems_fetched == True)  # noqa: E712
         .count()
     )
     pct = int(fetched / total * 100) if total else 0
@@ -379,61 +499,48 @@ def get_cf_recommendations(
     return scored[:top_n]
 
 
-async def get_atc_recommendations(
+def get_atc_recommendations(
+    db: Session,
     divisions: list[str],
     user_rating: int,
     top_n: int = 5,
     *,
-    db: Optional[Session] = None,
     account: Optional[models.User] = None,
     sub_filter: str = "all",
 ) -> list[dict]:
     """
-    AtCoder's own pool, graded the same way as get_cf_recommendations() (same grade_contest(), same ideal/stretch
-    bands) but computed live instead of from a DB cache: kenkoooo's problem catalog and difficulty models are
-    already cached in-process by app.scraper.atcoder, so there's no rate limit to work around and nothing to
-    pre-fetch in the background.
-
-    Returns dicts shaped like {"contest": {"id", "name", "start_time", "division"}, "grade": {...}} — a plain
-    dict instead of a CfContest row, since there's no DB-backed contest object here.
+    AtCoder's own pool — same shape and same grade_contest() ideal/stretch bands as get_cf_recommendations(), read
+    from the AtcContest/AtcContestProblem cache instead of Codeforces's tables. See CLAUDE.md: unlike Codeforces
+    this cache has no rate limit to pace around, so it's normally fully warm within one bootstrap pass.
     """
-    contests = await atc.get_all_contests()
-    rated = [
-        c for c in contests
-        if c.get("start_epoch_second") and (c.get("rate_change") or "-") != "-"
-    ]
-    rated.sort(key=lambda c: c.get("start_epoch_second", 0), reverse=True)
+    contests = (
+        db.query(models.AtcContest)
+        .filter(models.AtcContest.division.in_(divisions))
+        .order_by(models.AtcContest.start_time.desc())
+        .limit(ATC_CACHE_SIZE)
+        .all()
+    )
 
     scored = []
-    for c in rated[:ATC_CACHE_SIZE]:
-        division = detect_atc_division(c["id"])
-        if division not in divisions:
-            continue
-
-        tasks = await atc.get_contest_tasks(c["id"])
-        exact = bool(tasks)
-        ratings = [t.get("difficulty") for t in tasks] if exact \
-            else ATC_DIVISION_TYPICAL.get(division, ATC_DIVISION_TYPICAL["other"])
+    for contest in contests:
+        if contest.problems_fetched and contest.problems:
+            ratings = [p.rating for p in contest.problems]
+            exact = True
+        else:
+            ratings = ATC_DIVISION_TYPICAL.get(contest.division, ATC_DIVISION_TYPICAL["other"])
+            exact = False
 
         if sub_filter != "all":
-            if not exact or db is None or account is None or not account.atcoder_handle:
+            if not exact or account is None or not account.atcoder_handle:
                 continue
-            problem_ids = {t["id"] for t in tasks}
+            problem_ids = {p.problem_id for p in contest.problems}
             subs = submissions.for_problems(db, account.id, "atcoder", problem_ids)
             if _submission_bucket(subs) != sub_filter:
                 continue
 
         g = grade_contest(ratings, user_rating)
         g["exact"] = exact
-        scored.append({
-            "contest": {
-                "id": c["id"],
-                "name": c.get("title") or c["id"],
-                "start_time": c.get("start_epoch_second"),
-                "division": division,
-            },
-            "grade": g,
-        })
+        scored.append({"contest": contest, "grade": g})
 
-    scored.sort(key=lambda x: (-x["grade"]["score"], -(x["contest"]["start_time"] or 0)))
+    scored.sort(key=lambda x: (-x["grade"]["score"], -(x["contest"].start_time or 0)))
     return scored[:top_n]

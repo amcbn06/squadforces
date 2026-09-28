@@ -108,7 +108,7 @@ async def recommend_page(
     request: Request,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    rating: int = 1200,
+    rating: Optional[str] = Query(default=None),
     member_id: Optional[str] = Query(default=None),
     platform: str = "cf",
     cf_divisions: Optional[list[str]] = Query(None),
@@ -116,52 +116,86 @@ async def recommend_page(
     sub_filter: str = "all",
     account=Depends(require_auth),
 ):
-    # member_id arrives as "" when the select has no selection
+    platform = platform if platform in ("cf", "atc") else "cf"
+    sub_filter = sub_filter if sub_filter in SUB_FILTERS else "all"
+
+    # Only members of the viewer's own kind (a user sees users, a student sees students — the admin sees both,
+    # same convention as leaderboard.for_platform()), and only ones with a handle linked to this platform.
+    handle_col = models.User.codeforces_handle if platform == "cf" else models.User.atcoder_handle
+    members_q = db.query(models.User).filter(handle_col.isnot(None), handle_col != "")
+    members_q = members_q.filter(models.User.user_type == account.user_type) \
+        if account.user_type in ("user", "student") else members_q.filter(models.User.user_type != "admin")
+    all_members = members_q.order_by(models.User.username).all()
+    eligible_ids = {m.id for m in all_members}
+
+    # member_id: "" (the select's blank option, explicitly submitted) means "nobody, on purpose" and is kept as
+    # None. Anything else invalid — missing entirely, or an id that isn't eligible here (e.g. carried over from
+    # the other platform's tab) — falls back to the viewer themselves, if they qualify.
+    member_id_explicit = member_id is not None
     try:
         member_id_int = int(member_id) if member_id else None
     except (ValueError, TypeError):
         member_id_int = None
+    if member_id_int is not None and member_id_int not in eligible_ids:
+        member_id_int, member_id_explicit = None, False
+    if not member_id_explicit:
+        member_id_int = account.id if account.id in eligible_ids else None
+    selected_member = next((m for m in all_members if m.id == member_id_int), None)
 
-    platform = platform if platform in ("cf", "atc") else "cf"
-    sub_filter = sub_filter if sub_filter in SUB_FILTERS else "all"
+    # rating: a typed value always wins, even with a member also selected. Otherwise it follows the selected
+    # member's own rating (see recommend.effective_rating — 800 if they're linked but unrated), or 1200 with
+    # nobody selected. Parsed leniently: malformed input never turns into a 422.
+    try:
+        rating_val = int(rating) if rating not in (None, "") else None
+    except (ValueError, TypeError):
+        rating_val = None
+    if rating_val is None:
+        rating_val = rec.effective_rating(selected_member, platform) if selected_member else 1200
 
-    all_members = db.query(models.User).filter(models.User.user_type != "admin").order_by(models.User.username).all()
+    # The submission filter always checks the *selected* member's own history — defaulting to the viewer's own
+    # only when nobody is picked, never the viewer's when a different member is chosen.
+    filter_account = selected_member or account
 
     selected_cf_divs = [d for d in (cf_divisions or DEFAULT_DIVISIONS) if d in rec.DIVISION_LABELS] \
         or DEFAULT_DIVISIONS
     selected_atc_divs = [d for d in (atc_divisions or rec.ATC_DEFAULT_DIVISIONS) if d in rec.ATC_DIVISION_LABELS] \
         or rec.ATC_DEFAULT_DIVISIONS
 
-    total = db.query(models.CfContest).count()
-    if total == 0:
+    cf_total = db.query(models.CfContest).count()
+    if cf_total == 0:
         background_tasks.add_task(rec.bootstrap_cache)
-    progress = rec.get_cache_progress(db)
+    atc_total = db.query(models.AtcContest).count()
+    if atc_total == 0:
+        background_tasks.add_task(rec.bootstrap_atc_cache)
 
     if platform == "cf":
+        progress = rec.get_cache_progress(db)
         recommendations = rec.get_cf_recommendations(
-            db, selected_cf_divs, rating, account=account, sub_filter=sub_filter,
-        ) if total > 0 else []
+            db, selected_cf_divs, rating_val, account=filter_account, sub_filter=sub_filter,
+        ) if cf_total > 0 else []
+        bootstrapping = cf_total == 0
     else:
-        recommendations = await rec.get_atc_recommendations(
-            selected_atc_divs, rating, db=db, account=account, sub_filter=sub_filter,
-        )
+        progress = rec.get_atc_cache_progress(db)
+        recommendations = rec.get_atc_recommendations(
+            db, selected_atc_divs, rating_val, account=filter_account, sub_filter=sub_filter,
+        ) if atc_total > 0 else []
+        bootstrapping = atc_total == 0
 
-    # link builders: every control (tab, filter, Apply) needs to keep the params it doesn't itself change
-    shared = dict(rating=rating, member_id=member_id_int, cf_divisions=selected_cf_divs,
-                  atc_divisions=selected_atc_divs)
-    tab_urls = {
-        "cf": _url(platform="cf", sub_filter=sub_filter, **shared),
-        "atc": _url(platform="atc", sub_filter=sub_filter, **shared),
-    }
-    filter_urls = {f: _url(platform=platform, sub_filter=f, **shared) for f in SUB_FILTERS}
+    # Link builders. A tab switch starts that platform fresh (its own default member/rating then apply); every
+    # other control — Apply, a filter button — stays within the current platform and keeps what's chosen.
+    within_platform = dict(rating=rating_val, member_id=member_id_int, cf_divisions=selected_cf_divs,
+                            atc_divisions=selected_atc_divs)
+    tab_urls = {"cf": _url(platform="cf"), "atc": _url(platform="atc")}
+    filter_urls = {f: _url(platform=platform, sub_filter=f, **within_platform) for f in SUB_FILTERS}
 
     response = templates.TemplateResponse(request, "recommend.html", {
         "request": request,
         "recommendations": recommendations,
         "progress": progress,
-        "rating": rating,
+        "rating": rating_val,
         "member_id": member_id_int,
         "all_members": all_members,
+        "member_ratings": {m.id: rec.effective_rating(m, platform) for m in all_members},
         "platform": platform,
         "tab_urls": tab_urls,
         "sub_filter": sub_filter,
@@ -170,8 +204,9 @@ async def recommend_page(
         "selected_atc_divs": selected_atc_divs,
         "cf_divisions": rec.DIVISION_LABELS,
         "atc_divisions": rec.ATC_DIVISION_LABELS,
-        "bootstrapping": total == 0,
+        "bootstrapping": bootstrapping,
         "account": account,
+        "filter_account": filter_account,
     })
     db.close()  # rendered; release the transaction before a background cache build starts
     return response

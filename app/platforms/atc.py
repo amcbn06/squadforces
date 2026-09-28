@@ -117,6 +117,20 @@ class AtCoder(Platform):
             if "id" in s and s.get("problem_id")
         ]
 
+    async def refresh_profile(self, user, handle: str) -> None:
+        """`User.atc_rating` mirrors Codeforces.refresh_profile()'s cf_rating: a snapshot kept current on every
+        submission refresh (app/submissions.py::refresh_user), read wherever a member is listed and by the
+        Recommend page's AtCoder pool. Stays None for a handle that has never finished a rated contest — callers
+        that need a number for grading treat that as the AtCoder floor (800), same convention as an unrated
+        Codeforces handle."""
+        try:
+            history = await api.get_rating_history(handle)
+        except Exception:
+            return
+        rated = [h for h in history if h.get("IsRated")]
+        if rated:
+            user.atc_rating = rated[-1].get("NewRating")
+
     async def fetch_rating_history(self, handle: str) -> list[RatingData]:
         out = []
         for h in await api.get_rating_history(handle):

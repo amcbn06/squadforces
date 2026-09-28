@@ -44,7 +44,7 @@ It never runs code or hosts problems. It is an **observer** of Codeforces, AtCod
 - **Accounts to follow.** The admin can create an account with no password: it can't be signed in to, but it can join groups and appears in the leaderboards, for following someone's activity.
 - **Profiles.** A compact page: a chip per judge (handle, stored submissions, freshness), streaks and a heatmap of this year so far across Codeforces, AtCoder and Kilonova, with complete earlier years back to the first stored submission, on demand, and the last 20 submissions in a dropdown with links to the judge.
 - **Stays current by itself.** Histories load when a handle is saved and refresh every two hours; only new submissions are fetched.
-- **Contest recommendations.** A page that picks recent contests suited to a rating and division, graded by problem difficulty — Codeforces and AtCoder as two separately-ranked tabs, with a filter for contests the viewer hasn't attempted, has attempted but not solved, or has solved something in.
+- **Contest recommendations.** A page that picks recent contests suited to a rating and division, graded by problem difficulty — Codeforces and AtCoder as two separately-ranked tabs, each with its own contest database. The member picker only lists accounts of your own kind linked to that judge, defaults to yourself when you qualify, and its "submissions" filter (not attempted / attempted, no AC / solved something) checks whichever member is picked.
 - **Accounts done properly.** PBKDF2 password hashing, login throttling, signed sessions that end everywhere when a password changes.
 
 <table>
