@@ -104,7 +104,7 @@ isn't a real problem list to check submissions against — and needs that member
 
 ### Activity heatmap
 
-`app/activity.py::user_activity()` returns daily counts from the user's very first stored submission on any of the three judges (`submissions.earliest_submission_at()` per platform, oldest wins); `app/templates/users/profile.html`'s script renders the current year from Jan 1 to today, then complete Jan-Dec years below back to the first one with data.
+`app/activity.py::user_activity()` returns daily *solved* counts (`submissions.daily_solved_counts()`, accepted submissions only — an all-WA day doesn't light up) from the user's very first stored submission on any of the three judges (`submissions.earliest_submission_at()` per platform, oldest wins, regardless of verdict — only the range needs to reach back that far); `app/templates/users/profile.html`'s script renders the current year from Jan 1 to today, then complete Jan-Dec years below back to the first one with data.
 
 ### Kilonova: tried vs untried
 

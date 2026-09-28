@@ -88,7 +88,7 @@
   <div class="box-header" style="cursor:default; display:flex; align-items:center; flex-wrap:wrap; gap:6px 16px;">
     <span>Activity</span>
     <span class="stats">
-      <span title="Days in a row with a submission, up to today"><b id="streak-current">&mdash;</b> current streak</span>
+      <span title="Days in a row with a solve, up to today"><b id="streak-current">&mdash;</b> current streak</span>
       <span><b id="streak-longest">&mdash;</b> longest</span>
       <span><b id="streak-total">&mdash;</b> active days</span>
     </span>
@@ -145,7 +145,7 @@
 <script>
 (function() {
   const CELL = 13, GAP = 2, STEP = CELL + GAP, DAY = 86400000;
-  // Colour per judge; a day's colour is the average of these weighted by that day's submissions.
+  // Colour per judge; a day's colour is the average of these weighted by that day's solves.
   const COLORS = { cf: [21, 101, 192], atc: [224, 144, 0], kn: [38, 166, 154] };
   const KEYS = Object.keys(COLORS);
   const NAMES = { cf: 'CF', atc: 'AtC', kn: 'KN' };

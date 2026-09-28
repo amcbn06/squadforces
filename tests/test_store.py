@@ -280,11 +280,14 @@ class StoreTests(DbTestCase):
         keys = [f"1/P{i}" for i in range(1, 1201)]
         self.assertEqual(len(submissions.for_problems(self.db, self.u.id, "fake", keys)), 1200)
 
-    async def test_daily_counts(self):
+    async def test_daily_solved_counts(self):
         day = lambda d: int(datetime(2026, 5, d, 12).timestamp()) - time.timezone  # noqa: E731 (local -> ~UTC noon)
-        self.judge.rows = [sub(1, at=day(1)), sub(2, at=day(1)), sub(3, at=day(2)), sub(4, at=1_000_000)]
+        self.judge.rows = [
+            sub(1, at=day(1)), sub(2, at=day(1)), sub(3, at=day(2)), sub(4, at=1_000_000),
+            sub(5, at=day(2), verdict="WA"),  # a wrong answer doesn't count as a solve
+        ]
         await submissions.refresh_user(self.db, self.u, self.judge)
-        counts = submissions.daily_counts(self.db, self.u.id, "fake", since_epoch=day(1) - 3600)
+        counts = submissions.daily_solved_counts(self.db, self.u.id, "fake", since_epoch=day(1) - 3600)
         self.assertEqual(counts, {"2026-05-01": 2, "2026-05-02": 1})
 
     async def test_delete_user_data(self):

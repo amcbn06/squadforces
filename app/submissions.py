@@ -160,8 +160,9 @@ def earliest_submission_at(db: Session, user_id: int, platform_key: str) -> Opti
     )
 
 
-def daily_counts(db: Session, user_id: int, platform_key: str, since_epoch: float) -> dict[str, int]:
-    """Submissions per UTC day ("YYYY-MM-DD") from `since_epoch` on."""
+def daily_solved_counts(db: Session, user_id: int, platform_key: str, since_epoch: float) -> dict[str, int]:
+    """Accepted submissions per UTC day ("YYYY-MM-DD") from `since_epoch` on — for the profile heatmap, which
+    tracks solves, not every attempt (a day full of wrong answers on one problem isn't a productive-looking day)."""
     counts: dict[str, int] = {}
     rows = (
         db.query(models.Submission.submitted_at)
@@ -169,6 +170,7 @@ def daily_counts(db: Session, user_id: int, platform_key: str, since_epoch: floa
             models.Submission.user_id == user_id,
             models.Submission.platform == platform_key,
             models.Submission.submitted_at >= since_epoch,
+            models.Submission.accepted.is_(True),
         )
         .all()
     )
