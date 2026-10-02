@@ -380,6 +380,23 @@ input:focus, textarea:focus, select:focus { outline: 1px solid var(--border-focu
 .hint-time { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-meta); }
 .hint-time input { width: 60px; min-width: 0; margin: 0; padding: 2px 5px; }
 
+/* Resources: the hints look (icon buttons, dashed add button, edit in place) around Markdown-rendered text */
+.res-box [hidden] { display: none !important; }
+.res-row { display: flex; align-items: flex-start; gap: 8px; padding: 8px 4px 8px 12px; }
+.res-text { flex: 1; min-width: 0; word-break: break-word; }
+.res-row .hint-actions { padding-right: 0; }
+.res-edit { padding: 10px 12px; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p, .md ul, .md ol, .md pre, .md blockquote { margin: 0 0 6px; }
+.md ul, .md ol { padding-left: 20px; }
+.md h1, .md h2, .md h3, .md h4 { font-size: 13px; margin: 8px 0 4px; }
+.md a { color: var(--text-link); text-decoration: underline; }
+.md code { background: var(--border-light); padding: 0 3px; border-radius: 3px; }
+.md pre { background: var(--border-light); padding: 6px 8px; overflow-x: auto; }
+.md pre code { background: none; padding: 0; }
+.md blockquote { border-left: 3px solid var(--border); padding-left: 8px; color: var(--text-meta); }
+
 /* placeholder icon for links to sites we don't have a logo for */
 .picon-unknown { display: inline-block; width: 14px; height: 14px; line-height: 14px; text-align: center; font-size: 11px; font-weight: 700; color: #777; border: 1px solid #bbb; border-radius: 3px; }
 
