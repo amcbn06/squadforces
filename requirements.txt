@@ -9,3 +9,5 @@ python-dotenv==1.2.3
 itsdangerous==2.2.0
 aiofiles==25.1.0
 apscheduler==3.10.4
+markdown-it-py==4.2.0
+linkify-it-py==2.2.0

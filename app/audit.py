@@ -50,6 +50,7 @@ ACTION_LABELS: dict[str, str] = {
     "assignment.edit": "Edited an assignment",
     "assignment.delete": "Deleted an assignment",
     "assignment.resource_add": "Added a resource to an assignment",
+    "assignment.resource_edit": "Edited a resource on an assignment",
     "assignment.resource_delete": "Removed a resource from an assignment",
     "item.add": "Added contests or problems",
     "item.delete": "Removed a contest or problem",

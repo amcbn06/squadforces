@@ -149,8 +149,18 @@
   </div>
 </div>
 
-{# Resources: switched on per group; the owner (or admin) writes them, every member reads them. #}
+{# Resources: switched on per group; the owner (or admin) writes them in Markdown, every member reads them. #}
 {% if group.resources_allowed and (can_manage or assignment.resources) %}
+<style>
+  .md > :first-child { margin-top: 0; } .md > :last-child { margin-bottom: 0; }
+  .md p, .md ul, .md ol, .md pre, .md blockquote { margin: 0 0 6px; }
+  .md ul, .md ol { padding-left: 20px; }
+  .md h1, .md h2, .md h3, .md h4 { font-size: 13px; margin: 8px 0 4px; }
+  .md code { background: var(--border-light, #eee); padding: 0 3px; border-radius: 3px; }
+  .md pre { background: var(--border-light, #eee); padding: 6px 8px; overflow-x: auto; }
+  .md pre code { background: none; padding: 0; }
+  .md blockquote { border-left: 3px solid var(--border-light, #ddd); padding-left: 8px; color: #666; }
+</style>
 <div class="box" id="resources" style="margin-bottom:12px;">
   <div class="box-header" onclick="toggleBox(this)">
     Resources
@@ -160,11 +170,26 @@
     {% if assignment.resources %}
     <ul style="margin:0 0 8px 18px; padding:0;">
       {% for r in assignment.resources %}
-      <li style="margin-bottom:6px; overflow-wrap:anywhere;"><span style="white-space:pre-wrap;">{{ r.text | linkify }}</span>
+      <li style="margin-bottom:8px; overflow-wrap:anywhere;">
+        <div id="res-view-{{ r.id }}">
+          <div class="md">{{ r.text | markdown }}</div>
+          {% if can_manage %}
+          <div style="margin-top:3px;">
+            <button type="button" class="btn" style="font-size:11px; padding:0 6px;"
+                    onclick="editResource({{ r.id }}, true)">Edit</button>
+            <form method="post" action="/assignments/{{ assignment.id }}/resources/{{ r.id }}/delete" style="display:inline;"
+                  onsubmit="return confirm('Remove this resource?')">
+              <button class="btn btn-red" style="font-size:11px; padding:0 6px;" title="Remove">&times;</button>
+            </form>
+          </div>
+          {% endif %}
+        </div>
         {% if can_manage %}
-        <form method="post" action="/assignments/{{ assignment.id }}/resources/{{ r.id }}/delete" style="display:inline;"
-              onsubmit="return confirm('Remove this resource?')">
-          <button class="btn btn-red" style="font-size:11px; padding:0 6px;" title="Remove">&times;</button>
+        <form method="post" id="res-edit-{{ r.id }}" action="/assignments/{{ assignment.id }}/resources/{{ r.id }}/edit"
+              style="display:none;">
+          <textarea name="text" rows="4" required maxlength="2000" style="width:100%; margin-bottom:6px;">{{ r.text }}</textarea>
+          <button type="submit" class="btn btn-green">Save</button>
+          <button type="button" class="btn" onclick="editResource({{ r.id }}, false)">Cancel</button>
         </form>
         {% endif %}
       </li>
@@ -178,7 +203,7 @@
       <textarea name="text" rows="2" required maxlength="2000" style="width:100%; margin-bottom:8px;"
                 placeholder="A link or a few words, e.g. https://cp-algorithms.com/dynamic_programming/intro-to-dp.html"></textarea>
       <button type="submit" class="btn btn-green">Add resource</button>
-      <span class="meta">Links become clickable. Everyone in the group can read this.</span>
+      <span class="meta">Markdown works (**bold**, lists, `code`, [links](https://example.com)); bare links are clickable too. Everyone in the group can read this.</span>
     </form>
     {% endif %}
   </div>
@@ -846,6 +871,11 @@ function askTitle(form) {
   if (t === null) return false;
   form.querySelector('input[name=title]').value = t;
   return true;
+}
+
+function editResource(id, editing) {
+  document.getElementById('res-view-' + id).style.display = editing ? 'none' : '';
+  document.getElementById('res-edit-' + id).style.display = editing ? 'block' : 'none';
 }
 
 function toggleBox(header) {

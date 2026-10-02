@@ -485,6 +485,13 @@ def _managed_assignment_with_resources(db: Session, account, assignment_id: int)
     return assignment
 
 
+def _clean_resource_text(text: str) -> str:
+    text = text.replace("\r\n", "\n").strip()
+    if len(text) > MAX_RESOURCE_LENGTH:
+        raise HTTPException(status_code=400, detail=f"Resource is too long (max {MAX_RESOURCE_LENGTH} characters).")
+    return text
+
+
 @router.post("/{assignment_id}/resources/add")
 async def add_resource(
     request: Request,
@@ -494,11 +501,9 @@ async def add_resource(
     account=Depends(require_auth),
 ):
     assignment = _managed_assignment_with_resources(db, account, assignment_id)
-    text = text.replace("\r\n", "\n").strip()
+    text = _clean_resource_text(text)
     if not text:
         return _resources_redirect(assignment_id)
-    if len(text) > MAX_RESOURCE_LENGTH:
-        raise HTTPException(status_code=400, detail=f"Resource is too long (max {MAX_RESOURCE_LENGTH} characters).")
     if len(assignment.resources) >= MAX_RESOURCES:
         raise HTTPException(status_code=400, detail=f"At most {MAX_RESOURCES} resources per assignment.")
     db.add(Resource(assignment_id=assignment.id, text=text))
@@ -506,6 +511,28 @@ async def add_resource(
                  target_id=assignment.id, target_label=assignment.title, group_id=assignment.group_id,
                  details={"text": text[:120]})
     db.commit()
+    return _resources_redirect(assignment_id)
+
+
+@router.post("/{assignment_id}/resources/{resource_id}/edit")
+async def edit_resource(
+    request: Request,
+    assignment_id: int,
+    resource_id: int,
+    text: str = Form(...),
+    db: Session = Depends(get_db),
+    account=Depends(require_auth),
+):
+    assignment = _managed_assignment_with_resources(db, account, assignment_id)
+    resource = db.get(Resource, resource_id)
+    text = _clean_resource_text(text)
+    # An emptied entry is left as it was (removing is the delete button's job), same as editing a hint.
+    if resource and resource.assignment_id == assignment.id and text and text != resource.text:
+        audit.record(db, request, "assignment.resource_edit", actor=account, target_type="assignment",
+                     target_id=assignment.id, target_label=assignment.title, group_id=assignment.group_id,
+                     details={"from": resource.text[:120], "to": text[:120]})
+        resource.text = text
+        db.commit()
     return _resources_redirect(assignment_id)
 
 
