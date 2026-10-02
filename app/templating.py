@@ -1,8 +1,10 @@
 import hashlib
+import re
 from datetime import datetime
 from pathlib import Path
 
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup, escape
 
 from app.platforms import registry
 from app import auth
@@ -29,8 +31,30 @@ def time_ago(moment) -> str:
     return "just now"
 
 
+_URL = re.compile(r"https?://[^\s<>\"']+")
+
+
+def linkify(text) -> Markup:
+    """`text` with each http(s) URL in it made a link that opens in a new tab. URLs are found in the raw text and
+    every piece (links included) is escaped on its own, so nothing a user types can become markup; trailing
+    punctuation (a full stop after a link) stays outside it."""
+    text = text or ""
+    out, pos = [], 0
+    for m in _URL.finditer(text):
+        url, tail = m.group(0), ""
+        while url and url[-1] in ".,;:!?)]":
+            url, tail = url[:-1], url[-1] + tail
+        out.append(str(escape(text[pos:m.start()])))
+        out.append(f'<a href="{escape(url)}" target="_blank" rel="noopener noreferrer">{escape(url)}</a>'
+                   f'{escape(tail)}')
+        pos = m.end()
+    out.append(str(escape(text[pos:])))
+    return Markup("".join(out))
+
+
 def make_templates() -> Jinja2Templates:
     templates = Jinja2Templates(directory="app/templates")
+    templates.env.filters["linkify"] = linkify
     templates.env.globals["static_v"] = STATIC_VERSION
     templates.env.globals["time_ago"] = time_ago
     templates.env.globals["can_log_in"] = auth.can_log_in

@@ -149,6 +149,42 @@
   </div>
 </div>
 
+{# Resources: switched on per group; the owner (or admin) writes them, every member reads them. #}
+{% if group.resources_allowed and (can_manage or assignment.resources) %}
+<div class="box" id="resources" style="margin-bottom:12px;">
+  <div class="box-header" onclick="toggleBox(this)">
+    Resources
+    <span style="font-weight:normal; font-size:11px; color:#666;">({{ assignment.resources | length }}, click to expand)</span>
+  </div>
+  <div class="box-body" {% if not request.query_params.get('resources') %}style="display:none"{% endif %}>
+    {% if assignment.resources %}
+    <ul style="margin:0 0 8px 18px; padding:0;">
+      {% for r in assignment.resources %}
+      <li style="margin-bottom:6px; overflow-wrap:anywhere;"><span style="white-space:pre-wrap;">{{ r.text | linkify }}</span>
+        {% if can_manage %}
+        <form method="post" action="/assignments/{{ assignment.id }}/resources/{{ r.id }}/delete" style="display:inline;"
+              onsubmit="return confirm('Remove this resource?')">
+          <button class="btn btn-red" style="font-size:11px; padding:0 6px;" title="Remove">&times;</button>
+        </form>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="meta" style="margin-bottom:8px;">No resources yet.</p>
+    {% endif %}
+    {% if can_manage %}
+    <form method="post" action="/assignments/{{ assignment.id }}/resources/add">
+      <textarea name="text" rows="2" required maxlength="2000" style="width:100%; margin-bottom:8px;"
+                placeholder="A link or a few words, e.g. https://cp-algorithms.com/dynamic_programming/intro-to-dp.html"></textarea>
+      <button type="submit" class="btn btn-green">Add resource</button>
+      <span class="meta">Links become clickable. Everyone in the group can read this.</span>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
 {% if not members %}
 <p>No members in this group. <a href="/groups/{{ group.id }}">Add members first.</a></p>
 {% elif not items %}

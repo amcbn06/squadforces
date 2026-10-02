@@ -40,6 +40,9 @@ class Group(Base):
     description = Column(Text, nullable=True)
     hints_allowed = Column(Boolean, nullable=False, default=False, server_default=false())
     notes_allowed = Column(Boolean, nullable=False, default=False, server_default=false())
+    # A "Resources" dropdown on each of the group's assignment pages (links or text the owner collects); a third
+    # switch next to hints and notes, independent of both.
+    resources_allowed = Column(Boolean, nullable=False, default=False, server_default=false())
     # Who manages the group (remove members, write hints, invite, delete). The admin (id 0) for groups made before
     # ownership existed; NULL is treated the same way. Admin can always manage any group.
     owner_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
@@ -100,6 +103,21 @@ class Assignment(Base):
 
     group = relationship("Group", back_populates="assignments")
     items = relationship("AssignmentItem", back_populates="assignment", cascade="all, delete-orphan")
+    resources = relationship("Resource", back_populates="assignment", cascade="all, delete-orphan",
+                             order_by="Resource.id")
+
+
+class Resource(Base):
+    """One entry in an assignment's "Resources" dropdown: free text that may be, or contain, links. Written by the
+    group's owner (or the admin), read by every member, shown only while the group has resources switched on."""
+    __tablename__ = "resources"
+
+    id = Column(Integer, primary_key=True)
+    assignment_id = Column(Integer, ForeignKey("assignments.id", ondelete="CASCADE"), nullable=False, index=True)
+    text = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    assignment = relationship("Assignment", back_populates="resources")
 
 
 class AssignmentItem(Base):

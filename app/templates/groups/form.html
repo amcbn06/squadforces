@@ -39,6 +39,14 @@
         <span class="meta">Everyone in the group, owner included, can leave notes with how long a problem took. Each switch works on its own.</span>
       </div>
       <div class="form-col" style="margin-bottom:14px;">
+        <label style="display:flex; align-items:center; gap:6px; font-weight:normal; cursor:pointer;">
+          <input type="checkbox" name="resources_allowed" value="1"
+                 {% if group and group.resources_allowed %}checked{% endif %} style="min-width:0;" />
+          Allow resources
+        </label>
+        <span class="meta">Adds a "Resources" dropdown under the bulk add on each assignment, where the group's owner (and the admin) collect links or notes for everyone to read.</span>
+      </div>
+      <div class="form-col" style="margin-bottom:14px;">
         <label>Member limit</label>
         <input type="number" name="max_members" min="1" max="{{ member_ceiling }}" required style="width:100px;"
                value="{{ (group.max_members if group and group.max_members else default_members) }}" />
