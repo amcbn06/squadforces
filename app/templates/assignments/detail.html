@@ -169,14 +169,20 @@
       <div class="res-row" id="res-view-{{ r.id }}">
         <div class="md res-text">{{ r.text | markdown }}</div>
         {% if can_manage %}
-        <div class="hint-actions">
+        <div class="hint-actions" id="res-actions-{{ r.id }}">
           <button type="button" class="hint-icon-btn" title="Edit resource" aria-label="Edit resource"
                   onclick="resEdit({{ r.id }}, true)">{{ icon_edit() }}</button>
-          <form method="post" action="/assignments/{{ assignment.id }}/resources/{{ r.id }}/delete"
-                onsubmit="return confirm('Delete this resource?')">
-            <button type="submit" class="hint-icon-btn danger" title="Delete resource" aria-label="Delete resource">{{ icon_trash() }}</button>
-          </form>
+          <button type="button" class="hint-icon-btn danger" title="Delete resource" aria-label="Delete resource"
+                  onclick="resAskDelete({{ r.id }}, true)">{{ icon_trash() }}</button>
         </div>
+        {# Asked inline rather than with a browser popup, which some browsers and panes suppress. #}
+        <form method="post" class="hint-actions" id="res-confirm-{{ r.id }}" hidden
+              action="/assignments/{{ assignment.id }}/resources/{{ r.id }}/delete">
+          <span class="meta">Delete?</span>
+          <button type="submit" class="btn btn-red" style="font-size:11px; padding:1px 8px;">Delete</button>
+          <button type="button" class="btn" style="font-size:11px; padding:1px 8px;"
+                  onclick="resAskDelete({{ r.id }}, false)">Keep</button>
+        </form>
         {% endif %}
       </div>
       {% if can_manage %}
@@ -882,6 +888,11 @@ function resEdit(id, editing) {
   var form = document.getElementById('res-edit-' + id);
   form.hidden = !editing;
   if (editing) form.querySelector('textarea').focus();
+}
+
+function resAskDelete(id, asking) {
+  document.getElementById('res-actions-' + id).hidden = asking;
+  document.getElementById('res-confirm-' + id).hidden = !asking;
 }
 
 function resAdd(adding) {
