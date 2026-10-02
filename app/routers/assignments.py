@@ -9,7 +9,7 @@ from app.templating import make_templates
 from sqlalchemy import or_
 
 from app.models import (
-    Group, Assignment, AssignmentItem, ContestProblem, Result, ProblemResult, GroupMembership, Hint,
+    Group, Assignment, AssignmentItem, ContestProblem, Result, ProblemResult, GroupMembership, Hint, Resource,
 )
 from app.auth import require_auth, can_delete_item, can_manage_group
 from app import audit, problems
@@ -462,6 +462,70 @@ async def delete_hint(
     db.delete(hint)
     db.commit()
     return _hint_redirect(assignment_id, target)
+
+
+MAX_RESOURCE_LENGTH = 2000
+MAX_RESOURCES = 50  # per assignment
+
+
+def _resources_redirect(assignment_id: int) -> RedirectResponse:
+    return RedirectResponse(f"/assignments/{assignment_id}?resources=1", status_code=303)
+
+
+def _managed_assignment_with_resources(db: Session, account, assignment_id: int) -> Assignment:
+    """The assignment, once the caller may write its resources: the group's owner or the admin, and only while the
+    group has resources switched on."""
+    assignment = db.get(Assignment, assignment_id)
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    if not can_manage_group(account, assignment.group):
+        raise HTTPException(status_code=403)
+    if not assignment.group.resources_allowed:
+        raise HTTPException(status_code=400, detail="Resources are not enabled for this group.")
+    return assignment
+
+
+@router.post("/{assignment_id}/resources/add")
+async def add_resource(
+    request: Request,
+    assignment_id: int,
+    text: str = Form(...),
+    db: Session = Depends(get_db),
+    account=Depends(require_auth),
+):
+    assignment = _managed_assignment_with_resources(db, account, assignment_id)
+    text = text.replace("\r\n", "\n").strip()
+    if not text:
+        return _resources_redirect(assignment_id)
+    if len(text) > MAX_RESOURCE_LENGTH:
+        raise HTTPException(status_code=400, detail=f"Resource is too long (max {MAX_RESOURCE_LENGTH} characters).")
+    if len(assignment.resources) >= MAX_RESOURCES:
+        raise HTTPException(status_code=400, detail=f"At most {MAX_RESOURCES} resources per assignment.")
+    db.add(Resource(assignment_id=assignment.id, text=text))
+    audit.record(db, request, "assignment.resource_add", actor=account, target_type="assignment",
+                 target_id=assignment.id, target_label=assignment.title, group_id=assignment.group_id,
+                 details={"text": text[:120]})
+    db.commit()
+    return _resources_redirect(assignment_id)
+
+
+@router.post("/{assignment_id}/resources/{resource_id}/delete")
+async def delete_resource(
+    request: Request,
+    assignment_id: int,
+    resource_id: int,
+    db: Session = Depends(get_db),
+    account=Depends(require_auth),
+):
+    assignment = _managed_assignment_with_resources(db, account, assignment_id)
+    resource = db.get(Resource, resource_id)
+    if resource and resource.assignment_id == assignment.id:
+        audit.record(db, request, "assignment.resource_delete", actor=account, target_type="assignment",
+                     target_id=assignment.id, target_label=assignment.title, group_id=assignment.group_id,
+                     details={"text": resource.text[:120]})
+        db.delete(resource)
+        db.commit()
+    return _resources_redirect(assignment_id)
 
 
 @router.post("/{assignment_id}/items/{item_id}/solved")
