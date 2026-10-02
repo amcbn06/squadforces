@@ -339,6 +339,19 @@ input:focus, textarea:focus, select:focus { outline: 1px solid var(--border-focu
 .modal-title { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .modal-sub { font-weight: normal; font-size: 12px; color: var(--text-meta); }
 
+/* Platform dialogs: the centred panel that stands in for the browser's confirm()/prompt() popups (base.html) */
+.dialog-overlay { z-index: 1100; }
+.dialog { max-width: 420px; }
+.dialog .modal-body { overflow: visible; }
+.dialog [hidden] { display: none !important; }
+.dialog-message { margin: 0; line-height: 1.5; white-space: pre-line; word-break: break-word; }
+.dialog-input { width: 100%; margin-top: 10px; }
+.dialog-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.dialog .btn-red { background: #b02020; color: #fff; border-color: #801010; }
+.dialog .btn-red:hover { background: #901010; color: #fff; }
+.dialog .btn-green { background: #2a7a2a; color: #fff; border-color: #1a5a1a; }
+.dialog .btn-green:hover { background: #1a5a1a; color: #fff; }
+
 .hint-item { border: 1px solid var(--border); border-radius: 4px; margin-bottom: 8px; background: var(--bg-surface); overflow: hidden; }
 .hint-row { display: flex; align-items: center; background: var(--bg-header); }
 .hint-toggle {

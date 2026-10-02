@@ -51,7 +51,7 @@
             <a href="/admin/accounts/{{ a.id }}/edit" class="btn" style="font-size:11px; padding:2px 8px;">Edit</a>
             {% if a.id != account.id %}
             <form method="post" action="/admin/accounts/{{ a.id }}/delete" style="display:inline;"
-                  onsubmit="return confirm('Delete account {{ a.username }}?')">
+                  data-confirm-title="Delete account" data-confirm="Delete account {{ a.username }}?" data-ok-label="Delete">
               <button class="del-btn" title="Delete">×</button>
             </form>
             {% endif %}

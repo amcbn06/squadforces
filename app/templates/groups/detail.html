@@ -15,7 +15,7 @@
   <div style="display:flex; gap:6px;">
     <a href="/groups/{{ group.id }}/edit-page" class="btn">Edit</a>
     <form method="post" action="/groups/{{ group.id }}/delete" style="display:inline;"
-          onsubmit="return confirm('Delete this group and all its assignments?')">
+          data-confirm-title="Delete group" data-confirm="Delete this group and all its assignments?" data-ok-label="Delete">
       <button class="btn btn-red">Delete</button>
     </form>
   </div>
@@ -72,7 +72,7 @@
                 <a href="/users/{{ user.username }}"
                    class="btn" style="padding:1px 7px; font-size:11px;" title="View profile">✎</a>
                 <form method="post" action="/groups/{{ group.id }}/members/{{ user.id }}/remove"
-                      onsubmit="return confirm('Remove {{ user.username }}?')" style="margin:0;">
+                      data-confirm-title="Remove member" data-confirm="Remove {{ user.username }} from this group?" data-ok-label="Remove" style="margin:0;">
                   <button class="del-btn" title="Remove">×</button>
                 </form>
               </div>
@@ -88,7 +88,7 @@
 
     {% if is_member and group.owner_id != account.id %}
     <form method="post" action="/groups/{{ group.id }}/leave" style="margin-top:8px;"
-          onsubmit="return confirm('Leave {{ group.name }}? You can rejoin only with a new invite link.')">
+          data-confirm-title="Leave group" data-confirm="Leave {{ group.name }}? You can rejoin only with a new invite link." data-ok-label="Leave">
       <button class="btn" style="width:100%;">Leave this group</button>
     </form>
     {% endif %}

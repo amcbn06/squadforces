@@ -63,7 +63,7 @@
           <td style="text-align:right;">
             <a href="/admin/users/{{ u.id }}/edit" class="btn" style="font-size:11px; padding:2px 8px;">Edit</a>
             <form method="post" action="/admin/users/{{ u.id }}/delete" style="display:inline;"
-                  onsubmit="return confirm('Delete user {{ u.username }}?')">
+                  data-confirm-title="Delete user" data-confirm="Delete user {{ u.username }}?" data-ok-label="Delete">
               <button class="del-btn" title="Delete">×</button>
             </form>
           </td>

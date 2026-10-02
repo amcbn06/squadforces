@@ -45,7 +45,7 @@
     {% if can_manage %}
     <a href="/assignments/{{ assignment.id }}/edit-page" class="btn">Edit</a>
     <form method="post" action="/assignments/{{ assignment.id }}/delete" style="display:inline;"
-          onsubmit="return confirm('Delete this assignment and all its data?')">
+          data-confirm-title="Delete assignment" data-confirm="Delete this assignment and all its data?" data-ok-label="Delete">
       <button class="btn btn-red">Delete</button>
     </form>
     {% endif %}
@@ -173,7 +173,7 @@
           <button type="button" class="hint-icon-btn" title="Edit resource" aria-label="Edit resource"
                   onclick="resEdit({{ r.id }}, true)">{{ icon_edit() }}</button>
           <form method="post" action="/assignments/{{ assignment.id }}/resources/{{ r.id }}/delete"
-                onsubmit="return confirm('Delete this resource?')">
+                data-confirm-title="Delete resource" data-confirm="Delete this resource?" data-ok-label="Delete">
             <button type="submit" class="hint-icon-btn danger" title="Delete resource" aria-label="Delete resource">{{ icon_trash() }}</button>
           </form>
         </div>
@@ -367,14 +367,14 @@
             </form>
             {% elif is_admin or (account and item.created_by_id == account.id) %}
             <form method="post" action="/assignments/{{ assignment.id }}/items/{{ item.id }}/title"
-                  style="display:inline;" data-title="{{ item.title or '' }}" onsubmit="return askTitle(this)">
+                  style="display:inline;" data-prompt-title="Set title" data-prompt="Problem title (leave empty to clear):" data-prompt-field="title" data-prompt-value="{{ item.title or '' }}" data-ok-label="Save">
               <input type="hidden" name="title" value="">
               <button class="btn" style="padding:1px 5px;" title="Set title">✎</button>
             </form>
             {% endif %}
             {% if account and (account.user_type in ("admin", "user") or item.created_by_id == account.id) %}
             <form method="post" action="/assignments/{{ assignment.id }}/items/{{ item.id }}/delete"
-                  style="display:inline;" onsubmit="return confirm('Remove?')">
+                  style="display:inline;" data-confirm-title="Remove item" data-confirm="Remove this contest or problem from the assignment?" data-ok-label="Remove">
               <button class="del-btn" title="Remove">×</button>
             </form>
             {% endif %}
@@ -739,7 +739,9 @@ function buildHint(h, label, expanded) {
     var del = el('form');
     del.method = 'post';
     del.action = HINT_URL + h.id + '/delete';
-    del.onsubmit = function () { return confirm('Delete ' + label + '?'); };
+    del.dataset.confirmTitle = 'Delete entry';
+    del.dataset.confirm = 'Delete ' + label + '?';
+    del.dataset.okLabel = 'Delete';
     var delBtn = iconButton(ICON_TRASH, 'Delete ' + label, true);
     delBtn.type = 'submit';
     del.appendChild(delBtn);
@@ -869,13 +871,6 @@ function applyRatings(hidden) {
 // Apply on load — default hidden unless user explicitly showed them
 var _stored = localStorage.getItem('ratingsHidden');
 applyRatings(_stored === null ? true : _stored === '1');
-
-function askTitle(form) {
-  var t = prompt('Problem title (leave empty to clear):', form.dataset.title || '');
-  if (t === null) return false;
-  form.querySelector('input[name=title]').value = t;
-  return true;
-}
 
 function resEdit(id, editing) {
   document.getElementById('res-view-' + id).hidden = editing;
