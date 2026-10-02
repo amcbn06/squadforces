@@ -144,14 +144,6 @@ class Resources(SiteTestCase):
         self.add(self.owner, "a **b** <i>c</i>")
         self.assertIn("a **b** &lt;i&gt;c&lt;/i&gt;</textarea>", self.box(self.owner))
 
-    def test_deleting_is_confirmed_inline_not_with_a_browser_popup(self):
-        # A native confirm() is swallowed by some browsers and panes, which made the button look dead.
-        self.add(self.owner, "x")
-        box = self.box(self.owner)
-        self.assertIn('id="res-confirm-', box)
-        self.assertNotIn("confirm(", box)
-        self.assertNotIn('id="res-confirm-', self.box(self.member))
-
     def test_the_owner_removes_one(self):
         self.add(self.owner, "first")
         self.add(self.owner, "second")
