@@ -45,7 +45,7 @@
     {% if can_manage %}
     <a href="/assignments/{{ assignment.id }}/edit-page" class="btn">Edit</a>
     <form method="post" action="/assignments/{{ assignment.id }}/delete" style="display:inline;"
-          onsubmit="return confirm('Delete this assignment and all its data?')">
+          data-confirm-title="Delete assignment" data-confirm="Delete this assignment and all its data?" data-ok-label="Delete">
       <button class="btn btn-red">Delete</button>
     </form>
     {% endif %}
@@ -149,37 +149,66 @@
   </div>
 </div>
 
-{# Resources: switched on per group; the owner (or admin) writes them, every member reads them. #}
+{# Resources: switched on per group; the owner (or admin) writes them in Markdown, every member reads them. The
+   look and the controls (pencil / trash icons, a dashed add button that opens a form, editing in place) follow the
+   hints and notes panel. #}
+{% macro icon_edit() %}<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>{% endmacro %}
+{% macro icon_trash() %}<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>{% endmacro %}
 {% if group.resources_allowed and (can_manage or assignment.resources) %}
-<div class="box" id="resources" style="margin-bottom:12px;">
+<div class="box res-box" id="resources" style="margin-bottom:12px;">
   <div class="box-header" onclick="toggleBox(this)">
     Resources
     <span style="font-weight:normal; font-size:11px; color:#666;">({{ assignment.resources | length }}, click to expand)</span>
   </div>
   <div class="box-body" {% if not request.query_params.get('resources') %}style="display:none"{% endif %}>
-    {% if assignment.resources %}
-    <ul style="margin:0 0 8px 18px; padding:0;">
-      {% for r in assignment.resources %}
-      <li style="margin-bottom:6px; overflow-wrap:anywhere;"><span style="white-space:pre-wrap;">{{ r.text | linkify }}</span>
-        {% if can_manage %}
-        <form method="post" action="/assignments/{{ assignment.id }}/resources/{{ r.id }}/delete" style="display:inline;"
-              onsubmit="return confirm('Remove this resource?')">
-          <button class="btn btn-red" style="font-size:11px; padding:0 6px;" title="Remove">&times;</button>
-        </form>
-        {% endif %}
-      </li>
-      {% endfor %}
-    </ul>
-    {% else %}
-    <p class="meta" style="margin-bottom:8px;">No resources yet.</p>
+    {% if not assignment.resources %}
+    <p class="meta" style="margin-bottom:8px;">Nothing here yet.</p>
     {% endif %}
+    {% for r in assignment.resources %}
+    <div class="hint-item">
+      <div class="res-row" id="res-view-{{ r.id }}">
+        <div class="md res-text">{{ r.text | markdown }}</div>
+        {% if can_manage %}
+        <div class="hint-actions">
+          <button type="button" class="hint-icon-btn" title="Edit resource" aria-label="Edit resource"
+                  onclick="resEdit({{ r.id }}, true)">{{ icon_edit() }}</button>
+          <form method="post" action="/assignments/{{ assignment.id }}/resources/{{ r.id }}/delete"
+                data-confirm-title="Delete resource" data-confirm="Delete this resource?" data-ok-label="Delete">
+            <button type="submit" class="hint-icon-btn danger" title="Delete resource" aria-label="Delete resource">{{ icon_trash() }}</button>
+          </form>
+        </div>
+        {% endif %}
+      </div>
+      {% if can_manage %}
+      <form method="post" class="hint-form res-edit" id="res-edit-{{ r.id }}" hidden
+            action="/assignments/{{ assignment.id }}/resources/{{ r.id }}/edit">
+        <textarea name="text" rows="4" required maxlength="2000">{{ r.text }}</textarea>
+        <div class="hint-form-row">
+          <span class="meta">Markdown works.</span>
+          <div class="hint-btn-row">
+            <button type="submit" class="btn btn-green">Save</button>
+            <button type="button" class="btn" onclick="resEdit({{ r.id }}, false)">Cancel</button>
+          </div>
+        </div>
+      </form>
+      {% endif %}
+    </div>
+    {% endfor %}
     {% if can_manage %}
-    <form method="post" action="/assignments/{{ assignment.id }}/resources/add">
-      <textarea name="text" rows="2" required maxlength="2000" style="width:100%; margin-bottom:8px;"
-                placeholder="A link or a few words, e.g. https://cp-algorithms.com/dynamic_programming/intro-to-dp.html"></textarea>
-      <button type="submit" class="btn btn-green">Add resource</button>
-      <span class="meta">Links become clickable. Everyone in the group can read this.</span>
-    </form>
+    <div class="hint-add">
+      <button type="button" class="hint-add-btn" id="res-add-btn" onclick="resAdd(true)">+ Add resource</button>
+      <form method="post" class="hint-form" id="res-add-form" hidden action="/assignments/{{ assignment.id }}/resources/add">
+        <textarea name="text" rows="4" required maxlength="2000"
+                  placeholder="A link or a few words (Markdown works, links become clickable)"></textarea>
+        <div class="hint-form-row">
+          <span class="meta">Everyone in the group can read this.</span>
+          <div class="hint-btn-row">
+            <button type="submit" class="btn btn-green">Add resource</button>
+            <button type="button" class="btn" onclick="resAdd(false)">Cancel</button>
+          </div>
+        </div>
+      </form>
+    </div>
     {% endif %}
   </div>
 </div>
@@ -338,14 +367,14 @@
             </form>
             {% elif is_admin or (account and item.created_by_id == account.id) %}
             <form method="post" action="/assignments/{{ assignment.id }}/items/{{ item.id }}/title"
-                  style="display:inline;" data-title="{{ item.title or '' }}" onsubmit="return askTitle(this)">
+                  style="display:inline;" data-prompt-title="Set title" data-prompt="Problem title (leave empty to clear):" data-prompt-field="title" data-prompt-value="{{ item.title or '' }}" data-ok-label="Save">
               <input type="hidden" name="title" value="">
               <button class="btn" style="padding:1px 5px;" title="Set title">✎</button>
             </form>
             {% endif %}
             {% if account and (account.user_type in ("admin", "user") or item.created_by_id == account.id) %}
             <form method="post" action="/assignments/{{ assignment.id }}/items/{{ item.id }}/delete"
-                  style="display:inline;" onsubmit="return confirm('Remove?')">
+                  style="display:inline;" data-confirm-title="Remove item" data-confirm="Remove this contest or problem from the assignment?" data-ok-label="Remove">
               <button class="del-btn" title="Remove">×</button>
             </form>
             {% endif %}
@@ -710,7 +739,9 @@ function buildHint(h, label, expanded) {
     var del = el('form');
     del.method = 'post';
     del.action = HINT_URL + h.id + '/delete';
-    del.onsubmit = function () { return confirm('Delete ' + label + '?'); };
+    del.dataset.confirmTitle = 'Delete entry';
+    del.dataset.confirm = 'Delete ' + label + '?';
+    del.dataset.okLabel = 'Delete';
     var delBtn = iconButton(ICON_TRASH, 'Delete ' + label, true);
     delBtn.type = 'submit';
     del.appendChild(delBtn);
@@ -841,11 +872,18 @@ function applyRatings(hidden) {
 var _stored = localStorage.getItem('ratingsHidden');
 applyRatings(_stored === null ? true : _stored === '1');
 
-function askTitle(form) {
-  var t = prompt('Problem title (leave empty to clear):', form.dataset.title || '');
-  if (t === null) return false;
-  form.querySelector('input[name=title]').value = t;
-  return true;
+function resEdit(id, editing) {
+  document.getElementById('res-view-' + id).hidden = editing;
+  var form = document.getElementById('res-edit-' + id);
+  form.hidden = !editing;
+  if (editing) form.querySelector('textarea').focus();
+}
+
+function resAdd(adding) {
+  document.getElementById('res-add-btn').hidden = adding;
+  var form = document.getElementById('res-add-form');
+  form.hidden = !adding;
+  if (adding) { form.querySelector('textarea').focus(); form.scrollIntoView({ block: 'nearest' }); }
 }
 
 function toggleBox(header) {

@@ -42,6 +42,112 @@
   {% block content %}{% endblock %}
 </div>
 
+{# One shared dialog: the app's own centred panel in place of the browser's built-in confirm and prompt popups, which some
+   browsers and embedded panes suppress and which can't be styled. Forms opt in with data attributes:
+     data-confirm="Question?"  [data-confirm-title] [data-ok-label]
+     data-prompt="Question:" data-prompt-field="<input name to fill>"  [data-prompt-value] [data-prompt-title] [data-ok-label]
+   and scripts can call confirmDialog({...}) / promptDialog({...}), both of which return a Promise. #}
+<div id="dialog-overlay" class="modal-overlay dialog-overlay" hidden>
+  <div class="modal dialog" role="alertdialog" aria-modal="true" aria-labelledby="dialog-title" aria-describedby="dialog-message">
+    <div class="modal-head"><span id="dialog-title"></span></div>
+    <div class="modal-body">
+      <p id="dialog-message" class="dialog-message"></p>
+      <input type="text" id="dialog-input" class="dialog-input" autocomplete="off" hidden>
+      <div class="dialog-buttons">
+        <button type="button" class="btn" id="dialog-cancel">Cancel</button>
+        <button type="button" class="btn btn-red" id="dialog-ok">OK</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var overlay = document.getElementById('dialog-overlay');
+  var titleEl = document.getElementById('dialog-title');
+  var msgEl = document.getElementById('dialog-message');
+  var input = document.getElementById('dialog-input');
+  var okBtn = document.getElementById('dialog-ok');
+  var cancelBtn = document.getElementById('dialog-cancel');
+  var finish = null;      // set while a dialog is open; call with the answer
+  var lastFocus = null;
+
+  function open(o) {
+    return new Promise(function (resolve) {
+      lastFocus = document.activeElement;
+      titleEl.textContent = o.title;
+      msgEl.textContent = o.message || '';
+      msgEl.hidden = !o.message;
+      input.hidden = !o.prompt;
+      input.value = o.value || '';
+      okBtn.textContent = o.okLabel;
+      okBtn.className = 'btn ' + (o.danger ? 'btn-red' : 'btn-green');
+      finish = function (ok) {
+        var answer = o.prompt ? (ok ? input.value : null) : !!ok;
+        overlay.hidden = true;
+        finish = null;
+        if (lastFocus && lastFocus.focus) lastFocus.focus();
+        resolve(answer);
+      };
+      overlay.hidden = false;
+      // A destructive question starts on Cancel, so a stray Enter can't delete anything.
+      (o.prompt ? input : o.danger ? cancelBtn : okBtn).focus();
+      if (o.prompt) input.select();
+    });
+  }
+
+  window.confirmDialog = function (o) {
+    return open({ title: o.title || 'Are you sure?', message: o.message, okLabel: o.okLabel || 'Confirm',
+                  danger: o.danger !== false });
+  };
+  window.promptDialog = function (o) {
+    return open({ title: o.title || 'Enter a value', message: o.message, prompt: true, value: o.value,
+                  okLabel: o.okLabel || 'Save', danger: false });
+  };
+
+  okBtn.addEventListener('click', function () { if (finish) finish(true); });
+  cancelBtn.addEventListener('click', function () { if (finish) finish(false); });
+
+  // Capture phase and stopImmediatePropagation, so Escape closes only this dialog and not a panel behind it.
+  document.addEventListener('keydown', function (e) {
+    if (!finish) return;
+    if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); finish(false); }
+    else if (e.key === 'Enter' && e.target === input) { e.preventDefault(); finish(true); }
+    else if (e.key === 'Tab') {  // keep focus inside the dialog
+      var stops = [input, cancelBtn, okBtn].filter(function (x) { return !x.hidden; });
+      var i = stops.indexOf(document.activeElement);
+      var next = e.shiftKey ? (i <= 0 ? stops.length - 1 : i - 1) : (i === stops.length - 1 ? 0 : i + 1);
+      e.preventDefault();
+      stops[next].focus();
+    }
+  }, true);
+
+  // Close on a click on the dim backdrop only when the press also started there (dragging a text selection out
+  // of the input shouldn't dismiss it).
+  var pressedOnBackdrop = false;
+  overlay.addEventListener('mousedown', function (e) { pressedOnBackdrop = e.target === overlay; });
+  overlay.addEventListener('click', function (e) {
+    if (pressedOnBackdrop && e.target === overlay && finish) finish(false);
+    pressedOnBackdrop = false;
+  });
+
+  // Forms ask through data attributes; forms built by other scripts work too (delegated, capture phase).
+  document.addEventListener('submit', function (e) {
+    var form = e.target, d = form.dataset;
+    if (!d || (d.confirm === undefined && d.prompt === undefined)) return;
+    e.preventDefault();
+    var ask = d.prompt !== undefined
+      ? promptDialog({ title: d.promptTitle, message: d.prompt, value: d.promptValue, okLabel: d.okLabel })
+      : confirmDialog({ title: d.confirmTitle, message: d.confirm, okLabel: d.okLabel });
+    ask.then(function (answer) {
+      if (answer === false || answer === null) return;
+      if (d.promptField) form.elements.namedItem(d.promptField).value = answer;
+      HTMLFormElement.prototype.submit.call(form);  // not form.submit(): a control named "submit" would shadow it
+    });
+  }, true);
+})();
+</script>
+
 <script>
 function toggleTheme() {
   var html = document.documentElement;

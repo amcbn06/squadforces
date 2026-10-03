@@ -31,7 +31,7 @@
       <td>{{ inv.expires_at.strftime('%Y-%m-%d %H:%M') }}</td>
       <td>{{ state }}</td>
       <td>{% if state == 'active' %}
-        <form method="post" action="{{ revoke_base }}{{ inv.id }}/revoke" style="margin:0;" onsubmit="return confirm('Revoke this invite link?')">
+        <form method="post" action="{{ revoke_base }}{{ inv.id }}/revoke" style="margin:0;" data-confirm-title="Revoke invite link" data-confirm="Revoke this invite link? Anyone who hasn't used it yet won't be able to." data-ok-label="Revoke">
           <button class="btn btn-red" style="padding:1px 7px; font-size:11px;">Revoke</button>
         </form>{% endif %}</td>
     </tr>
