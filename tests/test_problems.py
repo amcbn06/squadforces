@@ -32,6 +32,8 @@ class DetectSource(unittest.TestCase):
         ("https://kilonova.ro/problems/2460", problems.KN),
         ("https://kilonova.ro/problem_lists/1572", problems.KN),
         ("https://cses.fi/problemset/task/1068", problems.CSES),
+        ("https://www.pbinfo.ro/probleme/1/sum", problems.PBINFO),
+        ("https://www.infoarena.ro/problema/adunare", problems.INFOARENA),
         # bare ids
         ("1234A", problems.CF),
         ("1234/A", problems.CF),
@@ -103,6 +105,24 @@ class ParseLink(unittest.TestCase):
         r = parse("https://cses.fi/problemset/list/")
         self.assertEqual(r[0], "ERR")
         self.assertIn("single task", r[1])
+
+    def test_pbinfo(self):
+        want = ("pbinfo", "problem", "1", None)
+        self.assertEqual(parse("https://www.pbinfo.ro/probleme/1/sum"), want)
+        self.assertEqual(parse("https://pbinfo.ro/probleme/1"), want)
+        self.assertEqual(parse("https://www.pbinfo.ro/?pagina=probleme&id=1"), want)
+        self.assertEqual(parse("www.pbinfo.ro/probleme/1/sum"), want)
+        r = parse("https://www.pbinfo.ro/probleme")
+        self.assertEqual(r[0], "ERR")
+        self.assertIn("single problem", r[1])
+
+    def test_infoarena(self):
+        want = ("infoarena", "problem", "adunare", None)
+        self.assertEqual(parse("https://www.infoarena.ro/problema/adunare"), want)
+        self.assertEqual(parse("https://infoarena.ro/problema/Adunare/"), want)  # names are stored lowercase
+        r = parse("https://www.infoarena.ro/arhiva")
+        self.assertEqual(r[0], "ERR")
+        self.assertIn("single problem", r[1])
 
     def test_unknown_links_are_kept(self):
         r = parse("https://leetcode.com/problems/two-sum/")
@@ -194,6 +214,21 @@ class ParseForm(unittest.TestCase):
         self.check("cses", "problem", "https://cses.fi/problemset/task/1068", ("cses", "problem", "1068", None))
         self.check("cses", "contest", "1068", ("ERR",))
         self.check("cses", "problem", "https://example.com/x", ("ERR",))
+
+    def test_pbinfo(self):
+        self.check("pbinfo", "problem", "1", ("pbinfo", "problem", "1", None))
+        self.check("pbinfo", "problem", "https://www.pbinfo.ro/probleme/1/sum", ("pbinfo", "problem", "1", None))
+        self.check("pbinfo", "problem", "https://www.pbinfo.ro/?pagina=probleme&id=1", ("pbinfo", "problem", "1", None))
+        self.check("pbinfo", "contest", "1", ("ERR",))
+        self.check("pbinfo", "problem", "https://example.com/probleme/1", ("ERR",))
+        self.check("pbinfo", "problem", "sum", ("ERR",))
+
+    def test_infoarena(self):
+        self.check("infoarena", "problem", "adunare", ("infoarena", "problem", "adunare", None))
+        self.check("infoarena", "problem", "https://www.infoarena.ro/problema/adunare", ("infoarena", "problem", "adunare", None))
+        self.check("infoarena", "contest", "adunare", ("ERR",))
+        self.check("infoarena", "problem", "https://example.com/problema/adunare", ("ERR",))
+        self.check("infoarena", "problem", "not a name", ("ERR",))
 
     def test_other(self):
         self.check("other", "problem", "https://example.com/p/1", ("other", "problem", parse("https://example.com/p/1")[2], "https://example.com/p/1"))
