@@ -82,6 +82,8 @@ class AddingItems(WebTestCase):
             ("kilonova", "problem", "https://kilonova.ro/problems/2460", ("kilonova", "problem", "2460", None, None)),
             ("kilonova", "contest", "1572", ("kilonova", "contest", "1572", None, None)),
             ("cses", "problem", "https://cses.fi/problemset/task/1068", ("cses", "problem", "1068", None, None)),
+            ("pbinfo", "problem", "https://www.pbinfo.ro/probleme/1/sum", ("pbinfo", "problem", "1", None, None)),
+            ("infoarena", "problem", "https://www.infoarena.ro/problema/adunare", ("infoarena", "problem", "adunare", None, None)),
         ]
         for platform, kind, raw, expected in cases:
             with self.subTest(raw=raw):
@@ -160,6 +162,7 @@ class MatrixPage(WebTestCase):
             ("codeforces", "contest", "105427"), ("codeforces", "problem", "105427/A"), ("codeforces", "contest", "2085"),
             ("codeforces", "problem", "1234/A"), ("atcoder", "problem", "abc123_a"), ("atcoder", "contest", "abc400"),
             ("kilonova", "problem", "2460"), ("cses", "problem", "1068"),
+            ("pbinfo", "problem", "1"), ("infoarena", "problem", "adunare"),
         ]:
             self.add(self.alice, platform, kind, raw)
         self.add(self.alice, "other", "problem", "https://leetcode.com/problems/two-sum/")
@@ -177,14 +180,27 @@ class MatrixPage(WebTestCase):
             "https://atcoder.jp/contests/abc400",
             "https://kilonova.ro/problems/2460",
             "https://cses.fi/problemset/task/1068",
+            "https://www.pbinfo.ro/probleme/1",
+            "https://www.infoarena.ro/problema/adunare",
             "https://leetcode.com/problems/two-sum/",
             "https://codeforces.com/edu/course/2/lesson/4/3/practice/contest/274545/problem/A",
         ]:
             self.assertIn(f'href="{href}"', html, href)
-        for icon in ("/static/cf.png", "/static/ac.png", "/static/kn.png", "/static/cses-icon.png"):
+        for icon in ("/static/cf.png", "/static/ac.png", "/static/kn.png", "/static/cses-icon.png",
+                     "/static/pbinfo-icon.png", "/static/infoarena-icon.png"):
             self.assertIn(icon, html)
         self.assertIn('class="picon picon-unknown"', html)  # the link to another site gets the "?" placeholder
         self.assertNotIn("/static/None", html)
+
+    def test_group_page_lists_each_assignments_description(self):
+        self.admin.post(f"/assignments/{self.aid}/edit", data={
+            "title": "Week 1", "week_start_date": "", "description": "Greedy and <b>sorting</b> basics"})
+        r = self.admin.post("/assignments/new", data={"group_id": self.gid, "title": "Week 2"})  # no description
+        self.assertEqual(r.status_code, 303)
+        html = flat(self.admin.get(f"/groups/{self.gid}").text)
+        self.assertIn("Greedy and &lt;b&gt;sorting&lt;/b&gt; basics", html)  # shown, and escaped
+        self.assertNotIn("<b>sorting</b>", html)
+        self.assertEqual(html.count("-webkit-line-clamp"), 1)  # only the assignment that has one
 
     def test_the_dark_theme_lightens_the_atcoder_logo(self):
         css = open("static/style.css", encoding="utf-8").read()
