@@ -153,8 +153,8 @@ async def login_page(request: Request, next: str = "/"):
 @app.post("/login")
 async def login(
     request: Request,
-    username: str = Form(...),
-    password: str = Form(...),
+    username: str = Form(""),  # blank fields are refused below like any wrong login, not rejected as a 422
+    password: str = Form(""),
     next: str = Form("/"),
     db: Session = Depends(get_db),
 ):
