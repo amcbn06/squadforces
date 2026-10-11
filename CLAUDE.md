@@ -34,10 +34,10 @@ Judges are only ever asked for *a user's submissions*, once, and every contest/p
 
 ### Platforms and problem detection
 
-- `app/problems.py` — the universal switch. `detect_source(token)` is a chain of `if`s (CF, CF EDU, CF gym, AtCoder, Kilonova, CSES, default = unknown link); `parse_link` / `parse_links` (bulk paste) / `parse_form` (the add-item form) turn input into a `ParsedLink`.
+- `app/problems.py` — the universal switch. `detect_source(token)` is a chain of `if`s (CF, CF EDU, CF gym, AtCoder, Kilonova, CSES, pbinfo, infoarena, default = unknown link); `parse_link` / `parse_links` (bulk paste) / `parse_form` (the add-item form) turn input into a `ParsedLink`.
 - `app/platforms/<name>.py` — everything specific to one judge, as a `Platform` subclass (see `app/platforms/base.py`): its links (`parse_url`, `parse_bare`, `parse_form`), how it is displayed (`item_url`, `problem_url`, icon, `manual_status`, `default_title`, and for the profile's recent-submissions list `submission_url`, `submission_problem_url`, `submission_problem_label`, `fetch_problem_names` where submissions carry no title), how its submissions are fetched (`fetch_submissions`, `fetch_rating_history`) and how an item's results are derived (`sync_item`). `registry.py` lists them; templates get `platform_of`, `item_url`, `problem_url` from `app/templating.py`, so there are no per-platform `if`s in templates.
 - `app/scraper/` — only the HTTP calls (`codeforces.py`, `atcoder.py` via kenkoooo + atcoder.jp rating history, `kilonova.py`). Codeforces requests are serialized and spaced 2.1 s apart.
-- Manual platforms have no API: `cses` and `other` (any http(s) link, shown with a "?" icon) — plus Codeforces EDU problems. Members mark these solved themselves.
+- Manual platforms have no API: `cses`, `pbinfo`, `infoarena` and `other` (any http(s) link, shown with a "?" icon) — plus Codeforces EDU problems. Members mark these solved themselves.
 
 ### Database
 
@@ -76,7 +76,7 @@ The app never uses the browser's built-in `confirm`/`prompt`/`alert` popups: som
 
 ### Leaderboards
 
-`app/leaderboard.py`: a problem counts for a user once, if their *first* accepted submission (per platform + problem key) falls in the last 30 days. Computed by query (accepted in the window and no older acceptance, via the `(user, platform, problem_key)` index) rather than a stored flag, so it can't go stale as submissions are added or re-graded; only users whose full history is loaded (`SubmissionSync.full_sync_at`) are counted. The group board intersects that with the group's problems from `Platform.problem_keys(item)` (override it if a platform's contest problems are keyed differently from `ContestProblem.platform_problem_id`); the platform board (home page, right side) is per account type: users are ranked against users, students against students (the admin sees both, and is never ranked). An account created by the admin with an empty password stores `auth.NO_LOGIN` (`"!"`): `verify_password` always refuses it, so it can be a group member and on the boards but never signed in to; setting a password later enables it. Manual platforms (CSES, links) have no submissions and don't count.
+`app/leaderboard.py`: a problem counts for a user once, if their *first* accepted submission (per platform + problem key) falls in the last 30 days. Computed by query (accepted in the window and no older acceptance, via the `(user, platform, problem_key)` index) rather than a stored flag, so it can't go stale as submissions are added or re-graded; only users whose full history is loaded (`SubmissionSync.full_sync_at`) are counted. The group board intersects that with the group's problems from `Platform.problem_keys(item)` (override it if a platform's contest problems are keyed differently from `ContestProblem.platform_problem_id`); the platform board (home page, right side) is per account type: users are ranked against users, students against students (the admin sees both, and is never ranked). An account created by the admin with an empty password stores `auth.NO_LOGIN` (`"!"`): `verify_password` always refuses it, so it can be a group member and on the boards but never signed in to; setting a password later enables it. Manual platforms (CSES, pbinfo, infoarena, links) have no submissions and don't count.
 
 ### Recommend page
 

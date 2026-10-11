@@ -118,6 +118,11 @@
       {% if assignment.week_start_date %}
       <span class="meta">{{ assignment.week_start_date.strftime('%b %d, %Y') }}</span>
       {% endif %}
+      {% if assignment.description %}
+      <p title="{{ assignment.description }}"
+         style="color:#555; margin-top:3px; overflow:hidden; display:-webkit-box;
+                -webkit-line-clamp:2; -webkit-box-orient:vertical; line-clamp:2;">{{ assignment.description }}</p>
+      {% endif %}
     </a>
     {% endfor %}
     {% else %}
