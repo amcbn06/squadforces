@@ -2,11 +2,12 @@
 app/problems.py::detect_source."""
 from __future__ import annotations
 
-from app.platforms import atc, cf, cses, kn, other
+from app.platforms import atc, cf, cses, infoarena, kn, other, pbinfo
 from app.platforms.base import Platform
 
 PLATFORMS: dict[str, Platform] = {
-    p.key: p for p in (cf.PLATFORM, atc.PLATFORM, kn.PLATFORM, cses.PLATFORM, other.PLATFORM)
+    p.key: p for p in (cf.PLATFORM, atc.PLATFORM, kn.PLATFORM, cses.PLATFORM, pbinfo.PLATFORM, infoarena.PLATFORM,
+                       other.PLATFORM)
 }
 
 OTHER = other.PLATFORM
