@@ -11,7 +11,7 @@ import re
 from typing import Optional
 from urllib.parse import ParseResult, urlparse
 
-from app.platforms import atc, cf, cses, infoarena, kn, other, pbinfo, registry
+from app.platforms import atc, cf, codechef, cses, infoarena, kn, other, pbinfo, registry, spoj
 from app.platforms.base import ParsedLink
 
 MAX_LINKS = 50
@@ -25,6 +25,8 @@ KN = kn.KN
 CSES = cses.CSES
 PBINFO = pbinfo.PBINFO
 INFOARENA = infoarena.INFOARENA
+SPOJ = spoj.SPOJ
+CODECHEF = codechef.CODECHEF
 UNKNOWN = "unknown"
 
 # Source -> key of the platform that handles it.
@@ -37,6 +39,8 @@ SOURCE_PLATFORM = {
     CSES: "cses",
     PBINFO: "pbinfo",
     INFOARENA: "infoarena",
+    SPOJ: "spoj",
+    CODECHEF: "codechef",
     UNKNOWN: "other",
 }
 
@@ -55,7 +59,7 @@ def as_url(token: str) -> Optional[ParseResult]:
 
 def detect_source(token: str) -> str:
     """Which source a link or bare ID belongs to: one of CF, CF_EDU, CF_GYM, ATC, KN, CSES, PBINFO,
-    INFOARENA or UNKNOWN."""
+    INFOARENA, SPOJ, CODECHEF or UNKNOWN."""
     token = token.strip()
     url = as_url(token)
     if url is not None:
@@ -75,6 +79,10 @@ def detect_source(token: str) -> str:
             return PBINFO
         if infoarena.is_url(url):
             return INFOARENA
+        if spoj.is_url(url):
+            return SPOJ
+        if codechef.is_url(url):
+            return CODECHEF
         return UNKNOWN
     if cf.is_bare_id(token):
         return CF
@@ -93,6 +101,10 @@ def _unparsed_reason(source: str) -> str:
         return "pbinfo page - paste a link to a single problem (https://www.pbinfo.ro/probleme/<id>)"
     if source == INFOARENA:
         return "infoarena page - paste a link to a single problem (https://www.infoarena.ro/problema/<name>)"
+    if source == SPOJ:
+        return "SPOJ page - paste a link to a single problem (https://www.spoj.com/problems/<CODE>/)"
+    if source == CODECHEF:
+        return "CodeChef page - paste a link to a single problem (https://www.codechef.com/problems/<CODE>)"
     return "unsupported link (expected a contest, problem or problem list URL)"
 
 

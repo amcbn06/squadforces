@@ -5,7 +5,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.templating import make_templates
+from app.templating import make_templates, render_markdown
 from sqlalchemy import or_
 
 from app.models import (
@@ -492,11 +492,24 @@ def _clean_resource_text(text: str) -> str:
     return text
 
 
+@router.post("/{assignment_id}/resources/preview", response_class=HTMLResponse)
+async def preview_resource(
+    assignment_id: int,
+    text: str = Form(""),
+    db: Session = Depends(get_db),
+    account=Depends(require_auth),
+):
+    """The Markdown editor's Preview tab: `text` as it will be shown, through the same renderer the page uses. It
+    writes nothing, and is open to whoever may write resources (anyone else has no editor to preview from)."""
+    _managed_assignment_with_resources(db, account, assignment_id)
+    return HTMLResponse(str(render_markdown(text.replace("\r\n", "\n").strip()[:MAX_RESOURCE_LENGTH])))
+
+
 @router.post("/{assignment_id}/resources/add")
 async def add_resource(
     request: Request,
     assignment_id: int,
-    text: str = Form(...),
+    text: str = Form(""),  # blank is ignored below, not rejected as a 422
     db: Session = Depends(get_db),
     account=Depends(require_auth),
 ):
@@ -519,7 +532,7 @@ async def edit_resource(
     request: Request,
     assignment_id: int,
     resource_id: int,
-    text: str = Form(...),
+    text: str = Form(""),
     db: Session = Depends(get_db),
     account=Depends(require_auth),
 ):

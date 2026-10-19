@@ -126,7 +126,7 @@ class AssignmentItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     assignment_id = Column(Integer, ForeignKey("assignments.id", ondelete="CASCADE"), nullable=False)
     type = Column(String(10), nullable=False)      # "contest" | "problem"
-    platform = Column(String(15), nullable=False)  # a key of app/platforms/registry.py: codeforces | atcoder | kilonova | cses | pbinfo | infoarena | other
+    platform = Column(String(15), nullable=False)  # a key of app/platforms/registry.py: codeforces | atcoder | kilonova | cses | pbinfo | infoarena | spoj | codechef | other
     external_id = Column(String(100), nullable=False)
     title = Column(String(300), nullable=True)
     rating = Column(Integer, nullable=True)  # standalone Codeforces problems only

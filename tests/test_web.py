@@ -84,6 +84,8 @@ class AddingItems(WebTestCase):
             ("cses", "problem", "https://cses.fi/problemset/task/1068", ("cses", "problem", "1068", None, None)),
             ("pbinfo", "problem", "https://www.pbinfo.ro/probleme/1/sum", ("pbinfo", "problem", "1", None, None)),
             ("infoarena", "problem", "https://www.infoarena.ro/problema/adunare", ("infoarena", "problem", "adunare", None, None)),
+            ("spoj", "problem", "https://www.spoj.com/problems/TEST/", ("spoj", "problem", "TEST", None, None)),
+            ("codechef", "problem", "https://www.codechef.com/problems/FLOW001", ("codechef", "problem", "FLOW001", None, None)),
         ]
         for platform, kind, raw, expected in cases:
             with self.subTest(raw=raw):
@@ -108,7 +110,7 @@ class AddingItems(WebTestCase):
             ("cses", "problem", "https://example.com/x", "Invalid CSES"),
             ("other", "problem", "javascript:alert(1)", "http(s) link"),
             ("other", "contest", "https://example.com/x", "Only problems"),
-            ("spoj", "problem", "x", "Unknown platform"),
+            ("hackerrank", "problem", "x", "Unknown platform"),
         ]
         for platform, kind, raw, message in cases:
             with self.subTest(raw=raw):
@@ -163,6 +165,7 @@ class MatrixPage(WebTestCase):
             ("codeforces", "problem", "1234/A"), ("atcoder", "problem", "abc123_a"), ("atcoder", "contest", "abc400"),
             ("kilonova", "problem", "2460"), ("cses", "problem", "1068"),
             ("pbinfo", "problem", "1"), ("infoarena", "problem", "adunare"),
+            ("spoj", "problem", "TEST"), ("codechef", "problem", "FLOW001"),
         ]:
             self.add(self.alice, platform, kind, raw)
         self.add(self.alice, "other", "problem", "https://leetcode.com/problems/two-sum/")
@@ -182,12 +185,15 @@ class MatrixPage(WebTestCase):
             "https://cses.fi/problemset/task/1068",
             "https://www.pbinfo.ro/probleme/1",
             "https://www.infoarena.ro/problema/adunare",
+            "https://www.spoj.com/problems/TEST/",
+            "https://www.codechef.com/problems/FLOW001",
             "https://leetcode.com/problems/two-sum/",
             "https://codeforces.com/edu/course/2/lesson/4/3/practice/contest/274545/problem/A",
         ]:
             self.assertIn(f'href="{href}"', html, href)
         for icon in ("/static/cf.png", "/static/ac.png", "/static/kn.png", "/static/cses-icon.png",
-                     "/static/pbinfo-icon.png", "/static/infoarena-icon.png"):
+                     "/static/pbinfo-icon.png", "/static/infoarena-icon.png", "/static/spoj-icon.png",
+                     "/static/codechef-icon.png"):
             self.assertIn(icon, html)
         self.assertIn('class="picon picon-unknown"', html)  # the link to another site gets the "?" placeholder
         self.assertNotIn("/static/None", html)

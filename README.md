@@ -144,7 +144,7 @@ The repo ships with `railway.toml`.
 app/
   main.py, routers/     routes: groups, assignments, accounts, profiles
   problems.py           the source-detection switch (which judge is this link?)
-  platforms/            one module per judge: cf, atc, kn, cses, pbinfo, infoarena, other  (+ registry)
+  platforms/            one module per judge: cf, atc, kn, cses, pbinfo, infoarena, spoj, codechef, other  (+ registry)
   submissions.py        the submission store: incremental refresh, queries
   sync.py               refresh members' submissions, then derive an item's results
   scraper/              the HTTP calls to each judge, nothing else
