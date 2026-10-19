@@ -399,6 +399,23 @@ input:focus, textarea:focus, select:focus { outline: 1px solid var(--border-focu
 .res-text { flex: 1; min-width: 0; word-break: break-word; }
 .res-row .hint-actions { padding-right: 0; }
 .res-edit { padding: 10px 12px; }
+/* Markdown editor (static/md-editor.js): toolbar + Write / Preview around a textarea */
+.mde { margin-bottom: 8px; border: 1px solid var(--border-input); border-radius: 4px; background: var(--bg-input); }
+.mde:focus-within { border-color: var(--border-focus); }
+.mde-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 4px 6px; background: var(--bg-header); border-bottom: 1px solid var(--border); border-radius: 3px 3px 0 0; }
+.mde-tabs { display: flex; gap: 2px; margin-right: 4px; }
+.mde-tab, .mde-tool { padding: 2px 8px; font: inherit; font-size: 12px; line-height: 18px; color: var(--text); background: none; border: 1px solid transparent; border-radius: 3px; cursor: pointer; }
+.mde-tab:hover, .mde-tool:hover:not(:disabled) { background: var(--bg-btn-h); }
+.mde-tab.active { background: var(--bg-surface); border-color: var(--border); font-weight: 600; }
+.mde-tools { display: flex; flex-wrap: wrap; gap: 2px; }
+.mde-tool:disabled { opacity: .4; cursor: default; }
+.mde-b { font-weight: 700; }
+.mde-i { font-style: italic; }
+.mde-count { margin-left: auto; font-size: 11px; color: var(--text-meta); }
+.mde-near-limit { color: var(--text-err); }
+.mde textarea { display: block; box-sizing: border-box; margin: 0; border: 0; border-radius: 0 0 3px 3px; outline: none; background: transparent; }
+.mde-preview { padding: 8px 10px; word-break: break-word; }
+.mde-empty { color: var(--text-meta); font-style: italic; }
 .md > :first-child { margin-top: 0; }
 .md > :last-child { margin-bottom: 0; }
 .md p, .md ul, .md ol, .md pre, .md blockquote { margin: 0 0 6px; }

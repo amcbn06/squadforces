@@ -34,6 +34,8 @@ class DetectSource(unittest.TestCase):
         ("https://cses.fi/problemset/task/1068", problems.CSES),
         ("https://www.pbinfo.ro/probleme/1/sum", problems.PBINFO),
         ("https://www.infoarena.ro/problema/adunare", problems.INFOARENA),
+        ("https://www.spoj.com/problems/TEST/", problems.SPOJ),
+        ("https://www.codechef.com/problems/FLOW001", problems.CODECHEF),
         # bare ids
         ("1234A", problems.CF),
         ("1234/A", problems.CF),
@@ -121,6 +123,23 @@ class ParseLink(unittest.TestCase):
         self.assertEqual(parse("https://www.infoarena.ro/problema/adunare"), want)
         self.assertEqual(parse("https://infoarena.ro/problema/Adunare/"), want)  # names are stored lowercase
         r = parse("https://www.infoarena.ro/arhiva")
+        self.assertEqual(r[0], "ERR")
+        self.assertIn("single problem", r[1])
+
+    def test_spoj(self):
+        want = ("spoj", "problem", "TEST", None)
+        self.assertEqual(parse("https://www.spoj.com/problems/TEST/"), want)
+        self.assertEqual(parse("https://spoj.com/problems/TEST"), want)
+        r = parse("https://www.spoj.com/problems/classical/")  # a list page, not a problem
+        self.assertEqual(r[0], "ERR")
+        self.assertIn("single problem", r[1])
+
+    def test_codechef(self):
+        want = ("codechef", "problem", "FLOW001", None)
+        self.assertEqual(parse("https://www.codechef.com/problems/FLOW001"), want)
+        self.assertEqual(parse("https://www.codechef.com/START100/problems/FLOW001"), want)  # inside a contest
+        self.assertEqual(parse("https://www.codechef.com/problems/FLOW001?tab=statement"), want)
+        r = parse("https://www.codechef.com/problems/school")
         self.assertEqual(r[0], "ERR")
         self.assertIn("single problem", r[1])
 
@@ -230,6 +249,21 @@ class ParseForm(unittest.TestCase):
         self.check("infoarena", "problem", "https://example.com/problema/adunare", ("ERR",))
         self.check("infoarena", "problem", "not a name", ("ERR",))
 
+    def test_spoj(self):
+        self.check("spoj", "problem", "TEST", ("spoj", "problem", "TEST", None))
+        self.check("spoj", "problem", "prime1", ("spoj", "problem", "PRIME1", None))  # codes are stored uppercase
+        self.check("spoj", "problem", "https://www.spoj.com/problems/TEST/", ("spoj", "problem", "TEST", None))
+        self.check("spoj", "contest", "TEST", ("ERR",))
+        self.check("spoj", "problem", "https://example.com/problems/TEST/", ("ERR",))
+        self.check("spoj", "problem", "not a code", ("ERR",))
+
+    def test_codechef(self):
+        self.check("codechef", "problem", "flow001", ("codechef", "problem", "FLOW001", None))
+        self.check("codechef", "problem", "https://www.codechef.com/problems/FLOW001", ("codechef", "problem", "FLOW001", None))
+        self.check("codechef", "contest", "FLOW001", ("ERR",))
+        self.check("codechef", "problem", "https://example.com/problems/FLOW001", ("ERR",))
+        self.check("codechef", "problem", "not a code", ("ERR",))
+
     def test_other(self):
         self.check("other", "problem", "https://example.com/p/1", ("other", "problem", parse("https://example.com/p/1")[2], "https://example.com/p/1"))
         self.check("other", "problem", "javascript:alert(1)", ("ERR",))
@@ -237,7 +271,7 @@ class ParseForm(unittest.TestCase):
         self.check("other", "contest", "https://example.com/p/1", ("ERR",))
 
     def test_unknown_platform_or_type(self):
-        self.check("spoj", "problem", "x", ("ERR",))
+        self.check("hackerrank", "problem", "x", ("ERR",))
         self.check("codeforces", "round", "2085", ("ERR",))
 
 
