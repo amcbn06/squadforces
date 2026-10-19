@@ -373,7 +373,6 @@ input:focus, textarea:focus, select:focus { outline: 1px solid var(--border-focu
 }
 .hint-icon-btn:hover { background: var(--bg-btn-h); color: var(--text); }
 .hint-icon-btn.danger:hover { color: var(--text-err); }
-.hint-link { color: var(--text-link); text-decoration: underline; word-break: break-all; }
 .hint-add { margin-top: 4px; }
 .hint-add-row { display: flex; gap: 8px; }
 .hint-add-row .hint-add-btn { flex: 1; }
@@ -384,7 +383,7 @@ input:focus, textarea:focus, select:focus { outline: 1px solid var(--border-focu
 .hint-add-btn:hover { border-color: var(--text-link); color: var(--text-link); }
 .hint-add .hint-form { padding: 12px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-surface); }
 .hint-content { padding: 10px 12px; border-top: 1px solid var(--border-light); }
-.hint-text { white-space: pre-wrap; word-break: break-word; }
+.hint-text { word-break: break-word; }
 .hint-form textarea { width: 100%; margin-bottom: 8px; resize: vertical; }
 .hint-form-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .hint-btn-row { display: flex; gap: 6px; }
@@ -413,6 +412,7 @@ input:focus, textarea:focus, select:focus { outline: 1px solid var(--border-focu
 .mde-i { font-style: italic; }
 .mde-count { margin-left: auto; font-size: 11px; color: var(--text-meta); }
 .mde-near-limit { color: var(--text-err); }
+.mde [hidden] { display: none !important; }
 .mde textarea { display: block; box-sizing: border-box; margin: 0; border: 0; border-radius: 0 0 3px 3px; outline: none; background: transparent; }
 .mde-preview { padding: 8px 10px; word-break: break-word; }
 .mde-empty { color: var(--text-meta); font-style: italic; }

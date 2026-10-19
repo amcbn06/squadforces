@@ -341,11 +341,31 @@ def _can_edit_hint(account, hint: Hint) -> bool:
     return hint.kind == "note" and hint.author_id == account.id
 
 
+@router.post("/{assignment_id}/hints/preview", response_class=HTMLResponse)
+async def preview_hint(
+    assignment_id: int,
+    text: str = Form(""),
+    db: Session = Depends(get_db),
+    account=Depends(require_auth),
+):
+    """The Markdown editor's Preview tab for hints, solutions and notes: `text` as it will be shown, through the same
+    renderer the page uses. It writes nothing, and is open to whoever may write something here: anyone in the group
+    while notes are on, and the group's owner (or the admin) while hints are."""
+    assignment = db.get(Assignment, assignment_id)
+    if not assignment:
+        return HTMLResponse("Assignment not found", status_code=404)
+    _check_group_access(account, assignment.group_id, db)
+    group = assignment.group
+    if not (group.notes_allowed or (group.hints_allowed and can_manage_group(account, group))):
+        raise HTTPException(status_code=403)
+    return HTMLResponse(str(render_markdown(text.replace("\r\n", "\n").strip()[:MAX_HINT_LENGTH])))
+
+
 @router.post("/{assignment_id}/hints/add")
 async def add_hint(
     assignment_id: int,
     target: str = Form(...),
-    text: str = Form(...),
+    text: str = Form(""),  # blank is ignored below, not rejected as a 422
     is_solution: str = Form(""),
     time_minutes: str = Form(""),
     entry: str = Form("", alias="kind"),
@@ -409,7 +429,7 @@ async def add_hint(
 async def edit_hint(
     assignment_id: int,
     hint_id: int,
-    text: str = Form(...),
+    text: str = Form(""),
     is_solution: str = Form(""),
     time_minutes: str = Form(""),
     db: Session = Depends(get_db),
@@ -702,6 +722,7 @@ def _hints_map(assignment, db: Session, account, group) -> dict[str, list[dict]]
         result.setdefault(_hint_target(h), []).append({
             "id": h.id,
             "text": h.text,
+            "html": str(render_markdown(h.text)),  # what readers see; the page's own renderer, so it is as safe as it
             "kind": h.kind,
             "author": h.author.username if h.author_id else None,
             "time_minutes": h.time_minutes,
