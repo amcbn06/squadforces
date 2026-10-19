@@ -219,5 +219,8 @@
   function init() {
     document.querySelectorAll('textarea[data-md-editor]').forEach(enhance);
   }
+  // Textareas present at load are enhanced automatically; forms a page builds later call MdEditor.enhance(textarea)
+  // (it needs data-preview-url set, and the textarea inside its form).
+  window.MdEditor = { enhance: enhance };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
