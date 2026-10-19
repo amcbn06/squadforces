@@ -3,8 +3,11 @@ Markdown renders with links clickable but nothing a user types ever becoming liv
 import re
 import unittest
 
+from fastapi.testclient import TestClient
+
 from app import models
 from app.database import SessionLocal
+from app.main import app
 from app.templating import render_markdown
 from tests.test_invites_groups import SiteTestCase
 
@@ -131,6 +134,60 @@ class Resources(SiteTestCase):
         self.owner.post(url, data={"text": "   "})  # blank: left alone
         self.assertEqual(self.owner.post(url, data={"text": "x" * 2001}).status_code, 400)
         self.assertEqual(self.stored(), ["keep"])
+
+    def test_blank_text_is_ignored_not_rejected(self):
+        self.assertEqual(self.add(self.owner, "").status_code, 303)
+        self.assertEqual(self.stored(), [])
+        self.add(self.owner, "keep")
+        r = self.owner.post(f"/assignments/{self.aid}/resources/{self.first_id()}/edit", data={"text": ""})
+        self.assertEqual(r.status_code, 303)
+        self.assertEqual(self.stored(), ["keep"])
+
+    # the Markdown editor: its Preview tab asks the server to render the draft ------------------------------------
+
+    def preview(self, client, text, aid=None):
+        return client.post(f"/assignments/{aid or self.aid}/resources/preview", data={"text": text})
+
+    def test_the_preview_is_rendered_like_the_page_and_writes_nothing(self):
+        r = self.preview(self.owner, "**bold** [docs](https://a.example)\n\n- one\n- two")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.text, str(render_markdown("**bold** [docs](https://a.example)\n\n- one\n- two")))
+        for part in ("<strong>bold</strong>", 'href="https://a.example"', "<li>one</li>"):
+            self.assertIn(part, r.text)
+        self.assertEqual(self.stored(), [])
+        self.assertEqual(self.preview(self.owner, "").text, "")  # nothing typed, nothing shown
+
+    def test_the_preview_is_as_safe_as_the_page(self):
+        out = self.preview(self.owner, "<script>alert(1)</script> [x](javascript:alert(1)) ![i](https://a.example/p.png)").text
+        for bad in ("<script", "<img", 'href="javascript'):
+            self.assertNotIn(bad, out)
+        self.assertIn("&lt;script&gt;", out)
+
+    def test_the_preview_stops_at_the_length_limit(self):
+        self.assertLessEqual(len(self.preview(self.owner, "a" * 5000).text), 2000 + 10)  # "<p>" + text + "</p>\n"
+
+    def test_only_those_who_can_write_may_preview(self):
+        self.assertEqual(self.preview(self.member, "x").status_code, 403)
+        anonymous = TestClient(app, follow_redirects=False)
+        self.assertIn(self.preview(anonymous, "x").status_code, (303, 401))
+        gid, _ = self.new_group(self.owner, name="Plain")  # resources off
+        r = self.owner.post("/assignments/new", data={"group_id": gid, "title": "W"})
+        aid = int(re.search(r"/assignments/(\d+)", r.headers["location"]).group(1))
+        self.assertEqual(self.preview(self.owner, "x", aid).status_code, 400)
+
+    def test_the_editor_is_loaded_for_the_owner_only(self):
+        self.add(self.owner, "a note")
+        owner_page = self.owner.get(f"/assignments/{self.aid}").text
+        self.assertIn('<script src="/static/md-editor.js">', owner_page)
+        self.assertEqual(owner_page.count("data-md-editor"), 2)  # the add form and the one entry's edit form
+        self.assertIn(f'data-preview-url="/assignments/{self.aid}/resources/preview"', owner_page)
+        member_page = self.member.get(f"/assignments/{self.aid}").text
+        self.assertNotIn("md-editor", member_page)
+
+    def test_the_editor_script_is_served(self):
+        r = self.owner.get("/static/md-editor.js")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("textarea[data-md-editor]", r.text)
 
     def test_editing_through_another_assignment_does_nothing(self):
         self.add(self.owner, "mine")

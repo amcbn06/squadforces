@@ -85,7 +85,7 @@
         </div>
         <div class="form-col" style="min-width:160px;">
           <label>Title <span class="meta">(optional)</span></label>
-          <input type="text" name="title" maxlength="300" style="width:100%;" placeholder="for CSES / pbinfo / infoarena / CF EDU" />
+          <input type="text" name="title" maxlength="300" style="width:100%;" placeholder="for CSES / pbinfo / infoarena / SPOJ / CodeChef / CF EDU" />
         </div>
         <div class="form-col">
           <label>&nbsp;</label>
@@ -100,8 +100,10 @@
         CSES: task ID or URL (problems only).
         pbinfo: problem ID or URL (problems only).
         infoarena: problem name or URL (problems only).
+        SPOJ: problem code or URL (problems only).
+        CodeChef: problem code or URL (problems only).
         Other: a full link to a problem on any other site (problems only).
-        CSES, pbinfo, infoarena, Codeforces EDU and other-site problems can't be looked up automatically: give them a title here, and
+        CSES, pbinfo, infoarena, SPOJ, CodeChef, Codeforces EDU and other-site problems can't be looked up automatically: give them a title here, and
         members tick them off themselves.
       </p>
     </form>
@@ -144,9 +146,9 @@
     <p class="meta" style="margin-top:6px;">
       Platform and contest/problem type are detected from each link. Supported: Codeforces contest and
       problem URLs (or IDs like 1234A, and Codeforces EDU problem links), AtCoder contest and task URLs
-      (or IDs like abc400_c), Kilonova problem and problem list URLs, CSES task URLs, pbinfo and infoarena problem URLs. Any other http(s) link is
+      (or IDs like abc400_c), Kilonova problem and problem list URLs, CSES task URLs, pbinfo, infoarena, SPOJ and CodeChef problem URLs. Any other http(s) link is
       kept as a plain link, marked solved by hand. Bare numbers are ambiguous, so use the full URL. Up to 50 links per submission; duplicates are skipped.
-      CSES, pbinfo, infoarena, EDU and other-site problems come in without a title: set one afterwards with the ✎ button on their row.
+      CSES, pbinfo, infoarena, SPOJ, CodeChef, EDU and other-site problems come in without a title: set one afterwards with the ✎ button on their row.
     </p>
   </div>
 </div>
@@ -184,7 +186,8 @@
       {% if can_manage %}
       <form method="post" class="hint-form res-edit" id="res-edit-{{ r.id }}" hidden
             action="/assignments/{{ assignment.id }}/resources/{{ r.id }}/edit">
-        <textarea name="text" rows="4" required maxlength="2000">{{ r.text }}</textarea>
+        <textarea name="text" rows="4" required maxlength="2000" data-md-editor
+                  data-preview-url="/assignments/{{ assignment.id }}/resources/preview">{{ r.text }}</textarea>
         <div class="hint-form-row">
           <span class="meta">Markdown works.</span>
           <div class="hint-btn-row">
@@ -200,7 +203,8 @@
     <div class="hint-add">
       <button type="button" class="hint-add-btn" id="res-add-btn" onclick="resAdd(true)">+ Add resource</button>
       <form method="post" class="hint-form" id="res-add-form" hidden action="/assignments/{{ assignment.id }}/resources/add">
-        <textarea name="text" rows="4" required maxlength="2000"
+        <textarea name="text" rows="4" required maxlength="2000" data-md-editor
+                  data-preview-url="/assignments/{{ assignment.id }}/resources/preview"
                   placeholder="A link or a few words (Markdown works, links become clickable)"></textarea>
         <div class="hint-form-row">
           <span class="meta">Everyone in the group can read this.</span>
@@ -900,4 +904,5 @@ function toggleSub(itemId, btn) {
   btn.textContent = showing ? '▶' : '▼';
 }
 </script>
+{% if group.resources_allowed and can_manage %}<script src="/static/md-editor.js"></script>{% endif %}
 {% endblock %}
