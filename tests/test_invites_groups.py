@@ -224,7 +224,7 @@ class SiteTestCase(unittest.TestCase):
         self.assertEqual(r.status_code, 303, name)
         return c
 
-    def new_group(self, client, name="G", max_members=10, hints=False, notes=None, resources=False):
+    def new_group(self, client, name="G", max_members=10, hints=False, notes=None, resources=False, stars=False):
         data = {"name": name, "max_members": max_members}
         if hints:
             data["hints_allowed"] = "1"
@@ -232,6 +232,8 @@ class SiteTestCase(unittest.TestCase):
             data["notes_allowed"] = "1"
         if resources:
             data["resources_allowed"] = "1"
+        if stars:
+            data["stars_allowed"] = "1"
         r = client.post("/groups/new", data=data)
         m = re.search(r"/groups/(\d+)", r.headers.get("location", ""))
         return (int(m.group(1)) if m else None), r
