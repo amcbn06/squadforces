@@ -8,6 +8,21 @@
   {% if pf.icon %}<img src="/static/{{ pf.icon }}" class="picon" alt="{{ pf.label }}" title="{{ pf.label }}">
   {% else %}<span class="picon picon-unknown" title="Link to another site">?</span>{% endif %}
 {% endmacro %}
+{# The owner's star on a problem (Group.stars_allowed): a grey, clickable star for the owner / admin that turns yellow
+   when set; everyone else sees a yellow star on starred problems and nothing on the others. #}
+{% macro star_svg() %}<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.5l2.9 6.1 6.6.9-4.8 4.6 1.2 6.6L12 17.5l-5.9 3.2 1.2-6.6L2.5 9.5l6.6-.9z"/></svg>{% endmacro %}
+{% macro star_btn(key, starred) %}
+  {% if group.stars_allowed %}
+    {% if can_manage %}
+  <button type="button" class="star-btn{{ ' on' if starred }}" data-key="{{ key }}" aria-label="Star this problem"
+          aria-pressed="{{ 'true' if starred else 'false' }}"
+          title="{{ 'Starred. Click to remove the star' if starred else 'Star this problem' }}"
+          onclick="toggleStar(this)">{{ star_svg() }}</button>
+    {% elif starred %}
+  <span class="star-btn on" role="img" aria-label="Starred" title="Starred by the group's owner">{{ star_svg() }}</span>
+    {% endif %}
+  {% endif %}
+{% endmacro %}
 {% macro hint_btn(key, title) %}
   {% if group.hints_allowed or group.notes_allowed %}
   {% set n = (hints_map.get(key) or []) | length %}
@@ -272,7 +287,7 @@
               {% if item_url(item) %}<a href="{{ item_url(item) }}" target="_blank" rel="noopener">{{ item.display_title }}</a>
               {% else %}{{ item.display_title }}{% endif %}
               {% if item.rating %}<span class="meta prob-rating">[{{ item.rating }}]</span>{% endif %}
-              {{ hint_btn('i' ~ item.id, item.display_title) }}
+              {{ star_btn('i' ~ item.id, item.starred) }}{{ hint_btn('i' ~ item.id, item.display_title) }}
             {% endif %}
 
             <span class="dot dot-{{ item.sync_status }}"
@@ -395,7 +410,7 @@
             {{ platform_icon(item) }}
             <a href="{{ problem_url(item, cp) }}" target="_blank" rel="noopener">{{ cp.index }}. {{ cp.name }}</a>
             {% if cp.rating %}<span class="meta prob-rating">[{{ cp.rating }}]</span>{% endif %}
-            {{ hint_btn('p' ~ cp.id, cp.index ~ '. ' ~ cp.name) }}
+            {{ star_btn('p' ~ cp.id, cp.starred) }}{{ hint_btn('p' ~ cp.id, cp.index ~ '. ' ~ cp.name) }}
           </td>
           {% for cell in row.cells %}
           {% set pr = cell.problem_results.get(cp.id) %}
@@ -877,5 +892,30 @@ function toggleSub(itemId, btn) {
   btn.textContent = showing ? '▶' : '▼';
 }
 </script>
+{% if group.stars_allowed and can_manage %}
+<script>
+var STAR_URL = "/assignments/{{ assignment.id }}/stars";
+
+function setStar(btn, on) {
+  btn.classList.toggle('on', on);
+  btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  btn.title = on ? 'Starred. Click to remove the star' : 'Star this problem';
+}
+
+// Sets the wanted state on the server and only then redraws, so the star never claims more than is saved.
+function toggleStar(btn) {
+  if (btn.disabled) return;
+  var body = new URLSearchParams();
+  body.set('target', btn.dataset.key);
+  body.set('starred', btn.classList.contains('on') ? '0' : '1');
+  btn.disabled = true;
+  fetch(STAR_URL, { method: 'POST', body: body, credentials: 'same-origin' })
+    .then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+    .then(function (d) { setStar(btn, !!d.starred); })
+    .catch(function () { btn.title = 'Could not save the star. Reload the page and try again.'; })
+    .then(function () { btn.disabled = false; });
+}
+</script>
+{% endif %}
 {% if (group.resources_allowed and can_manage) or group.hints_allowed or group.notes_allowed %}<script src="/static/md-editor.js"></script>{% endif %}
 {% endblock %}

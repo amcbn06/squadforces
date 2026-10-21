@@ -317,6 +317,18 @@ input:focus, textarea:focus, select:focus { outline: 1px solid var(--border-focu
 .hint-btn.has-hints { color: var(--text); opacity: 1; cursor: pointer; }
 .hint-btn.has-hints:hover { color: var(--text-link); opacity: 1; }
 
+/* Stars: the owner's mark on a problem, grey until set and then yellow; members only ever see the set ones */
+.star-btn {
+  display: inline-block; background: none; border: none; padding: 0 2px; margin-left: 4px; vertical-align: middle;
+  line-height: 1; color: var(--text-meta); opacity: .4; cursor: pointer;
+}
+.star-btn svg { display: block; }
+button.star-btn:hover { opacity: .75; }
+.star-btn.on { color: #f0b429; opacity: 1; }
+button.star-btn.on:hover { opacity: .8; }
+span.star-btn { cursor: default; }
+.star-btn:disabled { cursor: progress; }
+
 .modal-overlay {
   position: fixed; inset: 0; z-index: 1000;
   display: flex; align-items: center; justify-content: center;
