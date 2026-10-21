@@ -25,9 +25,10 @@ def ensure_columns():
     from sqlalchemy import inspect, text
     additions = {
         "groups": {"hints_allowed": "BOOLEAN NOT NULL DEFAULT {false}", "notes_allowed": "BOOLEAN NOT NULL DEFAULT {false}",
-                   "resources_allowed": "BOOLEAN NOT NULL DEFAULT {false}", "owner_id": "INTEGER", "max_members": "INTEGER"},
-        "assignment_items": {"rating": "INTEGER", "source_url": "VARCHAR(500)"},
-        "contest_problems": {"max_score": "INTEGER"},
+                   "resources_allowed": "BOOLEAN NOT NULL DEFAULT {false}", "stars_allowed": "BOOLEAN NOT NULL DEFAULT {false}",
+                   "owner_id": "INTEGER", "max_members": "INTEGER"},
+        "assignment_items": {"rating": "INTEGER", "source_url": "VARCHAR(500)", "starred": "BOOLEAN NOT NULL DEFAULT {false}"},
+        "contest_problems": {"max_score": "INTEGER", "starred": "BOOLEAN NOT NULL DEFAULT {false}"},
         "users": {"session_version": "INTEGER NOT NULL DEFAULT 0", "last_login_at": "DATETIME", "atc_rating": "INTEGER"},
         "hints": {
             "kind": "VARCHAR(10) NOT NULL DEFAULT 'hint'",

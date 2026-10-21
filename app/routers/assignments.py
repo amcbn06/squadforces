@@ -1,7 +1,7 @@
 from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, Request, Form, BackgroundTasks, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -586,6 +586,48 @@ async def delete_resource(
         db.delete(resource)
         db.commit()
     return _resources_redirect(assignment_id)
+
+
+@router.post("/{assignment_id}/stars")
+async def set_star(
+    request: Request,
+    assignment_id: int,
+    target: str = Form(""),
+    starred: str = Form(""),
+    db: Session = Depends(get_db),
+    account=Depends(require_auth),
+):
+    """Star or unstar one problem (`target` is 'i<item id>' for a standalone problem, 'p<contest problem id>' for one
+    inside a contest, the same keys the hints use). Only the group's owner or the admin, and only while the group has
+    stars switched on. `starred` is the state wanted, not a flip, so repeating a request changes nothing."""
+    assignment = db.get(Assignment, assignment_id)
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    if not can_manage_group(account, assignment.group):
+        raise HTTPException(status_code=403)
+    if not assignment.group.stars_allowed:
+        raise HTTPException(status_code=400, detail="Stars are not enabled for this group.")
+    kind, raw_id = target[:1], target[1:]
+    if kind not in ("i", "p") or not raw_id.isdigit():
+        raise HTTPException(status_code=400, detail="Bad star target")
+    if kind == "i":
+        row = db.get(AssignmentItem, int(raw_id))
+        if not row or row.assignment_id != assignment_id or row.type != "problem":
+            raise HTTPException(status_code=404, detail="Problem not found")
+        title = row.display_title
+    else:
+        row = db.get(ContestProblem, int(raw_id))
+        if not row or row.assignment_item.assignment_id != assignment_id:
+            raise HTTPException(status_code=404, detail="Problem not found")
+        title = f"{row.index}. {row.name}"
+    want = starred == "1"
+    if row.starred != want:
+        row.starred = want
+        audit.record(db, request, "assignment.star" if want else "assignment.unstar", actor=account,
+                     target_type="assignment", target_id=assignment.id, target_label=assignment.title,
+                     group_id=assignment.group_id, details={"problem": title[:120]})
+        db.commit()
+    return JSONResponse({"starred": row.starred})
 
 
 @router.post("/{assignment_id}/items/{item_id}/solved")

@@ -43,6 +43,9 @@ class Group(Base):
     # A "Resources" dropdown on each of the group's assignment pages (links or text the owner collects); a third
     # switch next to hints and notes, independent of both.
     resources_allowed = Column(Boolean, nullable=False, default=False, server_default=false())
+    # A star the owner can put on each problem (AssignmentItem.starred / ContestProblem.starred); members see the
+    # starred ones. A fourth switch, independent of the others.
+    stars_allowed = Column(Boolean, nullable=False, default=False, server_default=false())
     # Who manages the group (remove members, write hints, invite, delete). The admin (id 0) for groups made before
     # ownership existed; NULL is treated the same way. Admin can always manage any group.
     owner_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
@@ -136,6 +139,7 @@ class AssignmentItem(Base):
     sync_status = Column(String(20), default="pending")  # pending|syncing|done|error
     sync_error = Column(Text, nullable=True)
     created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    starred = Column(Boolean, nullable=False, default=False, server_default=false())  # a standalone problem the owner starred
 
     assignment = relationship("Assignment", back_populates="items")
     contest_problems = relationship("ContestProblem", back_populates="assignment_item", cascade="all, delete-orphan")
@@ -166,6 +170,7 @@ class ContestProblem(Base):
     name = Column(String(300), nullable=False)
     rating = Column(Integer, nullable=True)
     max_score = Column(Integer, nullable=True)  # points for a full solve, where the judge scores partially (Kilonova)
+    starred = Column(Boolean, nullable=False, default=False, server_default=false())  # the owner's star (Group.stars_allowed)
 
     assignment_item = relationship("AssignmentItem", back_populates="contest_problems")
     problem_results = relationship("ProblemResult", back_populates="contest_problem", cascade="all, delete-orphan")
