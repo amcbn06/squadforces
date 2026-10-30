@@ -554,6 +554,42 @@
 
 {% endif %}
 
+<script>
+// Which contests are expanded is kept for this tab, so a reload (saving a note, refreshing) leaves them as they were.
+var OPEN_KEY = 'openContests:{{ assignment.id }}';
+
+function openContests() {
+  try { return JSON.parse(sessionStorage.getItem(OPEN_KEY) || '[]'); } catch (e) { return []; }
+}
+
+function setContestOpen(itemId, open) {
+  itemId = Number(itemId);
+  var rows = document.querySelectorAll('[data-parent="' + itemId + '"]');
+  if (!rows.length) return;
+  rows.forEach(function (r) { r.style.display = open ? '' : 'none'; });
+  var toggle = document.getElementById('tog-' + itemId);
+  if (toggle) toggle.textContent = open ? '\u25BC' : '\u25B6';
+  try {
+    var ids = openContests().filter(function (id) { return id !== itemId; });
+    if (open) ids.push(itemId);
+    sessionStorage.setItem(OPEN_KEY, JSON.stringify(ids));
+  } catch (e) { /* storage blocked: contests simply close on reload, as they used to */ }
+}
+
+function toggleSub(itemId) {
+  var rows = document.querySelectorAll('[data-parent="' + itemId + '"]');
+  setContestOpen(itemId, !(rows.length && rows[0].style.display !== 'none'));
+}
+
+// Open the contest that holds this problem's row (a no-op for a standalone problem).
+function showProblemRow(node) {
+  var row = node.closest('tr.sub');
+  if (row) setContestOpen(row.dataset.parent, true);
+}
+
+openContests().forEach(function (id) { setContestOpen(id, true); });
+</script>
+
 {% if group.hints_allowed or group.notes_allowed %}
 <div id="hint-overlay" class="modal-overlay" hidden>
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="hint-title">
@@ -760,8 +796,8 @@ function addButton(wrap, kind, label) {
 
 function showAddButton(wrap) {
   var row = el('div', 'hint-add-row');
-  if (HINT_ADMIN && HINTS_ON) row.appendChild(addButton(wrap, 'hint', '+ Add hint'));
   if (NOTES_ON) row.appendChild(addButton(wrap, 'note', '+ Add note'));
+  if (HINT_ADMIN && HINTS_ON) row.appendChild(addButton(wrap, 'hint', '+ Add hint'));
   wrap.replaceChildren(row);
 }
 
@@ -840,7 +876,10 @@ document.addEventListener('keydown', function (e) {
   var key = params.get('hint');
   if (!key) return;
   var btn = document.querySelector('.hint-btn[data-key="' + key.replace(/[^a-z0-9]/gi, '') + '"]');
-  if (btn) openHints(btn, parseInt(params.get('hl'), 10) || null);
+  if (btn) {
+    showProblemRow(btn);  // a problem inside a contest: keep that contest open behind the panel
+    openHints(btn, parseInt(params.get('hl'), 10) || null);
+  }
   history.replaceState(null, '', location.pathname);
 })();
 </script>
@@ -885,12 +924,6 @@ function toggleBox(header) {
   body.style.display = body.style.display === 'none' ? 'block' : 'none';
 }
 
-function toggleSub(itemId, btn) {
-  var rows = document.querySelectorAll('[data-parent="' + itemId + '"]');
-  var showing = rows.length && rows[0].style.display !== 'none';
-  rows.forEach(function(r) { r.style.display = showing ? 'none' : ''; });
-  btn.textContent = showing ? '▶' : '▼';
-}
 </script>
 {% if group.stars_allowed and can_manage %}
 <script>
