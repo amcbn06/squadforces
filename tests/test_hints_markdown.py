@@ -76,6 +76,20 @@ class HintsMarkdown(SiteTestCase):
         self.assertNotIn("function linkify", page)
         self.assertIn("md.innerHTML = h.html", page)
 
+    # the panel's buttons and the contests behind it ------------------------------------------------------------------
+
+    def test_the_note_button_comes_before_the_hint_button(self):
+        page = self.owner.get(f"/assignments/{self.aid}").text
+        self.assertLess(page.index("addButton(wrap, 'note', '+ Add note')"), page.index("addButton(wrap, 'hint', '+ Add hint')"))
+
+    def test_contests_stay_open_across_a_reload_and_a_saved_note_reopens_its_contest(self):
+        page = self.owner.get(f"/assignments/{self.aid}").text
+        self.assertIn(f"var OPEN_KEY = 'openContests:{self.aid}'", page)       # remembered per assignment, per tab
+        self.assertIn("openContests().forEach(function (id) { setContestOpen(id, true); });", page)
+        self.assertIn("showProblemRow(btn);", page)                              # the note's own contest is opened too
+        self.assertEqual(page.count("function toggleSub("), 1)                   # one definition, in the script that runs first
+        self.assertLess(page.index("function setContestOpen("), page.index("function openHints("))
+
     # the editor ---------------------------------------------------------------------------------------------------
 
     def test_the_editor_is_loaded_while_hints_or_notes_are_on(self):
