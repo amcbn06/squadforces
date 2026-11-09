@@ -105,20 +105,25 @@ that's the whole reason it has its own tables instead of being computed live as 
 existing `div1`../`combined`/`other` vs. AtCoder's `abc`/`arc`/`agc`/`other` (`detect_atc_division()`, from the
 contest id prefix) — two separate checkbox groups and default sets, not merged.
 
-The Member dropdown (`app/routers/recommend.py::recommend_page`) is scoped to the active tab: only accounts of the
+The Members checklist (`app/routers/recommend.py::recommend_page`; any number of members can be ticked, the `member_id` query parameter repeats, and the form always sends a blank one so that ticking nobody means "nobody" rather than "not specified") is scoped to the active tab: only accounts of the
 viewer's own `user_type` (a user sees users, a student sees students, the admin sees both — same rule as
 `leaderboard.for_platform()`) that have a handle linked to that tab's platform. With nobody explicitly chosen (or a
-stale id left over from switching tabs), the viewer is auto-selected if they themselves qualify, else the dropdown
-stays blank. `recommend.effective_rating(user, platform)` is the number both the dropdown's pre-fill and the
+stale id left over from switching tabs), the viewer is auto-selected if they themselves qualify, else the checklist
+has nothing ticked. `recommend.effective_rating(user, platform)` is the number both the checklist's pre-fill and the
 default grading rating use — the cached rating, or the 800 floor if a handle is linked but has never rated a
-contest there (e.g. someone unrated on Codeforces). A typed `rating` always overrides whatever a selected member
-would imply, and is parsed leniently so a bad value never 422s.
+contest there (e.g. someone unrated on Codeforces). With several members ticked the default is the *average* of
+their effective ratings (also what ticking a box fills in client-side). A typed `rating` always overrides whatever
+the selected members would imply, and is parsed leniently so a bad value never 422s.
 
-The "submissions" filter (`sub_filter=all|none|attempted|solved`) keeps only contests where the *selected member's*
-(not necessarily the viewer's) stored submissions land in that bucket (`_submission_bucket()`) — the member picked
-in the dropdown is who gets graded *and* whose history is checked; with nobody picked it falls back to the viewer.
-It only applies to contests with a real, cached problem set (`exact` grading) — the typical-distribution fallback
-isn't a real problem list to check submissions against — and needs that member to have a handle on the platform.
+The "submissions" filter (`sub_filter=all|none|attempted|solved`) keeps only contests where the *selected
+members'* (not necessarily the viewer's) stored submissions land in that bucket (`_submission_bucket()`) — the
+members ticked are who gets graded *and* whose history is checked; with nobody picked it falls back to the viewer.
+Several members are **pooled into one history** (`_pooled_submissions()`; the engine functions take `accounts=[...]`,
+with the old single `account=` still accepted): a contest counts as touched or solved when *any* of them touched or
+solved it, so "Not attempted" means none of them has tried it, and a card's progress counts a problem once whoever
+solved it. Members without a handle on the platform are left out of the pool (the page says so; if nobody left can
+be checked, no contest passes a filter). It only applies to contests with a real, cached problem set (`exact`
+grading) — the typical-distribution fallback isn't a real problem list to check submissions against.
 
 ### Cached rating vs rating_entries
 

@@ -136,6 +136,57 @@ class CfPool(DbTestCase):
         self.assertEqual(recs[100], {"solved": 1, "total": 3})
         self.assertEqual(recs[101], {"solved": 0, "total": 2})
 
+    def _ac(self, user, sid, problem, contest):
+        self.db.add(models.Submission(user_id=user.id, platform="codeforces", submission_id=sid, problem_key=problem,
+                                       contest_key=contest, submitted_at=sid, accepted=True, verdict="AC"))
+        self.db.commit()
+
+    def _wa(self, user, sid, problem, contest):
+        self.db.add(models.Submission(user_id=user.id, platform="codeforces", submission_id=sid, problem_key=problem,
+                                       contest_key=contest, submitted_at=sid, accepted=False, verdict="WA"))
+        self.db.commit()
+
+    async def test_several_accounts_are_pooled_into_one_history(self):
+        bob = self.user("bob", cf="bob_cf")
+        self._ac(self.alice, 1, "100/A", "100")         # alice solved something in 100
+        self._wa(bob, 2, "101/A", "101")                # bob only tried 101
+        both = [self.alice, bob]
+        pick = lambda f: [r["contest"].id for r in rec.get_cf_recommendations(self.db, ["div2"], 1000, accounts=both, sub_filter=f)]
+        self.assertEqual(pick("all"), [100, 101])
+        self.assertEqual(pick("solved"), [100])         # one of them solved something
+        self.assertEqual(pick("attempted"), [101])      # somebody tried, nobody solved
+        self.assertEqual(pick("none"), [])              # every contest was touched by somebody
+        # one member alone sees it differently: bob never touched 100
+        alone = [r["contest"].id for r in rec.get_cf_recommendations(self.db, ["div2"], 1000, accounts=[bob], sub_filter="none")]
+        self.assertEqual(alone, [100])
+
+    async def test_pooled_progress_counts_a_problem_once_whoever_solved_it(self):
+        bob = self.user("bob", cf="bob_cf")
+        self._ac(self.alice, 1, "100/A", "100")
+        self._ac(bob, 2, "100/A", "100")                # the same problem, solved by both
+        self._ac(bob, 3, "100/B", "100")
+        recs = {r["contest"].id: r["progress"] for r in
+                rec.get_cf_recommendations(self.db, ["div2"], 1000, accounts=[self.alice, bob])}
+        self.assertEqual(recs[100], {"solved": 2, "total": 3})
+        self.assertEqual(recs[101], {"solved": 0, "total": 2})
+
+    async def test_members_without_a_handle_are_left_out_of_the_pool(self):
+        nohandle = self.user("carol")                   # nothing to look at
+        self._ac(self.alice, 1, "100/A", "100")
+        recs = rec.get_cf_recommendations(self.db, ["div2"], 1000, accounts=[nohandle, self.alice], sub_filter="solved")
+        self.assertEqual([r["contest"].id for r in recs], [100])
+        none_linked = rec.get_cf_recommendations(self.db, ["div2"], 1000, accounts=[nohandle], sub_filter="none")
+        self.assertEqual(none_linked, [])               # nobody can be checked, so no contest passes a filter
+
+    async def test_the_single_account_argument_still_works_and_accounts_wins(self):
+        bob = self.user("bob", cf="bob_cf")
+        self._ac(self.alice, 1, "100/A", "100")
+        via_account = rec.get_cf_recommendations(self.db, ["div2"], 1000, account=self.alice, sub_filter="solved")
+        via_accounts = rec.get_cf_recommendations(self.db, ["div2"], 1000, accounts=[self.alice], sub_filter="solved")
+        self.assertEqual([r["contest"].id for r in via_account], [r["contest"].id for r in via_accounts])
+        both_given = rec.get_cf_recommendations(self.db, ["div2"], 1000, account=self.alice, accounts=[bob], sub_filter="solved")
+        self.assertEqual(both_given, [])                # `accounts` takes over: bob solved nothing
+
     async def test_progress_is_none_without_exact_data_or_an_account(self):
         recs = {r["contest"].id: r["progress"] for r in
                 rec.get_cf_recommendations(self.db, ["div2", "div3"], 1000, account=self.alice)}
@@ -190,6 +241,23 @@ class AtcPool(DbTestCase):
         self.assertEqual([r["contest"].id for r in solved], ["abc343"])
         untouched = rec.get_atc_recommendations(self.db, ["abc", "arc"], 900, account=self.alice, sub_filter="none")
         self.assertEqual([r["contest"].id for r in untouched], ["arc180"])
+
+    def test_several_accounts_are_pooled_into_one_history(self):
+        bob = self.user("bob", ac="bob_ac")
+        self.db.add_all([
+            models.Submission(user_id=self.alice.id, platform="atcoder", submission_id=1, problem_key="abc343_a",
+                              contest_key="abc343", submitted_at=1, accepted=True, verdict="AC"),
+            models.Submission(user_id=bob.id, platform="atcoder", submission_id=2, problem_key="arc180_a",
+                              contest_key="arc180", submitted_at=2, accepted=False, verdict="WA"),
+        ])
+        self.db.commit()
+        both = [self.alice, bob]
+        pick = lambda f: [r["contest"].id for r in rec.get_atc_recommendations(self.db, ["abc", "arc"], 900, accounts=both, sub_filter=f)]
+        self.assertEqual(pick("solved"), ["abc343"])
+        self.assertEqual(pick("attempted"), ["arc180"])
+        self.assertEqual(pick("none"), [])
+        recs = {r["contest"].id: r["progress"] for r in rec.get_atc_recommendations(self.db, ["abc", "arc"], 900, accounts=both)}
+        self.assertEqual(recs["abc343"], {"solved": 1, "total": 3})
 
     def test_progress_is_reported_regardless_of_sub_filter(self):
         self.db.add(models.Submission(user_id=self.alice.id, platform="atcoder", submission_id=1,
@@ -293,13 +361,18 @@ class RecommendPageHTTP(unittest.TestCase):
         return c
 
     def options_of(self, html: str) -> list[str]:
-        """Usernames listed in the Member <select>."""
-        select = re.search(r'id="rc-member".*?</select>', html, re.S).group(0)
-        return re.findall(r'<option value="\d+"[^>]*>\s*([^\s(]+)', select)
+        """Usernames listed in the members checklist."""
+        box = re.search(r'id="rc-members".*?</div>', html, re.S).group(0)
+        return re.findall(r'<span>([^\s(]+) \(\d+\)</span>', box)
 
     def is_selected(self, html: str, user_id: int) -> bool:
-        tag = re.search(r'<option value="{}"[^>]*>'.format(user_id), html)
-        return bool(tag) and "selected" in tag.group(0)
+        tag = re.search(r'<input type="checkbox" name="member_id" value="{}"[^>]*>'.format(user_id), html)
+        return bool(tag) and "checked" in tag.group(0)
+
+    def ticked(self, html: str) -> set[int]:
+        """Ids of the members whose box is ticked."""
+        return {int(i) for i, rest in re.findall(r'<input type="checkbox" name="member_id" value="(\d+)"([^>]*)>', html)
+                if "checked" in rest}
 
     def test_the_codeforces_tab_is_the_default(self):
         r = self.admin.get("/recommend")
@@ -389,6 +462,115 @@ class RecommendPageHTTP(unittest.TestCase):
         r = self.admin.get("/recommend", params={"platform": "cf", "member_id": mid, "cf_divisions": "div2"})
         self.assertEqual(r.status_code, 200)
         self.assertIn("✓ solved", r.text)
+
+    # several members at once --------------------------------------------------------------------------------------
+
+    def _rate(self, username, rating):
+        from app.database import SessionLocal
+        db = SessionLocal()
+        db.query(models.User).filter_by(username=username).update({"cf_rating": rating})
+        db.commit()
+        db.close()
+
+    def _solve(self, username, sid, problem, contest):
+        from app.database import SessionLocal
+        db = SessionLocal()
+        db.add(models.Submission(user_id=self._user_id(username), platform="codeforces", submission_id=sid,
+                                  problem_key=problem, contest_key=contest, submitted_at=sid, accepted=True, verdict="AC"))
+        db.commit()
+        db.close()
+
+    def _contests(self, *rows):
+        from app.database import SessionLocal
+        db = SessionLocal()
+        for cid, name, problems in rows:
+            _cf_contest(db, cid, name, "div2", problems=problems)
+        db.close()
+
+    def test_the_form_sends_a_blank_entry_so_ticking_nobody_means_nobody(self):
+        self.make_user("alice_u", user_type="user", cf="alice_cf")
+        page = self.admin.get("/recommend", params={"platform": "cf"}).text
+        self.assertIn('<input type="hidden" name="member_id" value="">', page)
+        self.assertEqual(self.ticked(page), set())  # the admin isn't eligible, so nobody is ticked by default
+
+    def test_several_members_can_be_ticked_and_the_rating_is_their_average(self):
+        self._contests((100, "Round", {"A": 800}))                          # the heading shows once there is a contest
+        for name, rating in (("alice_u", 1000), ("bob_u", 1500), ("carol_u", None)):
+            self.make_user(name, user_type="user", cf=f"{name}_cf")
+            if rating:
+                self._rate(name, rating)
+        ids = [self._user_id(n) for n in ("alice_u", "bob_u", "carol_u")]
+        page = self.admin.get("/recommend", params={"platform": "cf", "member_id": ids[:2]}).text
+        self.assertEqual(self.ticked(page), set(ids[:2]))
+        self.assertIn("picks for rating 1250", page)                       # (1000 + 1500) / 2
+        page = self.admin.get("/recommend", params={"platform": "cf", "member_id": ids}).text
+        self.assertEqual(self.ticked(page), set(ids))
+        self.assertIn("picks for rating 1100", page)                       # (1000 + 1500 + 800 unrated floor) / 3
+
+    def test_a_typed_rating_still_wins_with_several_members(self):
+        self._contests((100, "Round", {"A": 800}))
+        for name in ("alice_u", "bob_u"):
+            self.make_user(name, user_type="user", cf=f"{name}_cf")
+        ids = [self._user_id(n) for n in ("alice_u", "bob_u")]
+        page = self.admin.get("/recommend", params={"platform": "cf", "member_id": ids, "rating": "1999"}).text
+        self.assertIn("picks for rating 1999", page)
+
+    def test_ticking_nobody_on_purpose_is_kept_and_not_replaced_by_the_viewer(self):
+        self._contests((100, "Round", {"A": 800}))
+        self.make_user("alice_u", user_type="user", cf="alice_cf")
+        viewer = self.login("alice_u")
+        by_default = viewer.get("/recommend", params={"platform": "cf"}).text
+        self.assertEqual(self.ticked(by_default), {self._user_id("alice_u")})
+        nobody = viewer.get("/recommend", params={"platform": "cf", "member_id": ""}).text
+        self.assertEqual(self.ticked(nobody), set())
+        self.assertIn("picks for rating 1200", nobody)
+        # and the links on that page carry the choice along
+        self.assertRegex(nobody, r'href="[^"]*sub_filter=none[^"]*member_id=(&|")')
+
+    def test_ids_that_are_not_eligible_fall_back_to_the_viewer(self):
+        self.make_user("alice_u", user_type="user", cf="alice_cf")
+        self.make_user("bob_u", user_type="user", ac="bob_ac")             # no Codeforces handle: not on the cf tab
+        viewer = self.login("alice_u")
+        page = viewer.get("/recommend", params={"platform": "cf", "member_id": [str(self._user_id("bob_u")), "999", "x"]}).text
+        self.assertEqual(self.ticked(page), {self._user_id("alice_u")})
+
+    def test_the_filter_links_keep_every_ticked_member(self):
+        for name in ("alice_u", "bob_u"):
+            self.make_user(name, user_type="user", cf=f"{name}_cf")
+        a, b = self._user_id("alice_u"), self._user_id("bob_u")
+        page = self.admin.get("/recommend", params={"platform": "cf", "member_id": [a, b]}).text
+        link = re.search(r'href="([^"]*sub_filter=none[^"]*)"', page).group(1)
+        self.assertIn(f"member_id={a}", link)
+        self.assertIn(f"member_id={b}", link)
+
+    def test_the_submission_filter_pools_every_ticked_member(self):
+        for name in ("alice_u", "bob_u"):
+            self.make_user(name, user_type="user", cf=f"{name}_cf")
+        self._contests((100, "Solved Round", {"A": 800}), (101, "Fresh Round", {"A": 800}))
+        self._solve("alice_u", 1, "100/A", "100")
+        a, b = self._user_id("alice_u"), self._user_id("bob_u")
+        base = {"platform": "cf", "cf_divisions": "div2", "sub_filter": "none"}
+        both = self.admin.get("/recommend", params={**base, "member_id": [a, b]}).text
+        self.assertNotIn("Solved Round", both)                              # alice touched it, so "nobody" fails
+        self.assertIn("Fresh Round", both)
+        only_bob = self.admin.get("/recommend", params={**base, "member_id": [b]}).text
+        self.assertIn("Solved Round", only_bob)                             # bob alone never touched it
+
+    def test_the_page_says_whose_submissions_are_pooled(self):
+        for name in ("alice_u", "bob_u"):
+            self.make_user(name, user_type="user", cf=f"{name}_cf")
+        self._contests((100, "Round", {"A": 800}))
+        self._solve("alice_u", 1, "100/A", "100")
+        a, b = self._user_id("alice_u"), self._user_id("bob_u")
+        page = self.admin.get("/recommend", params={"platform": "cf", "cf_divisions": "div2", "member_id": [a, b]}).text
+        self.assertIn("Submissions of 2 members", page)
+        self.assertIn("at least one of alice_u, bob_u", page)               # the progress badge's tooltip
+        single = self.admin.get("/recommend", params={"platform": "cf", "cf_divisions": "div2", "member_id": [a]}).text
+        self.assertIn("alice_u&#39;s submissions", single.replace("'", "&#39;"))
+
+    def test_nobody_to_check_says_so_with_several_or_no_members(self):
+        page = self.admin.get("/recommend", params={"platform": "cf", "sub_filter": "none", "member_id": ""}).text
+        self.assertIn("No Codeforces handle is set on your account", page)  # admin has none and ticked nobody
 
     def _user_id(self, username):
         from app.database import SessionLocal
