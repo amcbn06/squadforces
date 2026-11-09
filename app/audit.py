@@ -31,6 +31,7 @@ ACTION_LABELS: dict[str, str] = {
     "login.blocked": "Sign-in blocked (too many failures)",
     "logout": "Signed out",
     "password.change": "Changed own password",
+    "cses.import": "Imported CSES progress",
     "account.register": "Created an account",
     "profile.edit": "Edited a profile",
     "user.create": "Admin created a user",

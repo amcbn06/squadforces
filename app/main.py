@@ -21,6 +21,7 @@ from app.auth import (
     require_auth, can_edit_user, MIN_PASSWORD_LENGTH, safe_next, login_throttle,
 )
 from app.routers import groups, assignments, recommend
+from app.routers import cses as cses_router
 from app.routers import invites as invites_router
 from app.routers import admin as admin_router
 from app import scheduler
@@ -114,6 +115,7 @@ app.include_router(groups.router)
 app.include_router(invites_router.router)
 app.include_router(assignments.router)
 app.include_router(recommend.router)
+app.include_router(cses_router.router)
 app.include_router(admin_router.router)
 
 

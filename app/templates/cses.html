@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}CSES progress — Squadforces{% endblock %}
+
+{% block content %}
+<h1 style="margin-bottom:6px;">CSES progress</h1>
+<p class="meta" style="margin-bottom:14px; max-width:680px;">
+  CSES has no API and shows your solved tasks only to you, so your own browser sends them over. Once imported, your
+  CSES solves show in the assignment matrix and count in the rankings like solves on any other judge.
+  Your CSES password and cookies never leave your browser.
+</p>
+
+<div class="box" style="max-width:680px; margin-bottom:14px;">
+  <div class="box-header" style="cursor:default;">Your CSES account</div>
+  <div class="box-body" id="cses-status">
+    {% if cses_id %}
+    Linked to CSES user <a href="https://cses.fi/user/{{ cses_id }}" target="_blank" rel="noopener noreferrer">{{ cses_id }}</a>:
+    {{ solved }} solved task{{ 's' if solved != 1 }} recorded{% if last_import %}, last import {{ time_ago(last_import) }}{% endif %}.
+    {% else %}
+    Not linked yet. Your first import links your CSES account.
+    {% endif %}
+  </div>
+</div>
+
+<div class="box" style="max-width:680px; margin-bottom:14px;">
+  <div class="box-header" style="cursor:default;">How to import</div>
+  <div class="box-body">
+    <ol style="margin:0 0 10px 18px; line-height:1.6;">
+      <li>Drag this button to your browser's bookmarks bar:
+        <a id="bookmarklet" class="btn btn-green" href="#" onclick="return false;" draggable="true"
+           title="Drag me to the bookmarks bar; I only work on cses.fi">Send my CSES progress</a>
+      </li>
+      <li>Open <a href="https://cses.fi/problemset/" target="_blank" rel="noopener noreferrer">cses.fi/problemset</a>
+        while logged in to CSES, and click that bookmark.</li>
+      <li>A tab opens here with what was found. Check it, then press <b>Import</b>.</li>
+    </ol>
+    <p class="meta" style="margin:0;">
+      Repeat step 2 and 3 whenever you want your new solves counted.
+      Your first import records what you had already solved, so it doesn't count towards the 30-day ranking;
+      solves that appear in later imports count from the day you import them.
+      To keep this honest the app compares with your public page on CSES: you can't have more newly solved tasks
+      than new submissions there.
+    </p>
+  </div>
+</div>
+
+<div class="box" id="import-panel" style="max-width:680px; margin-bottom:14px;" hidden>
+  <div class="box-header" style="cursor:default;">Found on your CSES page</div>
+  <div class="box-body">
+    <p id="found" style="margin:0 0 10px;"></p>
+    <form id="import-form" hidden>
+      <div class="form-col" style="margin-bottom:10px; max-width:320px;">
+        <label for="cses-id">Your CSES user number <span class="meta">(the number in cses.fi/user/&lt;number&gt;)</span></label>
+        <input type="text" id="cses-id" inputmode="numeric" pattern="[0-9]*" maxlength="9" required autocomplete="off" />
+      </div>
+      <button type="submit" class="btn btn-green" id="import-button">Import</button>
+    </form>
+    <p id="import-result" role="status" style="margin:10px 0 0;"></p>
+  </div>
+</div>
+
+<script src="/static/cses-export.js"></script>
+<script>
+(function () {
+  // The bookmarklet is the exporter function itself, so what runs on cses.fi is exactly what is in this repo.
+  document.getElementById('bookmarklet').href =
+    'javascript:' + encodeURIComponent('(' + csesExport.toString() + ')(' + JSON.stringify(location.origin) + ')');
+
+  var data = null;
+  try { data = location.hash.length > 1 ? JSON.parse(decodeURIComponent(location.hash.slice(1))) : null; } catch (e) { data = null; }
+  if (!data || !Array.isArray(data.solved)) return;
+
+  var panel = document.getElementById('import-panel');
+  var found = document.getElementById('found');
+  var form = document.getElementById('import-form');
+  var result = document.getElementById('import-result');
+  panel.hidden = false;
+  if (!data.total) {
+    found.textContent = 'No CSES tasks were found on that page. Open cses.fi/problemset (the list of all tasks) while ' +
+                        'logged in, and click the bookmark there.';
+    return;
+  }
+  if (!data.solved.length) {
+    found.textContent = 'Found ' + data.total + ' tasks, but none marked as solved. Are you logged in to CSES?';
+    return;
+  }
+  found.textContent = 'Found ' + data.solved.length + ' solved task' + (data.solved.length === 1 ? '' : 's') +
+                      ' out of ' + data.total + ' on the page.';
+  document.getElementById('cses-id').value = data.cses_id || {{ (cses_id or '') | tojson }};
+  form.hidden = false;
+
+  form.addEventListener('submit', function (event) {
+    event.preventDefault();
+    var button = document.getElementById('import-button');
+    button.disabled = true;
+    result.textContent = 'Importing…';
+    fetch('/cses/import', {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cses_id: document.getElementById('cses-id').value.trim(), solved: data.solved })
+    })
+      .then(function (response) { return response.json().then(function (body) { return { ok: response.ok, body: body }; }); })
+      .then(function (answer) {
+        if (!answer.ok) { result.textContent = answer.body.error || 'The import was refused.'; button.disabled = false; return; }
+        var body = answer.body;
+        result.textContent = body.baseline
+          ? 'Recorded ' + body.solved + ' solved tasks for ' + body.name + '. These are what you had solved before today, so ' +
+            'they show in your matrix but not in the 30-day ranking; new solves from your next imports will count.'
+          : 'Imported. ' + body.new + ' newly solved task' + (body.new === 1 ? '' : 's') + ' counted for ' + body.name + '.';
+        history.replaceState(null, '', location.pathname);
+        form.hidden = true;
+      })
+      .catch(function () { result.textContent = 'Could not reach the server. Try again.'; button.disabled = false; });
+  });
+})();
+</script>
+{% endblock %}
