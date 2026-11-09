@@ -136,7 +136,7 @@ def recent(db: Session, user_id: int, limit: int = 20) -> list[models.Submission
     """A user's newest submissions across every platform."""
     return (
         db.query(models.Submission)
-        .filter_by(user_id=user_id)
+        .filter_by(user_id=user_id, backfilled=False)  # imported history has no real times to sort by
         .order_by(models.Submission.submitted_at.desc(), models.Submission.submission_id.desc())
         .limit(limit)
         .all()
@@ -155,7 +155,7 @@ def earliest_submission_at(db: Session, user_id: int, platform_key: str) -> Opti
     """Unix seconds of the user's oldest stored submission on a platform, or None with no history yet."""
     return (
         db.query(func.min(models.Submission.submitted_at))
-        .filter_by(user_id=user_id, platform=platform_key)
+        .filter_by(user_id=user_id, platform=platform_key, backfilled=False)
         .scalar()
     )
 
@@ -171,6 +171,7 @@ def daily_solved_counts(db: Session, user_id: int, platform_key: str, since_epoc
             models.Submission.platform == platform_key,
             models.Submission.submitted_at >= since_epoch,
             models.Submission.accepted.is_(True),
+            models.Submission.backfilled.is_(False),
         )
         .all()
     )

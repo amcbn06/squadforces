@@ -23,6 +23,9 @@ class User(Base):
     codeforces_handle = Column(String(50), nullable=True)
     atcoder_handle = Column(String(50), nullable=True)
     kilonova_handle = Column(String(50), nullable=True)
+    # The number in cses.fi/user/<number>, set by the CSES import (app/cses_import.py). CSES has no API, so this is
+    # not a handle the generic refresh uses; one CSES account belongs to one member.
+    cses_id = Column(String(20), nullable=True, unique=True)
     cf_rating = Column(Integer, nullable=True)
     cf_rank = Column(String(30), nullable=True)
     atc_rating = Column(Integer, nullable=True)  # AtCoder's own cached rating, kept current the same way cf_rating is
@@ -245,6 +248,9 @@ class Submission(Base):
     score = Column(Float, nullable=True)                # AtCoder points / Kilonova score
     max_score = Column(Float, nullable=True)            # Kilonova score scale (a full solve reaches it)
     submitted_at = Column(BigInteger, nullable=False)   # unix seconds
+    # Solved before tracking began (the first CSES import brings in a whole history at once): submitted_at is only
+    # "when we learned of it", so leaderboards, the heatmap and the recent list leave these rows out.
+    backfilled = Column(Boolean, nullable=False, default=False, server_default=false())
     relative_seconds = Column(Integer, nullable=True)   # seconds since the contest started (Codeforces)
     participant_type = Column(String(20), nullable=True)  # CONTESTANT | VIRTUAL | PRACTICE | OUT_OF_COMPETITION ...
     team_id = Column(String(20), nullable=True)         # set when sent as part of a team

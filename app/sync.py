@@ -65,11 +65,13 @@ async def sync_item(item_id: int, db: Session, *, max_age: Optional[timedelta] =
 
 async def _sync(item: models.AssignmentItem, db: Session, max_age: Optional[timedelta]) -> None:
     platform = registry.for_item(item)
-    if platform.manual_status(item):
-        return  # nothing to fetch: solved marks and titles are entered by hand
-
     group = db.get(models.Assignment, item.assignment_id).group
     members = [m.user for m in group.memberships]
+    if platform.manual_status(item):
+        # nothing to fetch: titles and solved marks are entered by hand, but a platform may still turn data it was
+        # given (CSES: the member's own import) into results
+        await platform.sync_item(item, members, db)
+        return
 
     kwargs = {} if max_age is None else {"max_age": max_age}
     errors = await submissions.refresh_users(db, [u for u in members if platform.handle_of(u)], platform, **kwargs)

@@ -55,7 +55,7 @@ def new_solves(db: Session, user_ids: Iterable[int], since: Optional[int] = None
     }
     rows = (
         db.query(S.user_id, S.platform, S.problem_key)
-        .filter(S.user_id.in_(ids), S.accepted.is_(True), S.submitted_at >= since, ~older_ac)
+        .filter(S.user_id.in_(ids), S.accepted.is_(True), S.backfilled.is_(False), S.submitted_at >= since, ~older_ac)
         .group_by(S.user_id, S.platform, S.problem_key)
         .all()
     )

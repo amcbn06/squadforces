@@ -29,7 +29,9 @@ def ensure_columns():
                    "owner_id": "INTEGER", "max_members": "INTEGER"},
         "assignment_items": {"rating": "INTEGER", "source_url": "VARCHAR(500)", "starred": "BOOLEAN NOT NULL DEFAULT {false}"},
         "contest_problems": {"max_score": "INTEGER", "starred": "BOOLEAN NOT NULL DEFAULT {false}"},
-        "users": {"session_version": "INTEGER NOT NULL DEFAULT 0", "last_login_at": "DATETIME", "atc_rating": "INTEGER"},
+        "users": {"session_version": "INTEGER NOT NULL DEFAULT 0", "last_login_at": "DATETIME", "atc_rating": "INTEGER",
+                  "cses_id": "VARCHAR(20)"},
+        "submissions": {"backfilled": "BOOLEAN NOT NULL DEFAULT {false}"},
         "hints": {
             "kind": "VARCHAR(10) NOT NULL DEFAULT 'hint'",
             "author_id": "INTEGER",
@@ -53,6 +55,8 @@ def ensure_columns():
                         conn.execute(text("UPDATE groups SET notes_allowed = hints_allowed"))
         if insp.has_table("submissions"):
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_submissions_recent ON submissions (submitted_at)"))
+        if insp.has_table("users"):  # a column added to an existing table has no UNIQUE constraint of its own
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_cses_id ON users (cses_id)"))
         # Older deploys stored solution/hint as a boolean on a since-removed column; fold it into kind.
         if "is_solution" in existing_by_table.get("hints", set()):
             conn.execute(text("UPDATE hints SET kind = 'solution' WHERE is_solution = 1"))

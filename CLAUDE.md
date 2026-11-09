@@ -37,7 +37,7 @@ Judges are only ever asked for *a user's submissions*, once, and every contest/p
 - `app/problems.py` — the universal switch. `detect_source(token)` is a chain of `if`s (CF, CF EDU, CF gym, AtCoder, Kilonova, CSES, pbinfo, infoarena, SPOJ, CodeChef, default = unknown link); `parse_link` / `parse_links` (bulk paste) / `parse_form` (the add-item form) turn input into a `ParsedLink`.
 - `app/platforms/<name>.py` — everything specific to one judge, as a `Platform` subclass (see `app/platforms/base.py`): its links (`parse_url`, `parse_bare`, `parse_form`), how it is displayed (`item_url`, `problem_url`, icon, `manual_status`, `default_title`, and for the profile's recent-submissions list `submission_url`, `submission_problem_url`, `submission_problem_label`, `fetch_problem_names` where submissions carry no title), how its submissions are fetched (`fetch_submissions`, `fetch_rating_history`) and how an item's results are derived (`sync_item`). `registry.py` lists them; templates get `platform_of`, `item_url`, `problem_url` from `app/templating.py`, so there are no per-platform `if`s in templates.
 - `app/scraper/` — only the HTTP calls (`codeforces.py`, `atcoder.py` via kenkoooo + atcoder.jp rating history, `kilonova.py`). Codeforces requests are serialized and spaced 2.1 s apart.
-- Manual platforms have no API: `cses`, `pbinfo`, `infoarena`, `spoj`, `codechef` and `other` (any http(s) link, shown with a "?" icon) — plus Codeforces EDU problems. Members mark these solved themselves.
+- Manual platforms have no API: `cses`, `pbinfo`, `infoarena`, `spoj`, `codechef` and `other` (any http(s) link, shown with a "?" icon) — plus Codeforces EDU problems. Members mark these solved themselves, and CSES can also be imported (see "CSES progress import").
 
 ### Database
 
@@ -78,13 +78,19 @@ Hints, solutions and notes are Markdown too. They are drawn by JavaScript from t
 
 `Group.stars_allowed` is a fourth switch beside hints / notes / resources (group form, audited in `group.create` / `group.edit`). With it on, the group's owner (or the admin: `can_manage_group`) gets a star icon beside the notes icon on every problem row of an assignment, grey when off and yellow when on, and everyone else sees a read-only yellow star on the starred problems and nothing at all on the others. The flag lives on the row it marks: `AssignmentItem.starred` for a standalone problem and `ContestProblem.starred` for one inside a contest (a whole contest can't be starred; `sync` updates `ContestProblem` rows in place, so a star survives a re-sync). Existing databases get the three new columns from `ensure_columns()`. `POST /assignments/{id}/stars` takes `target` (`i<item id>` / `p<contest problem id>`, the hints' keys) and `starred` (`1`/`0`, the state wanted rather than a flip, so repeating it is harmless), answers `{"starred": bool}`, is refused 403 for non-managers and 400 while the switch is off, and records `assignment.star` / `assignment.unstar` only when the state really changes. The star button calls it with `fetch` and redraws only on success (`toggleStar()` in `assignments/detail.html`, loaded only for those who can use it). Turning the switch off hides the stars without clearing them.
 
+### CSES progress import
+
+CSES has no API and shows a member's solved tasks only to that member, logged in, so the member's own browser reads them (`/cses`, `app/routers/cses.py`, `app/cses_import.py`, `static/cses-export.js`). The page builds a bookmarklet from `csesExport.toString()`, so what runs on cses.fi is exactly that one self-contained function (Node-tested in `tests/test_cses.py`): it reads `<li class="task">` / `<span class="task-score ... full">` off `cses.fi/problemset/`, then opens `/cses#<json>` (the fragment never reaches a server). The member confirms there and presses Import, which `POST`s `{cses_id, solved}` to `/cses/import` with the normal session cookie. No CSES password or cookie reaches the app, and `User.cses_id` (unique) records the account.
+
+The list can't be verified, so the import is checked against the one public number CSES shows for any account, `cses.fi/user/<id>`'s submission count: a member can't have more solved tasks than submissions, and between imports can't gain more solved tasks than submissions (`SubmissionSync.submission_count` holds the count at the last import). cses.fi being unreachable refuses the import (503) rather than skipping the check; imports are 60 s apart (the attempt time is kept even when refused); one CSES account belongs to one member; a different account starts over. Solves are stored as `Submission(platform="cses", submission_id=task number, accepted)` plus `SubmissionSync.full_sync_at`, so the leaderboards need no CSES special case. The first import (and any import for a new account) stores `Submission.backfilled=True`: the member had solved those earlier, so they must not count as "new this month" — `leaderboard.new_solves`, `submissions.recent`, `earliest_submission_at` and `daily_solved_counts` all leave `backfilled` rows out. Tasks that first appear in a later import are stamped with the import time and count normally. `Cses.sync_item` (reached through the manual-platform branch of `sync._sync`) and `mark_solved_from_submissions()` turn stored solves into `Result` rows for the CSES items of the member's groups; a mark made by hand is never removed. CSES is not in `activity.HEATMAP_PLATFORMS`, so there is no heatmap column for it yet.
+
 ### Editing an assignment
 
 `GET/POST /assignments/{id}/edit-page` and `/edit` reuse `assignments/form.html` (an optional `assignment` in context switches it between New and Edit, the same pattern as `groups/form.html`); gated by `can_manage_group`, same as Delete. The new-assignment JS that fills today's date only runs when there is no `assignment`, so editing never overwrites a stored (or deliberately empty) date.
 
 ### Leaderboards
 
-`app/leaderboard.py`: a problem counts for a user once, if their *first* accepted submission (per platform + problem key) falls in the last 30 days. Computed by query (accepted in the window and no older acceptance, via the `(user, platform, problem_key)` index) rather than a stored flag, so it can't go stale as submissions are added or re-graded; only users whose full history is loaded (`SubmissionSync.full_sync_at`) are counted. The group board intersects that with the group's problems from `Platform.problem_keys(item)` (override it if a platform's contest problems are keyed differently from `ContestProblem.platform_problem_id`); the platform board (home page, right side) is per account type: users are ranked against users, students against students (the admin sees both, and is never ranked). An account created by the admin with an empty password stores `auth.NO_LOGIN` (`"!"`): `verify_password` always refuses it, so it can be a group member and on the boards but never signed in to; setting a password later enables it. Manual platforms (CSES, pbinfo, infoarena, SPOJ, CodeChef, links) have no submissions and don't count.
+`app/leaderboard.py`: a problem counts for a user once, if their *first* accepted submission (per platform + problem key) falls in the last 30 days. Computed by query (accepted in the window and no older acceptance, via the `(user, platform, problem_key)` index) rather than a stored flag, so it can't go stale as submissions are added or re-graded; only users whose full history is loaded (`SubmissionSync.full_sync_at`) are counted. The group board intersects that with the group's problems from `Platform.problem_keys(item)` (override it if a platform's contest problems are keyed differently from `ContestProblem.platform_problem_id`); the platform board (home page, right side) is per account type: users are ranked against users, students against students (the admin sees both, and is never ranked). An account created by the admin with an empty password stores `auth.NO_LOGIN` (`"!"`): `verify_password` always refuses it, so it can be a group member and on the boards but never signed in to; setting a password later enables it. Manual platforms (pbinfo, infoarena, SPOJ, CodeChef, links) have no submissions and don't count; CSES counts for members who imported their progress, which stores `platform="cses"` submissions (rows with `backfilled=True` are skipped, see below).
 
 ### Recommend page
 
@@ -99,20 +105,25 @@ that's the whole reason it has its own tables instead of being computed live as 
 existing `div1`../`combined`/`other` vs. AtCoder's `abc`/`arc`/`agc`/`other` (`detect_atc_division()`, from the
 contest id prefix) — two separate checkbox groups and default sets, not merged.
 
-The Member dropdown (`app/routers/recommend.py::recommend_page`) is scoped to the active tab: only accounts of the
+The Members checklist (`app/routers/recommend.py::recommend_page`; any number of members can be ticked, the `member_id` query parameter repeats, and the form always sends a blank one so that ticking nobody means "nobody" rather than "not specified") is scoped to the active tab: only accounts of the
 viewer's own `user_type` (a user sees users, a student sees students, the admin sees both — same rule as
 `leaderboard.for_platform()`) that have a handle linked to that tab's platform. With nobody explicitly chosen (or a
-stale id left over from switching tabs), the viewer is auto-selected if they themselves qualify, else the dropdown
-stays blank. `recommend.effective_rating(user, platform)` is the number both the dropdown's pre-fill and the
+stale id left over from switching tabs), the viewer is auto-selected if they themselves qualify, else the checklist
+has nothing ticked. `recommend.effective_rating(user, platform)` is the number both the checklist's pre-fill and the
 default grading rating use — the cached rating, or the 800 floor if a handle is linked but has never rated a
-contest there (e.g. someone unrated on Codeforces). A typed `rating` always overrides whatever a selected member
-would imply, and is parsed leniently so a bad value never 422s.
+contest there (e.g. someone unrated on Codeforces). With several members ticked the default is the *average* of
+their effective ratings (also what ticking a box fills in client-side). A typed `rating` always overrides whatever
+the selected members would imply, and is parsed leniently so a bad value never 422s.
 
-The "submissions" filter (`sub_filter=all|none|attempted|solved`) keeps only contests where the *selected member's*
-(not necessarily the viewer's) stored submissions land in that bucket (`_submission_bucket()`) — the member picked
-in the dropdown is who gets graded *and* whose history is checked; with nobody picked it falls back to the viewer.
-It only applies to contests with a real, cached problem set (`exact` grading) — the typical-distribution fallback
-isn't a real problem list to check submissions against — and needs that member to have a handle on the platform.
+The "submissions" filter (`sub_filter=all|none|attempted|solved`) keeps only contests where the *selected
+members'* (not necessarily the viewer's) stored submissions land in that bucket (`_submission_bucket()`) — the
+members ticked are who gets graded *and* whose history is checked; with nobody picked it falls back to the viewer.
+Several members are **pooled into one history** (`_pooled_submissions()`; the engine functions take `accounts=[...]`,
+with the old single `account=` still accepted): a contest counts as touched or solved when *any* of them touched or
+solved it, so "Not attempted" means none of them has tried it, and a card's progress counts a problem once whoever
+solved it. Members without a handle on the platform are left out of the pool (the page says so; if nobody left can
+be checked, no contest passes a filter). It only applies to contests with a real, cached problem set (`exact`
+grading) — the typical-distribution fallback isn't a real problem list to check submissions against.
 
 ### Cached rating vs rating_entries
 

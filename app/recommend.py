@@ -452,6 +452,20 @@ def _solve_progress(subs: list, problem_keys: set[str]) -> dict:
     return {"solved": len(solved_keys & problem_keys), "total": len(problem_keys)}
 
 
+def _with_handle(accounts: list[models.User], platform: str) -> list[models.User]:
+    """The accounts whose submissions on `platform` ("cf" | "atc") can be looked at at all."""
+    return [a for a in accounts if (a.codeforces_handle if platform == "cf" else a.atcoder_handle)]
+
+
+def _pooled_submissions(db: Session, accounts: list[models.User], platform_key: str, keys: set[str]) -> list:
+    """The stored submissions of every one of `accounts` on `keys`, as one history: with several members picked
+    a contest counts as touched / solved when any of them touched / solved it."""
+    out: list = []
+    for a in accounts:
+        out.extend(submissions.for_problems(db, a.id, platform_key, keys))
+    return out
+
+
 def get_cf_recommendations(
     db: Session,
     divisions: list[str],
@@ -459,6 +473,7 @@ def get_cf_recommendations(
     top_n: int = 5,
     *,
     account: Optional[models.User] = None,
+    accounts: Optional[list[models.User]] = None,
     sub_filter: str = "all",
 ) -> list[dict]:
     """
@@ -468,12 +483,14 @@ def get_cf_recommendations(
     Contests with cached problem ratings are graded exactly; others fall back
     to the typical rating distribution for their division.
 
-    `sub_filter` ("all" | "none" | "attempted" | "solved") keeps only contests where `account`'s own stored
-    Codeforces submissions land in that bucket; it only applies to contests with cached problems (exact grading)
-    since the fallback distribution isn't a real problem set to check submissions against.
+    `sub_filter` ("all" | "none" | "attempted" | "solved") keeps only contests where the stored Codeforces
+    submissions of `account` (or of every one of `accounts`, pooled: a contest is touched or solved if any of
+    them touched or solved it) land in that bucket; it only applies to contests with cached problems (exact
+    grading) since the fallback distribution isn't a real problem set to check submissions against.
 
-    Each row also carries "progress" — {"solved", "total"} of `account`'s own problems on that contest, or None
-    where there's no exact problem set or no `account` — shown on every card regardless of `sub_filter`.
+    Each row also carries "progress" — {"solved", "total"} of the problems on that contest solved by the account
+    (by any of the accounts), or None where there's no exact problem set or nobody with a handle — shown on every
+    card regardless of `sub_filter`.
 
     Sort order: grade score DESC, then recency DESC.
     """
@@ -485,7 +502,9 @@ def get_cf_recommendations(
         .all()
     )
 
-    has_handle = account is not None and bool(account.codeforces_handle)
+    if accounts is None:
+        accounts = [account] if account is not None else []
+    handled = _with_handle(accounts, "cf")
 
     scored = []
     for contest in contests:
@@ -497,9 +516,9 @@ def get_cf_recommendations(
             exact = False
 
         progress = None
-        if exact and has_handle:
+        if exact and handled:
             problem_keys = {f"{contest.id}/{p.index}" for p in contest.problems}
-            subs = submissions.for_problems(db, account.id, "codeforces", problem_keys)
+            subs = _pooled_submissions(db, handled, "codeforces", problem_keys)
             progress = _solve_progress(subs, problem_keys)
             if sub_filter != "all" and _submission_bucket(subs) != sub_filter:
                 continue
@@ -521,6 +540,7 @@ def get_atc_recommendations(
     top_n: int = 5,
     *,
     account: Optional[models.User] = None,
+    accounts: Optional[list[models.User]] = None,
     sub_filter: str = "all",
 ) -> list[dict]:
     """
@@ -536,7 +556,9 @@ def get_atc_recommendations(
         .all()
     )
 
-    has_handle = account is not None and bool(account.atcoder_handle)
+    if accounts is None:
+        accounts = [account] if account is not None else []
+    handled = _with_handle(accounts, "atc")
 
     scored = []
     for contest in contests:
@@ -548,9 +570,9 @@ def get_atc_recommendations(
             exact = False
 
         progress = None
-        if exact and has_handle:
+        if exact and handled:
             problem_ids = {p.problem_id for p in contest.problems}
-            subs = submissions.for_problems(db, account.id, "atcoder", problem_ids)
+            subs = _pooled_submissions(db, handled, "atcoder", problem_ids)
             progress = _solve_progress(subs, problem_ids)
             if sub_filter != "all" and _submission_bucket(subs) != sub_filter:
                 continue

@@ -40,16 +40,18 @@
           {% if sub_filter != 'all' %}<input type="hidden" name="sub_filter" value="{{ sub_filter }}">{% endif %}
 
           <div>
-            <div class="meta" style="margin-bottom:4px;">Member</div>
-            <select name="member_id" id="rc-member" style="width:100%;">
-              <option value="">— or enter rating below —</option>
+            <div class="meta" style="margin-bottom:4px;">Members <span>(pick any number, or enter a rating below)</span></div>
+            {# A blank entry is always sent, so ticking nobody means "nobody" instead of "not specified". #}
+            <input type="hidden" name="member_id" value="">
+            <div class="rc-members" id="rc-members">
               {% for m in all_members %}
-              <option value="{{ m.id }}" data-rating="{{ member_ratings[m.id] }}"
-                      {% if m.id == member_id %}selected{% endif %}>
-                {{ m.username }} ({{ member_ratings[m.id] }})
-              </option>
+              <label class="rc-member">
+                <input type="checkbox" name="member_id" value="{{ m.id }}" data-rating="{{ member_ratings[m.id] }}"
+                       {% if m.id in member_ids %}checked{% endif %}>
+                <span>{{ m.username }} ({{ member_ratings[m.id] }})</span>
+              </label>
               {% endfor %}
-            </select>
+            </div>
             {% if not all_members %}
             <p class="meta" style="margin-top:4px; font-size:11px;">
               Nobody of your kind has a {{ 'Codeforces' if platform == 'cf' else 'AtCoder' }} handle linked yet.
@@ -95,7 +97,8 @@
     {# Submission filter #}
     <div class="box">
       <div class="box-header" style="cursor:default; font-size:12px;">
-        {{ filter_account.username }}'s submissions{% if filter_account.id == account.id %} (you){% endif %}
+        {% if filter_accounts | length == 1 %}{{ filter_accounts[0].username }}'s submissions{% if filter_accounts[0].id == account.id %} (you){% endif %}
+        {% else %}Submissions of {{ filter_accounts | length }} members{% endif %}
       </div>
       <div class="box-body" style="padding:8px 10px; display:flex; flex-direction:column; gap:4px;">
         <a href="{{ filter_urls.all }}" class="btn {{ 'btn-green' if sub_filter == 'all' }}"
@@ -147,16 +150,23 @@
     </div>
     {% endif %}
 
-    {% set filter_handle = (filter_account.codeforces_handle if platform == 'cf' else filter_account.atcoder_handle) %}
-    {% if sub_filter != 'all' and not filter_handle %}
+    {% set judge = 'Codeforces' if platform == 'cf' else 'AtCoder' %}
+    {% if sub_filter != 'all' and not checkable %}
     <div class="info-msg" style="margin-bottom:8px;">
-      {% if filter_account.id == account.id %}
-      No {{ 'Codeforces' if platform == 'cf' else 'AtCoder' }} handle is set on your account, so submissions
+      {% if filter_accounts | length == 1 and filter_accounts[0].id == account.id %}
+      No {{ judge }} handle is set on your account, so submissions
       can't be checked — set one to use this filter.
-      {% else %}
-      {{ filter_account.username }} has no {{ 'Codeforces' if platform == 'cf' else 'AtCoder' }} handle set, so
+      {% elif filter_accounts | length == 1 %}
+      {{ filter_names }} has no {{ judge }} handle set, so
       their submissions can't be checked.
+      {% else %}
+      None of {{ filter_names }} has a {{ judge }} handle set, so their submissions can't be checked.
       {% endif %}
+    </div>
+    {% elif sub_filter != 'all' and unlinked_names %}
+    <div class="info-msg" style="margin-bottom:8px;">
+      {{ unlinked_names }} {{ 'has' if unlinked_names.count(',') == 0 else 'have' }} no {{ judge }} handle set, so
+      {{ 'their submissions aren\'t' }} counted.
     </div>
     {% endif %}
 
@@ -221,7 +231,7 @@
       {% if p %}
       <div style="flex-shrink:0; font-style:italic; font-weight:700; font-size:12.5px; white-space:nowrap;
                   color:{{ '#2e7d32' if full_solve else ('#b5502e' if part_solve else 'var(--text-meta)') }};"
-           title="{{ p.solved }} of {{ p.total }} problems solved, by {{ filter_account.username }}">
+           title="{{ p.solved }} of {{ p.total }} problems solved, by {% if filter_accounts | length > 1 %}at least one of {% endif %}{{ filter_names }}">
         {% if full_solve %}✓ solved{% else %}{{ p.solved }}/{{ p.total }} solved{% endif %}
       </div>
       {% endif %}
@@ -237,9 +247,13 @@
 </div>
 
 <script>
-document.getElementById('rc-member').addEventListener('change', function () {
-  var r = this.options[this.selectedIndex].dataset.rating;
-  if (r) document.getElementById('rc-rating').value = r;
+// Ticking members fills the rating with their average (one member: their own rating), as picking one always did.
+document.getElementById('rc-members').addEventListener('change', function () {
+  var ticked = this.querySelectorAll('input[type=checkbox]:checked');
+  if (!ticked.length) return;
+  var total = 0;
+  ticked.forEach(function (box) { total += parseInt(box.dataset.rating, 10) || 0; });
+  document.getElementById('rc-rating').value = Math.round(total / ticked.length);
 });
 </script>
 {% endblock %}
