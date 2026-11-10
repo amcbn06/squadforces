@@ -169,11 +169,11 @@ async def import_solved(db: Session, user: models.User, cses_id, raw_solved, *, 
         .join(models.Assignment, models.Assignment.id == models.AssignmentItem.assignment_id)
         .join(models.GroupMembership, models.GroupMembership.group_id == models.Assignment.group_id)
         .filter(models.GroupMembership.user_id == user.id, models.AssignmentItem.platform == PLATFORM,
-                models.AssignmentItem.type == "problem", models.AssignmentItem.external_id.in_(solved))
+                models.AssignmentItem.type == "problem")
         .all()
     )
-    for item in items:
-        cses_platform.mark_solved_from_submissions(db, item, [user.id])
+    for item in items:  # every CSES task of her groups, solved or not: the import is now the truth for her
+        cses_platform.sync_results_from_import(db, item, [user])
 
     return ImportResult(cses_id=cses_id, name=profile.name, solved=len(solved), new=len(new), baseline=baseline,
                         submissions=profile.submissions)

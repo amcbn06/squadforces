@@ -359,14 +359,18 @@
                   <span style="color:#ddd;">?</span>
                 {% endif %}
               {% elif item.manual_status %}
-                {# CSES / Codeforces EDU: nothing to fetch, so members tick problems off themselves #}
+                {# Nothing to fetch, so members tick problems off themselves, unless the platform got their status from
+                   an import (CSES): then the cell is locked and shows what the import says. #}
                 {% set marked = r and r.solved %}
-                {% if is_admin or (account and account.id == cell.user.id) %}
+                {% set locked = platform_of(item).locked_status(item, cell.user, marked) %}
+                {% if locked %}
+                <span class="{{ 'solved' if marked else '' }}" style="{{ '' if marked else 'color:#ccc;' }}" title="{{ locked }}">{{ '✓' if marked else '·' }}</span>
+                {% elif is_admin or (account and account.id == cell.user.id) %}
                 <form method="post" action="/assignments/{{ assignment.id }}/items/{{ item.id }}/solved" style="display:inline;">
                   <input type="hidden" name="user_id" value="{{ cell.user.id }}">
                   <input type="hidden" name="solved" value="{{ '0' if marked else '1' }}">
                   <button class="solve-toggle{{ ' on' if marked }}"
-                          title="{{ 'Marked solved (self-reported). Click to undo.' if marked else 'Not marked. Click to mark as solved.' }}">{{ '✓' if marked else '○' }}</button>
+                          title="{{ ('Marked solved (self-reported). Click to undo.' if marked else 'Not marked. Click to mark as solved.') ~ platform_of(item).manual_hint(item) }}">{{ '✓' if marked else '○' }}</button>
                 </form>
                 {% elif marked %}<span class="solved manual" title="Marked solved (self-reported)">✓</span>
                 {% else %}<span style="color:#ddd;" title="Not marked">·</span>{% endif %}
