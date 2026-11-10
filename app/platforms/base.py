@@ -125,6 +125,16 @@ class Platform:
     def default_title(self, item) -> str:
         return item.external_id
 
+    def locked_status(self, item, user, solved: bool) -> Optional[str]:
+        """For a manual platform: the matrix's tooltip for `user`'s cell on `item` if that status comes from data
+        they gave the app (an import) instead of a mark made by hand, so the cell is shown locked and can't be
+        clicked. None (the default) means it is marked by hand, with the usual clickable circle."""
+        return None
+
+    def manual_hint(self, item) -> str:
+        """A sentence added to the tooltip of the clickable circle, for what a mark by hand does and doesn't do."""
+        return ""
+
     def profile_link(self, handle: str) -> Optional[str]:
         return self.profile_url.format(handle=handle) if self.profile_url and handle else None
 

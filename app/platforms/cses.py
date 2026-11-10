@@ -25,24 +25,33 @@ def _task_link(task_id: str) -> ParsedLink:
     return ParsedLink("cses", "problem", task_id, f"CSES problem {task_id}")
 
 
-def mark_solved_from_submissions(db, item, user_ids) -> None:
-    """Mark `item` (a CSES task) solved for every one of `user_ids` whose imported progress includes it. A mark
-    made by hand is never taken back, and an import never marks anything unsolved."""
-    ids = list(user_ids)
-    if item.type != "problem" or item.platform != "cses" or not ids:
+def sync_results_from_import(db, item, users) -> None:
+    """Make `item`'s (a CSES task's) results of the members among `users` who imported their CSES progress match
+    that import: solved where it has the task, no mark where it doesn't (CSES is the source of truth for them, so
+    a stale mark made by hand is replaced by what CSES says). Members who never imported keep whatever they marked
+    by hand."""
+    if item.type != "problem" or item.platform != "cses":
+        return
+    linked = [u.id for u in users if u.cses_id]
+    if not linked:
         return
     first: dict[int, models.Submission] = {}
     rows = (
         db.query(models.Submission)
-        .filter(models.Submission.user_id.in_(ids), models.Submission.platform == "cses",
+        .filter(models.Submission.user_id.in_(linked), models.Submission.platform == "cses",
                 models.Submission.problem_key == item.external_id, models.Submission.accepted.is_(True))
         .order_by(models.Submission.submitted_at)
         .all()
     )
     for row in rows:
         first.setdefault(row.user_id, row)
-    for user_id, row in first.items():
+    for user_id in linked:
         result = db.query(models.Result).filter_by(assignment_item_id=item.id, user_id=user_id).first()
+        row = first.get(user_id)
+        if row is None:
+            if result is not None:
+                db.delete(result)  # no row means "not marked", which the matrix shows as not solved here
+            continue
         if result is None:
             result = models.Result(assignment_item_id=item.id, user_id=user_id)
             db.add(result)
@@ -84,7 +93,16 @@ class Cses(Platform):
         return f"CSES {item.external_id}"
 
     async def sync_item(self, item, members: list, db) -> None:
-        mark_solved_from_submissions(db, item, [m.id for m in members])
+        sync_results_from_import(db, item, members)
+
+    def locked_status(self, item, user, solved: bool) -> Optional[str]:
+        if not user.cses_id:
+            return None
+        return ("Solved on CSES (from the last import)" if solved else
+                "Not solved on CSES at the last import. Import again to update it.")
+
+    def manual_hint(self, item) -> str:
+        return " It doesn't count in the rankings; importing your CSES progress (CSES in the menu) does."
 
     def submission_problem_url(self, sub) -> str:
         return f"https://cses.fi/problemset/task/{sub.problem_key}"

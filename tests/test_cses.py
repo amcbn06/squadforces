@@ -114,12 +114,37 @@ class Importing(DbTestCase):
         self.assertEqual(self.db.query(models.Result).filter(models.Result.assignment_item_id.in_(
             [unsolved.id, other_judge.id, not_hers.id])).count(), 0)
 
-    async def test_a_mark_made_by_hand_is_left_alone(self):
+    async def test_for_a_member_who_imported_cses_is_the_truth_so_a_stale_hand_mark_goes(self):
         item = self.item(self.assignment, "cses", "problem", "1090")
-        self.db.add(models.Result(assignment_item_id=item.id, user_id=self.ana.id, solved=True))
+        self.db.add_all([models.Result(assignment_item_id=item.id, user_id=self.ana.id, solved=True),
+                         models.Result(assignment_item_id=item.id, user_id=self.bob.id, solved=True)])
         self.db.commit()
         await self.run_import(self.ana, "4242", ["1068"], count=10)   # her list doesn't include 1090
-        self.assertTrue(self.db.query(models.Result).filter_by(assignment_item_id=item.id).one().solved)
+        marked = {r.user_id for r in self.db.query(models.Result).filter_by(assignment_item_id=item.id)}
+        self.assertEqual(marked, {self.bob.id})                      # hers is gone; bob never imported, so his stays
+
+    async def test_a_later_import_clears_a_mark_the_import_no_longer_has_and_a_sync_agrees(self):
+        item = self.item(self.assignment, "cses", "problem", "1068")
+        await self.run_import(self.ana, "4242", ["1068"], count=10, now=NOW)
+        self.assertEqual(self.db.query(models.Result).filter_by(assignment_item_id=item.id, user_id=self.ana.id).count(), 1)
+        self.db.add(models.Result(assignment_item_id=item.id, user_id=self.bob.id, solved=True))   # bob ticks by hand
+        self.db.commit()
+        await sync_item(item.id, self.db)                             # a refresh never touches an unlinked member
+        self.assertEqual(self.db.query(models.Result).filter_by(assignment_item_id=item.id).count(), 2)
+
+    # what the matrix cell does ------------------------------------------------------------------------------------
+
+    def test_the_cell_is_locked_only_for_a_member_who_imported(self):
+        from app.platforms import registry
+        cses, pbinfo = registry.get("cses"), registry.get("pbinfo")
+        item = self.item(self.assignment, "cses", "problem", "1068")
+        linked = models.User(username="linked", password_hash="x", cses_id="77")
+        self.assertIsNone(cses.locked_status(item, self.ana, True))             # no import: a mark by hand, clickable
+        self.assertEqual(cses.locked_status(item, linked, True), "Solved on CSES (from the last import)")
+        self.assertIn("Import again", cses.locked_status(item, linked, False))
+        self.assertIn("rankings", cses.manual_hint(item))
+        self.assertIsNone(pbinfo.locked_status(item, linked, True))             # other manual platforms are untouched
+        self.assertEqual(pbinfo.manual_hint(item), "")
 
     # later imports --------------------------------------------------------------------------------------------------
 
@@ -294,6 +319,56 @@ class CsesWeb(SiteTestCase):
         anonymous = TestClient(app, follow_redirects=False)
         self.assertIn(self.post(anonymous, {"cses_id": "1", "solved": []}).status_code, (303, 401))
         self.assertEqual(self.post(self.admin, {"cses_id": "1", "solved": []}).status_code, 403)
+
+    def add_items(self, *specs):
+        r = self.owner.post("/assignments/new", data={"group_id": self.gid, "title": "Week 1"})
+        aid = int(re.search(r"/assignments/(\d+)", r.headers["location"]).group(1))
+        with mock.patch("app.routers.assignments._run_sync", mock.AsyncMock()):
+            for platform, external_id in specs:
+                self.owner.post(f"/assignments/{aid}/items/add",
+                                data={"item_type": "problem", "platform": platform, "external_id": external_id})
+        db = SessionLocal()
+        ids = [i.id for i in db.query(models.AssignmentItem).order_by(models.AssignmentItem.id)]
+        user_id = db.query(models.User).filter_by(username="ana").one().id
+        db.close()
+        return aid, ids, user_id
+
+    def mark(self, client, aid, item_id, user_id, solved="1"):
+        return client.post(f"/assignments/{aid}/items/{item_id}/solved", data={"user_id": user_id, "solved": solved})
+
+    def test_before_importing_the_circle_is_clickable_and_says_what_it_does_not_do(self):
+        aid, (cses_item, pbinfo_item), uid = self.add_items(("cses", "1068"), ("pbinfo", "1"))
+        page = self.ana.get(f"/assignments/{aid}").text
+        self.assertEqual(page.count('<button class="solve-toggle'), 2)           # one circle per manual row (CSES, pbinfo)
+        cses_title = re.search(r'title="(Not marked\. Click to mark as solved\.[^"]*rankings[^"]*)"', page)
+        self.assertIsNotNone(cses_title)                                   # the CSES circle explains itself
+        self.assertEqual(len(re.findall(r'title="Not marked\. Click to mark as solved\."', page)), 1)  # pbinfo's doesn't
+        self.assertEqual(self.mark(self.ana, aid, cses_item, uid).status_code, 303)  # and marking works
+
+    def test_after_importing_the_cell_is_a_locked_tick_and_marking_by_hand_is_refused(self):
+        aid, (solved_item, unsolved_item, pbinfo_item), uid = self.add_items(("cses", "1068"), ("cses", "1090"), ("pbinfo", "1"))
+        with profile(25):
+            self.assertEqual(self.post(self.ana, {"cses_id": "4242", "solved": ["1068"]}).status_code, 200)
+        for viewer in (self.ana, self.owner):                              # the member herself and the group's owner
+            page = self.page_cells(viewer, aid)
+            self.assertIn("Solved on CSES (from the last import)", page)
+            self.assertIn("Not solved on CSES at the last import", page)
+            self.assertNotIn(f'name="user_id" value="{uid}"', self.cses_rows(page))  # no form left for her CSES rows
+        refused = self.mark(self.ana, aid, unsolved_item, uid)
+        self.assertEqual(refused.status_code, 400)
+        self.assertIn("import", refused.text)
+        self.assertEqual(self.mark(self.owner, aid, unsolved_item, uid).status_code, 400)  # not even the owner
+        self.assertEqual(self.mark(self.ana, aid, pbinfo_item, uid).status_code, 303)      # other platforms: still by hand
+        db = SessionLocal()
+        self.assertEqual(db.query(models.Result).filter_by(assignment_item_id=unsolved_item).count(), 0)
+        db.close()
+
+    def page_cells(self, client, aid):
+        return client.get(f"/assignments/{aid}").text
+
+    def cses_rows(self, page):
+        """The matrix rows that belong to CSES tasks (each row is one <tr>)."""
+        return "".join(r for r in re.findall(r"<tr.*?</tr>", page, re.S) if "cses.fi/problemset/task" in r)
 
     def test_a_group_member_sees_the_solve_in_the_matrix(self):
         r = self.owner.post("/assignments/new", data={"group_id": self.gid, "title": "Week 1"})

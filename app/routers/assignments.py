@@ -9,9 +9,10 @@ from app.templating import make_templates, render_markdown
 from sqlalchemy import or_
 
 from app.models import (
-    Group, Assignment, AssignmentItem, ContestProblem, Result, ProblemResult, GroupMembership, Hint, Resource,
+    Group, Assignment, AssignmentItem, ContestProblem, Result, ProblemResult, GroupMembership, Hint, Resource, User,
 )
 from app.auth import require_auth, can_delete_item, can_manage_group
+from app.platforms import registry
 from app import audit, problems
 from app import sync as sync_svc
 
@@ -651,6 +652,10 @@ async def set_manual_solved(
         raise HTTPException(status_code=403, detail="You can only mark your own progress.")
     if not db.query(GroupMembership).filter_by(group_id=group_id, user_id=user_id).first():
         raise HTTPException(status_code=400, detail="That user is not a member of this group.")
+    target = db.get(User, user_id)
+    if target is not None and registry.for_item(item).locked_status(item, target, False) is not None:
+        # their status here comes from data they imported (CSES), so a mark by hand would only be overwritten
+        raise HTTPException(status_code=400, detail="This comes from their import, so it can't be marked by hand.")
 
     result = db.query(Result).filter_by(assignment_item_id=item.id, user_id=user_id).first()
     if solved == "1":
